@@ -676,6 +676,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn btn-moss btn-sm" onclick="exportBackup()">💾 Резервна копія</button>
       <button class="btn btn-gray btn-sm" onclick="document.getElementById('import-file').click()">📂 Відновити</button>
+      <button class="btn btn-moss btn-sm" onclick="document.getElementById('merge-file').click()">☁️ Merge backup у хмару</button>
+<input type="file" id="merge-file" accept=".json" style="display:none" onchange="mergeImportBackup(this)">
       <input type="file" id="import-file" accept=".json" style="display:none" onchange="importBackup(this)">
       <button class="btn btn-danger btn-sm" onclick="clearJournal()">🗑 Очистити журнал</button>
       <button class="btn btn-danger btn-sm" onclick="resetAll()">⚠️ Скинути все</button>
@@ -2418,6 +2420,7 @@ function deleteProduct(id){
 // ============================================================
 function loadSettings(){document.getElementById("setting-autoincrement").checked=settings.autoincrement;}
 document.addEventListener("change",function(e){if(e.target.id==="setting-autoincrement"){settings.autoincrement=e.target.checked;save();}});
+
 function exportBackup(){
   var data={products:products,buyers:buyers,journal:journal,settings:settings,
     warehouseStock:warehouseStock,rawStock:rawStock,receiveHistory:receiveHistory,
@@ -2428,11 +2431,13 @@ function exportBackup(){
   a.download="atik_backup_v5_"+new Date().toISOString().slice(0,10)+".json";
   a.click();URL.revokeObjectURL(url);
 }
+
 function importBackup(input){
   var file=input.files[0];if(!file)return;
   var reader=new FileReader();
   reader.onload=function(e){
-    try{var data=JSON.parse(e.target.result);
+    try{
+      var data=JSON.parse(e.target.result);
       if(!data.products||!data.buyers)throw new Error("Невірний формат");
       products=data.products;buyers=data.buyers;journal=data.journal||[];
       if(data.settings)settings=Object.assign({},settings,data.settings);
@@ -2443,11 +2448,181 @@ function importBackup(input){
       if(data.salesReports)salesReports=data.salesReports;
       save();location.reload();
     }catch(err){alert("Помилка: "+err.message);}
-  };reader.readAsText(file);
+  };
+  reader.readAsText(file);
 }
+
+function deepClone(obj){
+  return JSON.parse(JSON.stringify(obj));
+}
+
+function mergeById(existing, incoming){
+  var map = {};
+  (existing || []).forEach(function(x){
+    if(x && x.id) map[x.id] = deepClone(x);
+  });
+  (incoming || []).forEach(function(x){
+    if(x && x.id){
+      map[x.id] = Object.assign({}, map[x.id] || {}, deepClone(x));
+    }
+  });
+  return Object.values(map);
+}
+
+function mergeJournal(existing, incoming){
+  var map = {};
+  (existing || []).forEach(function(x){
+    if(x && x.id) map[x.id] = deepClone(x);
+  });
+  (incoming || []).forEach(function(x){
+    if(x && x.id){
+      map[x.id] = deepClone(x);
+    }
+  });
+  return Object.values(map).sort(function(a,b){
+    return new Date(b.savedAt || b.invoiceDate || 0) - new Date(a.savedAt || a.invoiceDate || 0);
+  });
+}
+
+function mergePlainObject(base, extra){
+  var out = Object.assign({}, base || {});
+  Object.keys(extra || {}).forEach(function(k){
+    if(typeof extra[k] === "object" && extra[k] !== null && !Array.isArray(extra[k])){
+      out[k] = Object.assign({}, out[k] || {}, extra[k]);
+    } else {
+      out[k] = extra[k];
+    }
+  });
+  return out;
+}
+
+function convertV4BackupToV5(data){
+  var converted = {
+    products: deepClone(products),
+    buyers: deepClone(buyers),
+    journal: deepClone(journal),
+    settings: deepClone(settings),
+    warehouseStock: deepClone(warehouseStock),
+    rawStock: deepClone(rawStock),
+    receiveHistory: deepClone(receiveHistory),
+    retailStock: deepClone(retailStock),
+    salesReports: deepClone(salesReports)
+  };
+
+  converted.products = mergeById(converted.products, data.products || []);
+  converted.buyers   = mergeById(converted.buyers, data.buyers || []);
+  converted.journal  = mergeJournal(converted.journal, data.journal || []);
+  converted.settings = Object.assign({}, converted.settings, data.settings || {});
+
+  if(data.stock && typeof data.stock === "object"){
+    Object.keys(data.stock).forEach(function(buyerId){
+      if(!converted.retailStock[buyerId]) converted.retailStock[buyerId] = {};
+      Object.keys(data.stock[buyerId] || {}).forEach(function(productId){
+        var row = data.stock[buyerId][productId];
+        converted.retailStock[buyerId][productId] = {
+          qty: row.qty || 0,
+          name: row.name || productId
+        };
+      });
+    });
+  }
+
+  if(Array.isArray(data.stockReports) && data.stockReports.length){
+    var mappedReports = data.stockReports.map(function(r){
+      return {
+        id: r.id || uid(),
+        buyerId: r.buyerId || r.storeId || "",
+        buyerName: r.buyerName || r.storeName || "",
+        month: r.month || r.date || "",
+        items: deepClone(r.items || []),
+        savedAt: r.savedAt || new Date().toISOString()
+      };
+    });
+    converted.salesReports = mergeJournal(converted.salesReports, mappedReports);
+  }
+
+  return converted;
+}
+
+function summarizeMerge(beforeState, afterState){
+  return {
+    productsAdded: Math.max(0, (afterState.products || []).length - (beforeState.products || []).length),
+    buyersAdded: Math.max(0, (afterState.buyers || []).length - (beforeState.buyers || []).length),
+    journalAdded: Math.max(0, (afterState.journal || []).length - (beforeState.journal || []).length),
+    retailStoresTouched: Object.keys(afterState.retailStock || {}).length
+  };
+}
+
+function mergeImportBackup(input){
+  var file = input.files[0];
+  if(!file) return;
+
+  var reader = new FileReader();
+  reader.onload = function(e){
+    try{
+      var data = JSON.parse(e.target.result);
+      var beforeState = {
+        products: deepClone(products),
+        buyers: deepClone(buyers),
+        journal: deepClone(journal),
+        settings: deepClone(settings),
+        warehouseStock: deepClone(warehouseStock),
+        rawStock: deepClone(rawStock),
+        receiveHistory: deepClone(receiveHistory),
+        retailStock: deepClone(retailStock),
+        salesReports: deepClone(salesReports)
+      };
+
+      var merged;
+
+      if(data.products && data.buyers && (data.warehouseStock || data.rawStock || data.retailStock || data.salesReports)){
+        merged = {
+          products: mergeById(products, data.products || []),
+          buyers: mergeById(buyers, data.buyers || []),
+          journal: mergeJournal(journal, data.journal || []),
+          settings: Object.assign({}, settings, data.settings || {}),
+          warehouseStock: mergePlainObject(warehouseStock, data.warehouseStock || {}),
+          rawStock: mergePlainObject(rawStock, data.rawStock || {}),
+          receiveHistory: mergeJournal(receiveHistory, data.receiveHistory || []),
+          retailStock: mergePlainObject(retailStock, data.retailStock || {}),
+          salesReports: mergeJournal(salesReports, data.salesReports || [])
+        };
+      }
+      else if(data.products && data.buyers && (data.stock || data.stockReports || data.version === "4.0")){
+        merged = convertV4BackupToV5(data);
+      }
+      else{
+        throw new Error("Невідомий формат backup");
+      }
+
+      applyAppState(merged);
+      save();
+      rerenderAfterStateChange();
+
+      if(cloudUser){
+        pushCloudState(true);
+      }
+
+      var s = summarizeMerge(beforeState, merged);
+      alert(
+        "✅ Backup злито успішно\n\n" +
+        "Товарів додано/оновлено: " + s.productsAdded + "\n" +
+        "Покупців додано/оновлено: " + s.buyersAdded + "\n" +
+        "Документів додано: " + s.journalAdded + "\n" +
+        "Точок/залишків торкнуто: " + s.retailStoresTouched
+      );
+    }catch(err){
+      alert("Помилка merge-імпорту: " + err.message);
+      console.error(err);
+    }finally{
+      input.value = "";
+    }
+  };
+  reader.readAsText(file);
+}
+
 function clearJournal(){if(!confirm("Очистити журнал?"))return;journal=[];save();renderJournal();alert("Журнал очищено");}
 function resetAll(){if(!confirm("Скинути ВСІ дані?"))return;if(!confirm("Підтвердіть!"))return;localStorage.clear();location.reload();}
-
 // ============================================================
 // MODAL
 // ============================================================
