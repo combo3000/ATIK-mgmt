@@ -1,0 +1,1 @@
+window.ATIK_FIREBASE_CONFIG = {};
