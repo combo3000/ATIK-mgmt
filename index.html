@@ -1405,48 +1405,523 @@ var priceLabel={
 // ============================================================
 // PREVIEW
 // ============================================================
-function renderPreview(){
-  var g=generated; if(!g)return;
-  var b=g.buyer, dateStr=formatDate(g.invoiceDate);
-  var useShelf=g.priceType==="shelf";
-  var rows=g.items.map(function(item,i){
-    return "<tr>"
-      +"<td style=\"text-align:center;border:1px solid #ddd;padding:4px 8px\">"+(i+1)+"</td>"
-      +"<td style=\"border:1px solid #ddd;padding:4px 8px;font-size:11px\">"+esc(item.name)+"</td>"
-      +(useShelf?"<td style=\"text-align:right;border:1px solid #ddd;padding:4px 8px\">"+item.price.toFixed(2)+"</td>":"")
-      +"<td style=\"text-align:center;border:1px solid #ddd;padding:4px 8px\">"+item.qty+" шт.</td>"
-      +"<td style=\"text-align:right;border:1px solid #ddd;padding:4px 8px\">"+item.price.toFixed(2)+"</td>"
-      +"<td style=\"text-align:right;border:1px solid #ddd;padding:4px 8px;font-weight:700\">"+item.sum.toFixed(2)+"</td>"
-      +"</tr>";
-  }).join("");
-  var colCount=useShelf?6:5;
-  document.getElementById("preview-content").innerHTML=
-    "<h2>"+(g.docType==="bill"?"Рахунок на оплату":"Видаткова накладна")+" №"+esc(g.invoiceNum)+" від "+dateStr+"</h2>"
-    +"<div class=\"preview-supplier\"><strong>Постачальник:</strong> Фізична особа-підприємець Савчук Анастасія Борисівна<br>"
-    +"Юр. адреса: 01030, Україна, м.Київ, Шевченківський р-н, вулиця В'ячеслава Липинського, будинок 4В, кв 70<br>"
-    +"тел: +38 (093) 7674290 | ЄДРПОУ: 3305200068 | ІПН: 3305200068 | № свід.: 133139<br>"
-    +"IBAN UA893220010000026000340100278 | Є платником податку на прибуток на загальних підставах</div>"
-    +"<div class=\"preview-buyer\"><strong>Покупець:</strong> "+esc(b.fullName||b.name)+"<br>"
-    +(b.edrpou?"код за ЄДРПОУ: "+esc(b.edrpou)+"<br>":"")
-    +(b.iban?"рахунок IBAN "+esc(b.iban)+"<br>":"")
-    +(b.bank?"Назва банку: "+esc(b.bank)+"<br>":"")
-    +(b.address?esc(b.address)+"<br>":"")
-    +(b.contract?"Договір: "+esc(b.contract)+"<br>":"")
-    +"</div>"
-    +"<table class=\"preview-table\"><thead><tr>"
-    +"<th style=\"width:25px\">№</th><th>Товар</th>"
-    +(useShelf?"<th style=\"width:75px\">Ціна полиці</th>":"")
-    +"<th style=\"width:65px\">К-сть</th>"
-    +"<th style=\"width:90px\">Ціна без ПДВ</th><th style=\"width:90px\">Сума без ПДВ</th>"
-    +"</tr></thead><tbody>"+rows
-    +"<tr class=\"tr-total\"><td colspan=\""+(colCount-1)+"\" style=\"text-align:right;border:1px solid #ddd;padding:4px 8px\">Усього:</td>"
-    +"<td style=\"text-align:right;border:1px solid #ddd;padding:4px 8px\">"+g.total.toFixed(2)+"</td></tr>"
-    +"</tbody></table>"
-    +"<div class=\"preview-summary\"><strong>Всього найменувань "+g.items.length+", на суму "+g.total.toLocaleString("uk-UA",{minimumFractionDigits:2})+" грн</strong><br>"
-    +"<em>"+esc(g.totalWords)+"</em></div>"
-    +"<div class=\"preview-sigs\"><div>Відпусти(в\\ла):<br><br><strong>Савчук Анастасія Борисівна</strong></div>"
-    +"<div style=\"text-align:right\">Отрима(в\\ла):<br><br><strong>"+esc(b.receiver||"—")+"</strong></div></div>";
+<script>
+function renderPreview() {
+  const previewEl =
+    document.getElementById("docPreview") ||
+    document.getElementById("preview") ||
+    document.getElementById("documentPreview");
+
+  if (!previewEl) return;
+
+  const getVal = (...ids) => {
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) return (el.value ?? el.textContent ?? "").toString().trim();
+    }
+    return "";
+  };
+
+  const getCheckedVal = (...names) => {
+    for (const name of names) {
+      const el = document.querySelector(`input[name="${name}"]:checked`);
+      if (el) return (el.value || "").trim();
+    }
+    return "";
+  };
+
+  const esc = (v) =>
+    String(v ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+
+  const money = (n) => {
+    const num = Number(n || 0);
+    return num.toLocaleString("uk-UA", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  };
+
+  const fmtDate = (v) => {
+    if (!v) return "";
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return v;
+    return d.toLocaleDateString("uk-UA");
+  };
+
+  const nl2br = (s) => esc(s || "").replace(/\n/g, "<br>");
+
+  // ===== 1. Визначення типу документа =====
+  const docTypeRaw =
+    getVal("docType", "documentType", "invoiceType", "orderType") ||
+    getCheckedVal("docType", "documentType", "invoiceType", "orderType") ||
+    "invoice";
+
+  const docType = docTypeRaw.toLowerCase().includes("наклад")
+    ? "delivery"
+    : docTypeRaw.toLowerCase().includes("рах")
+    ? "invoice"
+    : docTypeRaw.toLowerCase().includes("delivery")
+    ? "delivery"
+    : "invoice";
+
+  const isInvoice = docType === "invoice";
+  const docTitle = isInvoice ? "РАХУНОК НА ОПЛАТУ" : "ВИДАТКОВА НАКЛАДНА";
+
+  // ===== 2. Основні реквізити документа =====
+  const docNo = getVal("docNumber", "invoiceNumber", "documentNumber", "docNo");
+  const docDate = fmtDate(getVal("docDate", "invoiceDate", "documentDate", "date"));
+
+  const priceType =
+    getVal("priceType", "docPriceType") ||
+    getCheckedVal("priceType", "docPriceType") ||
+    "Полиця (100%)";
+
+  // ===== 3. Продавець / ваша компанія =====
+  const sellerName = getVal("sellerName", "companyName", "ourCompanyName", "myCompanyName") || "ФОП / Компанія";
+  const sellerCode = getVal("sellerCode", "companyCode", "ourCompanyCode", "myCompanyCode");
+  const sellerIPN = getVal("sellerIPN", "companyIPN", "ourCompanyIPN", "myCompanyIPN");
+  const sellerAddress = getVal("sellerAddress", "companyAddress", "ourCompanyAddress", "myCompanyAddress");
+  const sellerPhone = getVal("sellerPhone", "companyPhone", "ourCompanyPhone", "myCompanyPhone");
+  const sellerEmail = getVal("sellerEmail", "companyEmail", "ourCompanyEmail", "myCompanyEmail");
+  const sellerIBAN = getVal("sellerIBAN", "companyIBAN", "ourCompanyIBAN", "myCompanyIBAN");
+  const sellerBank = getVal("sellerBank", "companyBank", "ourCompanyBank", "myCompanyBank");
+  const sellerMFO = getVal("sellerMFO", "companyMFO", "ourCompanyMFO", "myCompanyMFO");
+
+  // ===== 4. Покупець =====
+  const buyerName = getVal("buyerName", "customerName", "clientName");
+  const buyerCode = getVal("buyerCode", "customerCode", "clientCode");
+  const buyerIPN = getVal("buyerIPN", "customerIPN", "clientIPN");
+  const buyerAddress = getVal("buyerAddress", "customerAddress", "clientAddress");
+  const buyerPhone = getVal("buyerPhone", "customerPhone", "clientPhone");
+  const buyerEmail = getVal("buyerEmail", "customerEmail", "clientEmail");
+
+  // ===== 5. Додатково =====
+  const deliveryBasis = getVal("deliveryBasis", "basis", "docBasis", "agreementBasis");
+  const comment = getVal("docComment", "comment", "notes", "docNotes");
+
+  // ===== 6. Позиції =====
+  // Підтримка кількох варіантів джерел:
+  // 1) window.currentDocItems
+  // 2) window.docItems
+  // 3) state.docItems
+  // 4) таблиця .doc-items-table tbody tr
+  let items = [];
+
+  if (Array.isArray(window.currentDocItems)) {
+    items = window.currentDocItems;
+  } else if (Array.isArray(window.docItems)) {
+    items = window.docItems;
+  } else if (window.state && Array.isArray(window.state.docItems)) {
+    items = window.state.docItems;
+  } else {
+    const rows = document.querySelectorAll(".doc-items-table tbody tr, #docItemsTable tbody tr, #itemsTable tbody tr");
+    items = Array.from(rows).map((tr) => {
+      const cells = tr.querySelectorAll("td");
+      const inputs = tr.querySelectorAll("input, select, textarea");
+
+      const byInput = (idx) => (inputs[idx]?.value || "").trim();
+      const byCell = (idx) => (cells[idx]?.textContent || "").trim();
+
+      const name = byInput(0) || byCell(1) || byCell(0);
+      const unit = byInput(1) || byCell(2) || "шт.";
+      const qty = Number((byInput(2) || byCell(3) || "0").replace(",", "."));
+      const price = Number((byInput(3) || byCell(4) || "0").replace(",", "."));
+
+      return {
+        name,
+        unit,
+        qty,
+        price,
+        total: qty * price
+      };
+    });
+  }
+
+  items = (items || [])
+    .map((it) => {
+      const qty = Number(it.qty || it.quantity || 0);
+      const price = Number(it.price || it.unitPrice || 0);
+      return {
+        name: it.name || it.title || it.productName || "",
+        unit: it.unit || it.uom || "шт.",
+        qty,
+        price,
+        total: Number(it.total || qty * price || 0)
+      };
+    })
+    .filter((it) => it.name || it.qty || it.price);
+
+  const subtotal = items.reduce((s, it) => s + Number(it.total || 0), 0);
+  const vat = 0; // якщо потім треба ПДВ — легко додамо
+  const grandTotal = subtotal + vat;
+
+  const itemsHtml = items.length
+    ? items
+        .map(
+          (it, i) => `
+            <tr>
+              <td class="c">${i + 1}</td>
+              <td>${esc(it.name)}</td>
+              <td class="c">${esc(it.unit)}</td>
+              <td class="r">${money(it.qty)}</td>
+              <td class="r">${money(it.price)}</td>
+              <td class="r">${money(it.total)}</td>
+            </tr>
+          `
+        )
+        .join("")
+    : `
+      <tr>
+        <td class="c">1</td>
+        <td colspan="5" style="color:#888;">Немає доданих позицій</td>
+      </tr>
+    `;
+
+  const sellerBlock = `
+    <div class="party-card">
+      <div class="party-title">Постачальник</div>
+      <div><strong>${esc(sellerName)}</strong></div>
+      ${sellerCode ? `<div>ЄДРПОУ/ІПН: ${esc(sellerCode)}</div>` : ""}
+      ${sellerIPN ? `<div>ІПН: ${esc(sellerIPN)}</div>` : ""}
+      ${sellerAddress ? `<div>Адреса: ${esc(sellerAddress)}</div>` : ""}
+      ${sellerPhone ? `<div>Тел.: ${esc(sellerPhone)}</div>` : ""}
+      ${sellerEmail ? `<div>Email: ${esc(sellerEmail)}</div>` : ""}
+    </div>
+  `;
+
+  const buyerBlock = `
+    <div class="party-card">
+      <div class="party-title">${isInvoice ? "Платник" : "Одержувач"}</div>
+      <div><strong>${esc(buyerName || "—")}</strong></div>
+      ${buyerCode ? `<div>ЄДРПОУ/ІПН: ${esc(buyerCode)}</div>` : ""}
+      ${buyerIPN ? `<div>ІПН: ${esc(buyerIPN)}</div>` : ""}
+      ${buyerAddress ? `<div>Адреса: ${esc(buyerAddress)}</div>` : ""}
+      ${buyerPhone ? `<div>Тел.: ${esc(buyerPhone)}</div>` : ""}
+      ${buyerEmail ? `<div>Email: ${esc(buyerEmail)}</div>` : ""}
+    </div>
+  `;
+
+  const paymentBlock = isInvoice
+    ? `
+      <div class="payment-box">
+        <div class="payment-title">РЕКВІЗИТИ ДЛЯ ОПЛАТИ</div>
+        <div class="payment-grid">
+          <div class="label">Отримувач:</div>
+          <div class="value"><strong>${esc(sellerName)}</strong></div>
+
+          ${sellerCode ? `<div class="label">Код:</div><div class="value">${esc(sellerCode)}</div>` : ""}
+          ${sellerIBAN ? `<div class="label">IBAN:</div><div class="value iban">${esc(sellerIBAN)}</div>` : ""}
+          ${sellerBank ? `<div class="label">Банк:</div><div class="value">${esc(sellerBank)}</div>` : ""}
+          ${sellerMFO ? `<div class="label">МФО:</div><div class="value">${esc(sellerMFO)}</div>` : ""}
+        </div>
+      </div>
+    `
+    : "";
+
+  const basisBlock = deliveryBasis
+    ? `
+      <div class="meta-line">
+        <span class="meta-label">${isInvoice ? "Підстава для оплати:" : "Підстава:"}</span>
+        <span>${esc(deliveryBasis)}</span>
+      </div>
+    `
+    : "";
+
+  const commentBlock = comment
+    ? `
+      <div class="note-box">
+        <div class="note-title">Примітка</div>
+        <div>${nl2br(comment)}</div>
+      </div>
+    `
+    : "";
+
+  const signaturesBlock = isInvoice
+    ? ``
+    : `
+      <div class="signatures">
+        <div class="sign-col">
+          <div class="sign-title">Відпустив(ла)</div>
+          <div class="sign-line"></div>
+        </div>
+        <div class="sign-col">
+          <div class="sign-title">Отримав(ла)</div>
+          <div class="sign-line"></div>
+        </div>
+      </div>
+    `;
+
+  previewEl.innerHTML = `
+    <style>
+      .doc-sheet{
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0 auto;
+        background: #fff;
+        color: #111;
+        box-sizing: border-box;
+        padding: 14mm 14mm 16mm;
+        font-family: Arial, sans-serif;
+        font-size: 13px;
+        line-height: 1.35;
+        box-shadow: 0 6px 24px rgba(0,0,0,.08);
+      }
+      .doc-header{
+        display:flex;
+        justify-content:space-between;
+        align-items:flex-start;
+        gap:16px;
+        margin-bottom:14px;
+      }
+      .doc-title{
+        font-size:24px;
+        font-weight:700;
+        letter-spacing:.4px;
+      }
+      .doc-meta{
+        text-align:right;
+        font-size:12px;
+      }
+      .doc-meta div{ margin-bottom:3px; }
+
+      .doc-badge{
+        display:inline-block;
+        margin-top:6px;
+        padding:4px 10px;
+        border:1px solid #bbb;
+        border-radius:999px;
+        font-size:12px;
+        background:#fafafa;
+      }
+
+      .party-grid{
+        display:grid;
+        grid-template-columns:1fr 1fr;
+        gap:12px;
+        margin:12px 0 14px;
+      }
+      .party-card{
+        border:1px solid #d8d8d8;
+        padding:10px 12px;
+        border-radius:8px;
+        background:#fcfcfc;
+      }
+      .party-title{
+        font-size:12px;
+        text-transform:uppercase;
+        letter-spacing:.4px;
+        color:#666;
+        margin-bottom:6px;
+        font-weight:700;
+      }
+
+      .payment-box{
+        margin:14px 0 16px;
+        border:2px solid #111;
+        padding:12px 14px;
+        border-radius:10px;
+        background:#fffdf7;
+      }
+      .payment-title{
+        font-size:16px;
+        font-weight:700;
+        margin-bottom:10px;
+      }
+      .payment-grid{
+        display:grid;
+        grid-template-columns:180px 1fr;
+        gap:6px 12px;
+        font-size:13px;
+      }
+      .payment-grid .label{
+        color:#555;
+      }
+      .payment-grid .value{
+        font-weight:600;
+      }
+      .payment-grid .iban{
+        font-size:15px;
+        letter-spacing:.3px;
+      }
+
+      .meta-line{
+        margin:10px 0 12px;
+        font-size:13px;
+      }
+      .meta-label{
+        font-weight:700;
+      }
+
+      table.doc-table{
+        width:100%;
+        border-collapse:collapse;
+        margin-top:10px;
+      }
+      .doc-table th,
+      .doc-table td{
+        border:1px solid #222;
+        padding:7px 8px;
+        vertical-align:top;
+      }
+      .doc-table th{
+        background:#f3f3f3;
+        text-align:center;
+        font-weight:700;
+      }
+      .doc-table .c{ text-align:center; }
+      .doc-table .r{ text-align:right; }
+
+      .totals{
+        width:340px;
+        margin-left:auto;
+        margin-top:14px;
+        border:1px solid #222;
+        border-collapse:collapse;
+      }
+      .totals-row{
+        display:grid;
+        grid-template-columns:1fr 140px;
+      }
+      .totals-row > div{
+        border-bottom:1px solid #222;
+        padding:8px 10px;
+      }
+      .totals-row:last-child > div{
+        border-bottom:none;
+        font-weight:700;
+        font-size:15px;
+      }
+      .totals-row .label{
+        background:#fafafa;
+      }
+      .totals-row .value{
+        text-align:right;
+      }
+
+      .note-box{
+        margin-top:14px;
+        border:1px solid #d8d8d8;
+        border-radius:8px;
+        padding:10px 12px;
+        background:#fcfcfc;
+      }
+      .note-title{
+        font-weight:700;
+        margin-bottom:4px;
+      }
+
+      .signatures{
+        display:grid;
+        grid-template-columns:1fr 1fr;
+        gap:40px;
+        margin-top:38px;
+      }
+      .sign-title{
+        margin-bottom:24px;
+        font-weight:700;
+      }
+      .sign-line{
+        border-bottom:1px solid #111;
+        height:24px;
+      }
+
+      .doc-footer{
+        margin-top:24px;
+        font-size:11px;
+        color:#666;
+      }
+
+      @media (max-width: 900px){
+        .doc-sheet{
+          width:100%;
+          min-height:auto;
+          padding:18px;
+          box-shadow:none;
+        }
+        .party-grid{
+          grid-template-columns:1fr;
+        }
+        .payment-grid{
+          grid-template-columns:1fr;
+        }
+        .totals{
+          width:100%;
+        }
+        .signatures{
+          grid-template-columns:1fr;
+          gap:24px;
+        }
+      }
+    </style>
+
+    <div class="doc-sheet">
+      <div class="doc-header">
+        <div>
+          <div class="doc-title">${docTitle}</div>
+          <div class="doc-badge">${esc(priceType)}</div>
+        </div>
+
+        <div class="doc-meta">
+          ${docNo ? `<div><strong>№ ${esc(docNo)}</strong></div>` : ""}
+          ${docDate ? `<div>від ${esc(docDate)}</div>` : ""}
+        </div>
+      </div>
+
+      <div class="party-grid">
+        ${sellerBlock}
+        ${buyerBlock}
+      </div>
+
+      ${paymentBlock}
+      ${basisBlock}
+
+      <table class="doc-table">
+        <thead>
+          <tr>
+            <th style="width:42px;">№</th>
+            <th>Найменування</th>
+            <th style="width:70px;">Од.</th>
+            <th style="width:90px;">К-сть</th>
+            <th style="width:120px;">Ціна, грн</th>
+            <th style="width:130px;">Сума, грн</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemsHtml}
+        </tbody>
+      </table>
+
+      <div class="totals">
+        <div class="totals-row">
+          <div class="label">Разом</div>
+          <div class="value">${money(subtotal)}</div>
+        </div>
+        <div class="totals-row">
+          <div class="label">ПДВ</div>
+          <div class="value">${money(vat)}</div>
+        </div>
+        <div class="totals-row">
+          <div class="label">До сплати</div>
+          <div class="value">${money(grandTotal)}</div>
+        </div>
+      </div>
+
+      ${commentBlock}
+      ${signaturesBlock}
+
+      <div class="doc-footer">
+        ${isInvoice
+          ? "Рахунок сформовано для оплати товару."
+          : "Накладна підтверджує передачу товару від постачальника одержувачу."}
+      </div>
+    </div>
+  `;
 }
+</script>
 
 // ============================================================
 // EXPORT EXCEL
