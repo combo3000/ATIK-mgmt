@@ -396,7 +396,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       <span id="total-meta" style="color:var(--ink3);font-size:12px"></span>
       <span id="total-amount" class="total-amount"></span>
     </div>
-    <button class="btn-generate" id="btn-generate" onclick="generate()" disabled>🌿 Згенерувати</button>
+    <button class="btn-generate" id="btn-generate" onclick="generate()" disabled>🌿 Згенерувати</button> 
+    <button type="button" class="btn-add" style="margin-top:8px;border-color:#ddd;color:#888" onclick="clearForm()">✕ Очистити форму</button>
   </div>
 </div>
 
@@ -1241,7 +1242,7 @@ function renderItems(){
       +(whqty===0?"var(--red)":whqty<10?"var(--cedar)":"var(--moss)")+"\">"
       +(whqty===0?"⚠ нема":whqty<10?"⚡ "+whqty+" шт":"✓ "+whqty+" шт")+"</span>"):"";
     var selHtml=opts.replace("value=\""+item.productId+"\"","value=\""+item.productId+"\" selected");
-    return "<div class=\"item-row\">"
+    return "<div class=\"item-row\" data-item-id=\""+item.id+"\">"
       +"<div class=\"item-name\"><select data-iid=\""+item.id+"\" data-role=\"product\">"+selHtml+"</select>"+stockBadge+"</div>"
       +"<div class=\"item-qty\"><input type=\"number\" min=\"1\" value=\""+item.qty+"\" data-iid=\""+item.id+"\" data-role=\"qty\" style=\"text-align:center\"></div>"
       +"<div class=\"item-price\"><input type=\"number\" placeholder=\""+ph+"\" value=\""+item.customPrice+"\" data-iid=\""+item.id+"\" data-role=\"price\"></div>"
@@ -1251,8 +1252,20 @@ function renderItems(){
   }).join("");
   updateTotalBar();
 }
-function addItem(){items.push({id:"i"+Date.now(),productId:"",qty:1,customPrice:""});renderItems();}
-function removeItem(id){items=items.filter(function(i){return i.id!==id;});if(!items.length)addItem();else renderItems();}
+function addItem(){
+  var newId=Date.now();
+  items.push({ id: newId, productId: "", qty: 1, customPrice: "" });
+  renderItems();
+  setTimeout(function(){
+    var sel=document.querySelector('[data-item-id="'+newId+'"] select');
+    if(sel) sel.focus();
+  },50);
+}
+  function clearForm(){
+  if(!confirm("Очистити всі товари з форми?")) return;
+  items=[{id:Date.now(), productId:"", qty:1, customPrice:""}];
+  renderItems();
+}function removeItem(id){items=items.filter(function(i){return i.id!==id;});if(!items.length)addItem();else renderItems();}
 document.addEventListener("change",function(e){
   var iid=e.target.getAttribute("data-iid"),role=e.target.getAttribute("data-role");
   if(!iid||!role)return;
