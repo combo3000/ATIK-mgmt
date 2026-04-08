@@ -340,7 +340,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 
 <div class="tabs">
   <button class="tab active"   onclick="switchTab('dashboard')">🏠 Дашборд</button>
-  <button class="tab"          onclick="switchTab('form')">📝 Накладна</button>
+  <button class="tab"          onclick="switchTab('form')">📝 Документи</button>
   <button class="tab" id="tab-preview" onclick="switchTab('preview')" disabled>👁 Перегляд</button>
   <button class="tab"          onclick="switchTab('journal')">📚 Журнал</button>
   <button class="tab"          onclick="switchTab('warehouse')">📦 Склад</button>
@@ -383,9 +383,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <div id="buyer-info-box"></div>
     <div class="price-row">
       <strong style="font-size:12px;color:var(--ink3)">Тип цін:</strong>
-      <label class="radio-label"><input type="radio" name="pricetype" value="shelf" checked onchange="renderItems()"> Полиця</label>
-      <label class="radio-label"><input type="radio" name="pricetype" value="real"  onchange="renderItems()"> Реальна (~70%)</label>
-      <label class="radio-label"><input type="radio" name="pricetype" value="opt"   onchange="renderItems()"> Опт (~60%)</label>
+      <label class="radio-label"><input type="radio" name="pricetype" value="shelf" checked onchange="renderItems()"> Полиця (100%)</label>
+      <label class="radio-label"><input type="radio" name="pricetype" value="real"  onchange="renderItems()"> Реалізація (70%)</label>
+      <label class="radio-label"><input type="radio" name="pricetype" value="opt"   onchange="renderItems()"> Викуп (60%)</label>
     </div>
     <div style="font-weight:600;margin-bottom:8px;font-size:12.5px;color:var(--ink2)">
       Товари <span style="font-weight:normal;font-size:11px;color:var(--ink4);margin-left:8px">жовте поле — власна ціна</span>
@@ -1333,7 +1333,11 @@ function generate(){
   if(!buyer){alert("Оберіть покупця");return;}
   var dt=document.querySelector('input[name="doctype"]:checked').value;
   var total=getTotal();
-  var priceLabel={"shelf":"Ціна полиці","real":"Реальна ціна","opt":"Оптова ціна"}[getPriceType()]||"";
+var priceLabel={
+  "shelf":"Полиця (100%)",
+  "real":"Реалізація (70%)",
+  "opt":"Викуп (60%)"
+}[getPriceType()]||"";
 
   // Check warehouse availability (for invoices only)
   if(dt==="invoice"){
@@ -1448,43 +1452,104 @@ function renderPreview(){
 // EXPORT EXCEL
 // ============================================================
 function doExportExcel(g){
-  if(!g)return;
-  var b=g.buyer,dateStr=formatDate(g.invoiceDate),useShelf=g.priceType==="shelf";
-  var rows=[];
-  rows.push([(g.docType==="bill"?"Рахунок":"Видаткова накладна")+" №"+g.invoiceNum+" від "+dateStr]);
-  rows.push([]);
-  rows.push(["Постачальник:","Фізична особа-підприємець Савчук Анастасія Борисівна"]);
-  rows.push(["","Юр. адреса: 01030, Україна, м.Київ, Шевченківський р-н, вулиця В'ячеслава Липинського, будинок 4В, кв 70"]);
-  rows.push(["","тел: +38 (093) 7674290, ЄДРПОУ: 3305200068, № свід.: 133139"]);
-  rows.push(["","IBAN UA893220010000026000340100278"]);
-  rows.push([]);
-  rows.push(["Покупець:",b.fullName||b.name]);
-  if(b.edrpou)rows.push(["","код за ЄДРПОУ: "+b.edrpou]);
-  if(b.iban)rows.push(["","рахунок IBAN "+b.iban]);
-  if(b.bank)rows.push(["","Назва банку: "+b.bank]);
-  if(b.address)rows.push(["",b.address]);
-  if(b.contract)rows.push(["Договір:",b.contract]);
-  rows.push([]);
-  var hdr=["№","Товар"];
-  if(useShelf)hdr.push("Ціна полиці");
-  hdr.push("Кількість","Ціна без ПДВ","Сума без ПДВ");
-  rows.push(hdr);
-  g.items.forEach(function(item,i){
-    var row=[i+1,item.name];
-    if(useShelf)row.push(item.price.toFixed(2));
-    row.push(item.qty+" шт.",item.price.toFixed(2),item.sum.toFixed(2));
-    rows.push(row);
-  });
-  rows.push([]);rows.push(["","","","","Усього:",g.total.toFixed(2)]);rows.push([]);
-  rows.push(["Всього найменувань "+g.items.length+", на суму "+g.total.toFixed(2)+" грн"]);
-  rows.push([g.totalWords]);rows.push([]);
-  rows.push(["Відпусти(в\\ла):","Савчук Анастасія Борисівна","","Отрима(в\\ла):",b.receiver||""]);
-  var tsv="\uFEFF"+rows.map(function(r){return r.join("\t");}).join("\n");
-  var blob=new Blob([tsv],{type:"application/vnd.ms-excel;charset=utf-8"});
-  var url=URL.createObjectURL(blob);
-  var a=document.createElement("a");a.href=url;
-  a.download=(g.docType==="bill"?"Рахунок_":"Накладна_")+g.invoiceNum+"_"+((b.fullName||b.name).replace(/[^а-яА-ЯіІїЇєЄa-zA-Z0-9]/g,"_").substring(0,25))+".xls";
-  a.click();URL.revokeObjectURL(url);
+  if(!g) return;
+
+  var b = g.buyer;
+  var dateStr = formatDate(g.invoiceDate);
+  var useShelf = g.priceType === "shelf";
+  var docTitle = (g.docType === "bill" ? "Рахунок на оплату" : "Видаткова накладна") + " №" + g.invoiceNum + " від " + dateStr;
+
+  var rowsHtml = g.items.map(function(item, i){
+    return "<tr>"
+      + "<td style='border:1px solid #999;padding:6px;text-align:center'>" + (i+1) + "</td>"
+      + "<td style='border:1px solid #999;padding:6px'>" + esc(item.name) + "</td>"
+      + (useShelf ? "<td style='border:1px solid #999;padding:6px;text-align:right'>" + item.price.toFixed(2) + "</td>" : "")
+      + "<td style='border:1px solid #999;padding:6px;text-align:center'>" + item.qty + " шт.</td>"
+      + "<td style='border:1px solid #999;padding:6px;text-align:right'>" + item.price.toFixed(2) + "</td>"
+      + "<td style='border:1px solid #999;padding:6px;text-align:right;font-weight:700'>" + item.sum.toFixed(2) + "</td>"
+      + "</tr>";
+  }).join("");
+
+  var totalColspan = useShelf ? 5 : 4;
+
+  var html =
+    "<html xmlns:o='urn:schemas-microsoft-com:office:office' " +
+    "xmlns:x='urn:schemas-microsoft-com:office:excel' " +
+    "xmlns='http://www.w3.org/TR/REC-html40'>" +
+    "<head>" +
+    "<meta charset='UTF-8'>" +
+    "<meta http-equiv='Content-Type' content='text/html; charset=UTF-8'>" +
+    "<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Документ</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->" +
+    "<style>" +
+    "body{font-family:Arial,sans-serif;font-size:11pt;color:#000;}" +
+    "table{border-collapse:collapse;width:100%;}" +
+    ".title{font-size:14pt;font-weight:700;}" +
+    ".label{font-weight:700;}" +
+    ".small{font-size:10pt;}" +
+    ".right{text-align:right;}" +
+    ".center{text-align:center;}" +
+    ".bold{font-weight:700;}" +
+    ".thead td{background:#f2f2f2;font-weight:700;text-align:center;border:1px solid #999;padding:6px;}" +
+    ".cell{border:1px solid #999;padding:6px;}" +
+    "</style>" +
+    "</head><body>" +
+
+    "<table>" +
+      "<tr><td colspan='6' class='title' style='padding-bottom:12px'>" + docTitle + "</td></tr>" +
+
+      "<tr><td colspan='6' style='padding-top:8px'><span class='label'>Постачальник:</span> Фізична особа-підприємець Савчук Анастасія Борисівна</td></tr>" +
+      "<tr><td colspan='6'>Юр. адреса: 01030, Україна, м.Київ, Шевченківський р-н, вулиця В'ячеслава Липинського, будинок 4В, кв 70</td></tr>" +
+      "<tr><td colspan='6'>тел: +38 (093) 7674290, ЄДРПОУ: 3305200068, № свід.: 133139</td></tr>" +
+      "<tr><td colspan='6'>IBAN UA893220010000026000340100278</td></tr>" +
+
+      "<tr><td colspan='6' style='height:14px'></td></tr>" +
+
+      "<tr><td colspan='6'><span class='label'>Покупець:</span> " + esc(b.fullName || b.name) + "</td></tr>" +
+      (b.edrpou ? "<tr><td colspan='6'>код за ЄДРПОУ: " + esc(b.edrpou) + "</td></tr>" : "") +
+      (b.iban ? "<tr><td colspan='6'>рахунок IBAN " + esc(b.iban) + "</td></tr>" : "") +
+      (b.bank ? "<tr><td colspan='6'>Назва банку: " + esc(b.bank) + "</td></tr>" : "") +
+      (b.address ? "<tr><td colspan='6'>Юр. адреса: " + esc(b.address) + "</td></tr>" : "") +
+      (b.contract ? "<tr><td colspan='6'>Договір: " + esc(b.contract) + "</td></tr>" : "") +
+
+      "<tr><td colspan='6' style='height:14px'></td></tr>" +
+
+      "<tr class='thead'>" +
+        "<td style='width:40px'>№</td>" +
+        "<td>Товар</td>" +
+        (useShelf ? "<td style='width:110px'>Ціна полиці</td>" : "") +
+        "<td style='width:90px'>Кількість</td>" +
+        "<td style='width:110px'>Ціна без ПДВ</td>" +
+        "<td style='width:120px'>Сума без ПДВ</td>" +
+      "</tr>" +
+
+      rowsHtml +
+
+      "<tr>" +
+        "<td colspan='" + totalColspan + "' style='border:1px solid #999;padding:6px;text-align:right;font-weight:700;background:#f2f2f2'>Усього:</td>" +
+        "<td style='border:1px solid #999;padding:6px;text-align:right;font-weight:700;background:#f2f2f2'>" + g.total.toFixed(2) + "</td>" +
+      "</tr>" +
+
+      "<tr><td colspan='6' style='height:14px'></td></tr>" +
+      "<tr><td colspan='6' class='bold'>Всього найменувань " + g.items.length + ", на суму " + g.total.toFixed(2) + " грн</td></tr>" +
+      "<tr><td colspan='6'><em>" + esc(g.totalWords) + "</em></td></tr>" +
+
+      "<tr><td colspan='6' style='height:24px'></td></tr>" +
+
+      "<tr>" +
+        "<td colspan='3'><span class='label'>Відпусти(в\\ла):</span> Савчук Анастасія Борисівна</td>" +
+        "<td colspan='3'><span class='label'>Отрима(в\\ла):</span> " + esc(b.receiver || "—") + "</td>" +
+      "</tr>" +
+    "</table>" +
+
+    "</body></html>";
+
+  var blob = new Blob(["\uFEFF", html], { type: "application/vnd.ms-excel;charset=utf-8" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = (g.docType === "bill" ? "Рахунок_" : "Накладна_") + g.invoiceNum + ".xls";
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ============================================================
