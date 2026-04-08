@@ -376,7 +376,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     </div>
     <div id="stock-note" class="hint" style="display:none">ℹ️ Рахунок не списує товар зі складу. Для списання використайте «Видаткова накладна».</div>
     <div class="row">
-      <div class="field" style="flex:0 0 110px"><label>№ документа</label><input id="inv-num" type="text" value="1"></div>
+      <div class="field" style="flex:0 0 130px"><label>№ документа</label><input id="inv-num" type="text" value="1"></div>
       <div class="field" style="flex:0 0 160px"><label>Дата</label><input id="inv-date" type="date"></div>
       <div class="field"><label>Покупець</label><select id="buyer-select" onchange="onBuyerChange()"></select></div>
     </div>
@@ -1625,8 +1625,9 @@ function renderJournal(){
   if(!list.length){el.innerHTML='<div class="empty-state"><div class="icon">📚</div>Журнал порожній</div>';return;}
   el.innerHTML='<div class="journal-list">'+list.map(function(j){
     var icon=j.docType==="bill"?"🧾":"📦";
+    var docText=j.docType==="bill"?"Рахунок":"Накладна";
     return '<div class="journal-item" onclick="openJournalItem(\''+j.id+'\')">'
-      +'<div class="journal-num">'+icon+' №'+esc(j.invoiceNum)+'</div>'
+      +'<div class="journal-num">'+icon+' '+docText+' №'+esc(j.invoiceNum)+'</div>'
       +'<div class="journal-info"><div class="journal-buyer">'+esc(j.buyer&&j.buyer.name||"—")+'</div>'
       +'<div class="journal-date">'+formatDate(j.invoiceDate)+' · '+esc(j.priceLabel||'')+'</div></div>'
       +'<div class="journal-amount">'+j.total.toLocaleString("uk-UA",{minimumFractionDigits:2})+' ₴</div>'
