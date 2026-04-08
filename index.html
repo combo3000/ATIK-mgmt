@@ -149,6 +149,10 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 .preview-summary{margin-bottom:14px}
 .preview-sigs{display:flex;justify-content:space-between;padding-top:10px;
   border-top:1px solid var(--border)}
+.badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px}
+.badge-created{background:#fff3e0;color:#e65100}
+.badge-paid{background:#e8f5e9;color:#2e7d32}
+.badge-shipped{background:#e3f2fd;color:#1565c0}
 .pay-box{background:#f7faf8;border:1px solid #b7dfc9;border-radius:6px;padding:10px 14px;margin:10px 0 14px;line-height:1.6}
 .pay-box .pay-title{font-weight:700;margin-bottom:4px}
 .action-bar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
@@ -1372,7 +1376,7 @@ var priceLabel={
     var g={
       id:uid(), invoiceNum:document.getElementById("inv-num").value,
       invoiceDate:document.getElementById("inv-date").value,
-      buyer:buyer, docType:dt, priceType:getPriceType(), priceLabel:priceLabel,
+      buyer:buyer, docType:dt, status:"created", priceType:getPriceType(), priceLabel:priceLabel,
       items:filled.map(function(i){
         var p=products.find(function(x){return x.id===i.productId;});
         var price=getItemPrice(i);
@@ -1725,8 +1729,11 @@ function renderJournal(){
   el.innerHTML='<div class="journal-list">'+list.map(function(j){
     var icon=j.docType==="bill"?"🧾":"📦";
     var docText=j.docType==="bill"?"Рахунок":"Накладна";
+    var st=j.status||"created";
+    var badgeText=st==="paid"?"оплачено":st==="shipped"?"відвантажено":"створено";
+    var badgeClass=st==="paid"?"badge-paid":st==="shipped"?"badge-shipped":"badge-created";
     return '<div class="journal-item" onclick="openJournalItem(\''+j.id+'\')">'
-      +'<div class="journal-num">'+icon+' '+docText+' №'+esc(j.invoiceNum)+'</div>'
+      +'<div class="journal-num">'+icon+' '+docText+' №'+esc(j.invoiceNum)+' <span class="badge '+badgeClass+'">'+badgeText+'</span></div>'
       +'<div class="journal-info"><div class="journal-buyer">'+esc(j.buyer&&j.buyer.name||"—")+'</div>'
       +'<div class="journal-date">'+formatDate(j.invoiceDate)+' · '+esc(j.priceLabel||'')+'</div></div>'
       +'<div class="journal-amount">'+j.total.toLocaleString("uk-UA",{minimumFractionDigits:2})+' ₴</div>'
@@ -1759,13 +1766,31 @@ function openJournalItem(id){
     +'</tr></thead><tbody>'+rows+'</tbody></table>'
     +'<div style="font-size:12px"><strong>Разом: '+g.total.toLocaleString("uk-UA",{minimumFractionDigits:2})+' грн</strong>'
     +' <span style="color:var(--ink4);font-size:11px">'+esc(g.priceLabel||'')+'</span><br>'
-    +'<em style="font-size:11px;color:var(--ink3)">'+esc(g.totalWords)+'</em></div>';
+    +'<em style="font-size:11px;color:var(--ink3)">'+esc(g.totalWords)+'</em></div>'
+    +(function(){
+      var st=g.status||"created";
+      var badgeText=st==="paid"?"оплачено":st==="shipped"?"відвантажено":"створено";
+      var badgeClass=st==="paid"?"badge-paid":st==="shipped"?"badge-shipped":"badge-created";
+      var html='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">Статус: <span class="badge '+badgeClass+'">'+badgeText+'</span>';
+      if(g.docType==="bill"&&st!=="paid") html+=' <button class="btn btn-sm" style="margin-left:8px;background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7" onclick="event.stopPropagation();setStatus(\''+g.id+'\',\'paid\')">✓ Оплачено</button>';
+      if(g.docType==="invoice"&&st!=="shipped") html+=' <button class="btn btn-sm" style="margin-left:8px;background:#e3f2fd;color:#1565c0;border:1px solid #90caf9" onclick="event.stopPropagation();setStatus(\''+g.id+'\',\'shipped\')">✓ Відвантажено</button>';
+      html+='</div>';
+      return html;
+    })();
   document.getElementById("modal-journal").classList.add("open");
 }
 function deleteFromJournal(g){
   if(!g||!confirm("Видалити цей запис з журналу?"))return;
   journal=journal.filter(function(j){return j.id!==g.id;});
   save();closeModal("modal-journal");renderJournal();
+}
+function setStatus(id,status){
+  var j=journal.find(function(x){return x.id===id;});
+  if(!j)return;
+  j.status=status;
+  save();
+  openJournalItem(id);
+  renderJournal();
 }
 function loadFromJournal(g){
   if(!g)return;
