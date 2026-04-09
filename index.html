@@ -475,7 +475,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <div id="recv-raw-fields" style="display:none">
       <div class="row">
         <div class="field" style="flex:0 0 120px"><label id="recv-qty-label">Кількість (кг)</label><input id="recv-raw-qty" type="number" min="0.1" step="0.1" value="5"></div>
-        <div class="field" style="flex:0 0 130px"><label>Ціна ($/кг або ₴/шт)</label><input id="recv-raw-price" type="number" min="0" step="0.01"></div>
+        <div class="field" style="flex:0 0 130px"><label>Ціна ($/кг)</label><input id="recv-raw-price" type="number" min="0" step="0.01"></div>
         <div class="field" style="flex:0 0 110px"><label>Курс USD→UAH</label><input id="recv-rate" type="number" min="1" step="0.01" value="41.72"></div>
         <div class="field" style="flex:0 0 110px"><label>Доставка (₴)</label><input id="recv-delivery" type="number" min="0" value="0"></div>
       </div>
@@ -844,6 +844,8 @@ const DEFAULT_BUYERS=[
   {id:"sadova",     name:"ФОП Садова Аліна (Octo 66)",fullName:"Фізична особа-підприємець Садова Аліна Володимирівна",address:null,contract:null,receiver:"Садова Аліна Володимирівна",iban:"UA153220010000026203307239547",edrpou:null,bank:"АТ УНІВЕРСАЛ БАНК",isRetail:true,retailName:"Octo Tower"},
   {id:"evladenko",  name:"ФОП Євладенко Лідія (Ridni Rechi)",fullName:"ФОП Євладенко Лідія Олегівна",address:null,contract:null,receiver:"Євладенко Лідія Олегівна",iban:"UA183220010000026006350045695",edrpou:"3254804042",bank:"АТ УНІВЕРСАЛ БАНК",isRetail:false},
   {id:"bugera",     name:"ФОП Бугера Ярослав (Vynila)",fullName:"Фізична особа-підприємець Бугера Ярослав Ігорович",address:"Україна, 04136, місто Київ, вулиця Івана Виговського, будинок 9, квартира 126",contract:null,receiver:"Бугера Ярослав Ігорович",iban:null,edrpou:"3640008010",bank:null,isRetail:false},
+  {id:"d2c_instagram", name:"📷 Інстаграм (D2C)",fullName:"Продаж через Instagram",address:null,contract:null,receiver:null,iban:null,edrpou:null,bank:null,isRetail:false,isD2C:true},
+  {id:"d2c_site",      name:"🌐 Сайт alltreesiknow.com (D2C)",fullName:"Продаж через сайт",address:null,contract:null,receiver:null,iban:null,edrpou:null,bank:null,isRetail:false,isD2C:true},
 ];
 
 // BOM — "recipe" for each finished product group
@@ -852,7 +854,7 @@ const BOM={
   tube20:  {sticks:20, tubes:1, labels:1},
   tube40:  {sticks:40, tubes:1, labels:1},
   refill:  {sticks:20, tubes:0, labels:1},
-  stand:   {sticks:0,  tubes:0, labels:1},
+  stand:   {sticks:0,  tubes:0, labels:0},
   other:   {sticks:0,  tubes:0, labels:0},
 };
 
@@ -1204,11 +1206,21 @@ function onBuyerChange(){
   var b=buyers.find(function(x){return x.id===sel.value;});
   var box=document.getElementById("buyer-info-box");
   if(!b){box.innerHTML="";return;}
-  box.innerHTML="<div class=\"buyer-info\"><strong>"+esc(b.fullName||b.name)+"</strong>"
-    +(b.edrpou?" <span style=\"color:var(--ash)\">· ЄДРПОУ: "+esc(b.edrpou)+"</span>":"")
-    +(b.iban?"<div>IBAN: "+esc(b.iban)+"</div>":"")+(b.bank?"<div>Банк: "+esc(b.bank)+"</div>":"")
-    +(b.address?"<div>"+esc(b.address)+"</div>":"")+(b.contract?"<div>Договір: "+esc(b.contract)+"</div>":"")
-    +"<div>Отримувач: "+esc(b.receiver||"—")+"</div></div>";
+  if(b.isD2C){
+    // Auto-set price to shelf for D2C
+    var shelfRadio=document.querySelector('input[name="pricetype"][value="shelf"]');
+    if(shelfRadio){shelfRadio.checked=true;renderItems();}
+    box.innerHTML="<div class=\"buyer-info\" style=\"border-left:3px solid var(--cedar)\">"
+      +"<strong>"+esc(b.name)+"</strong> — роздрібний продаж (ціна полиці)<br>"
+      +"<div style=\"margin-top:6px;font-size:11px;color:var(--ink3)\">Ім'я та адресу клієнта можна вказати в полі «Примітка» при генерації або в реквізитах отримувача.</div>"
+      +"</div>";
+  } else {
+    box.innerHTML="<div class=\"buyer-info\"><strong>"+esc(b.fullName||b.name)+"</strong>"
+      +(b.edrpou?" <span style=\"color:var(--ash)\">· ЄДРПОУ: "+esc(b.edrpou)+"</span>":"")
+      +(b.iban?"<div>IBAN: "+esc(b.iban)+"</div>":"")+(b.bank?"<div>Банк: "+esc(b.bank)+"</div>":"")
+      +(b.address?"<div>"+esc(b.address)+"</div>":"")+(b.contract?"<div>Договір: "+esc(b.contract)+"</div>":"")
+      +"<div>Отримувач: "+esc(b.receiver||"—")+"</div></div>";
+  }
 }
 function onDocTypeChange(){
   var dt=document.querySelector('input[name="doctype"]:checked').value;
@@ -1833,7 +1845,7 @@ function onRecvTypeChange(){
   if(t==="finished"){ff.style.display="";rf.style.display="none";sw.style.display="none";}
   else{ff.style.display="none";rf.style.display="";sw.style.display="";}
   if(t==="sticks"){ql.textContent="Кількість (кг)";si.style.display="block";
-    si.textContent="💡 1 кг ≈ 465 паличок. Вводьте кг — автоматично перерахується в палички.";}
+    si.textContent="💡 1 кг ≈ 2000 паличок. Вводьте кг — автоматично перерахується в палички.";}
   if(t==="tubes"){ql.textContent="Кількість (шт)";si.style.display="none";}
   if(t==="labels"){ql.textContent="Кількість (шт)";si.style.display="none";}
   if(t==="stands"){ql.textContent="Кількість (шт)";si.style.display="none";}
@@ -1868,7 +1880,7 @@ function receiveGoods(){
     var rawKey, unit, sticks=0;
     if(t==="sticks"){
       rawKey="sticks_"+supplier; unit="кг";
-      sticks=Math.round(rawQty*465);
+      sticks=Math.round(rawQty*2000);
     } else if(t==="tubes")  {rawKey="tubes";  unit="шт";}
     else if(t==="labels")   {rawKey="labels"; unit="шт";}
     else if(t==="stands")   {rawKey="stands"; unit="шт";}
@@ -1907,7 +1919,7 @@ function updateAssemblePreview(){
   // Sum sticks across all suppliers
   var totalSticksKg=["yasuhito","ryo","hanna"].reduce(function(s,sup){return s+getRawQty("sticks_"+sup);},0);
   var totalSticks=["yasuhito","ryo","hanna"].reduce(function(s,sup){
-    return s+((rawStock["sticks_"+sup]&&rawStock["sticks_"+sup].sticks)||Math.round(getRawQty("sticks_"+sup)*465));
+    return s+((rawStock["sticks_"+sup]&&rawStock["sticks_"+sup].sticks)||Math.round(getRawQty("sticks_"+sup)*2000));
   },0);
   var tubsAvail=getRawQty("tubes");
   var labsAvail=getRawQty("labels");
@@ -1943,7 +1955,7 @@ function assembleBatch(){
     var k="sticks_"+s;
     if(!rawStock[k]||rawStock[k].qty<=0||remaining<=0)return;
     // how many kg covers remaining sticks?
-    var sticksPerKg=(k==="sticks_ryo"?500:k==="sticks_hanna"?490:465);
+    var sticksPerKg=2000;
     var kgNeeded=remaining/sticksPerKg;
     var kgDeduct=Math.min(rawStock[k].qty,kgNeeded);
     var sticksDeducted=Math.round(kgDeduct*sticksPerKg);
@@ -1956,7 +1968,7 @@ function assembleBatch(){
 
   // COGS from matPrices (live, not from rawStock averages)
   var mp=matPrices; var mp0=DEFAULT_MAT_PRICES;
-  var sticksPerKg=465;
+  var sticksPerKg=2000;
   var pricePerKg=mp.sticks_per_kg_uah||mp0.sticks_per_kg_uah;
   var stickCost=(bom.sticks||0)*(pricePerKg/sticksPerKg);
   var tubeCost =(bom.tubes||0)*(mp.tube_uah||mp0.tube_uah);
@@ -2016,9 +2028,9 @@ function renderWarehouse(){
 function renderRawMaterials(){
   // Material definitions: key, icon, label, supplier hint, unit display, min threshold for "low"
   var RAW_DEF=[
-    {key:"sticks_yasuhito", icon:"🌿", name:"Палички — B-Faith (Yasuhito)", sub:"Awaji Island, Japan · ~465 шт/кг", unitKey:"кг", minLow:2,   minOk:5,   isSticks:true},
-    {key:"sticks_ryo",      icon:"🌿", name:"Палички — Awaji Encens (Ryo)",  sub:"Awaji Island, Japan · ~500 шт/кг", unitKey:"кг", minLow:2,   minOk:5,   isSticks:true},
-    {key:"sticks_hanna",    icon:"🌿", name:"Палички — Asayu (Hanna)",        sub:"Japan · ~490 шт/кг",               unitKey:"кг", minLow:2,   minOk:5,   isSticks:true},
+    {key:"sticks_yasuhito", icon:"🌿", name:"Палички — B-Faith (Yasuhito)", sub:"Awaji Island, Japan · ~2000 шт/кг", unitKey:"кг", minLow:2,   minOk:5,   isSticks:true},
+    {key:"sticks_ryo",      icon:"🌿", name:"Палички — Awaji Encens (Ryo)",  sub:"Awaji Island, Japan · ~2000 шт/кг", unitKey:"кг", minLow:2,   minOk:5,   isSticks:true},
+    {key:"sticks_hanna",    icon:"🌿", name:"Палички — Asayu (Hanna)",        sub:"Japan · ~2000 шт/кг",               unitKey:"кг", minLow:2,   minOk:5,   isSticks:true},
     {key:"tubes",           icon:"🧪", name:"Тубуси",                        sub:"Упаковка для паличок",              unitKey:"шт", minLow:200, minOk:500, isSticks:false},
     {key:"labels",          icon:"🏷", name:"Наліпки / Етикетки",            sub:"На кожну пачку — 1 шт",             unitKey:"шт", minLow:200, minOk:500, isSticks:false},
   ];
@@ -2044,7 +2056,7 @@ function renderRawMaterials(){
     if(def.isSticks){
       qtyDisplay=qty.toFixed(2);
       unitDisplay="кг";
-      var stickCount=r.sticks||Math.round(qty*465);
+      var stickCount=r.sticks||Math.round(qty*2000);
       extraLine='<div style="font-size:13px;color:var(--moss);font-weight:600;margin-top:1px">≈ '+
         stickCount.toLocaleString("uk-UA")+' паличок</div>';
     } else {
@@ -2064,7 +2076,7 @@ function renderRawMaterials(){
       +extraLine
       +'<div class="raw-card-bar"><div class="raw-card-bar-fill '+barClass+'" style="width:'+barPct+'%"></div></div>'
       +'<div class="raw-card-avg">Ср. ціна: '+avgCost+' ₴ / '+unitDisplay
-      +(qty>0&&def.isSticks?' &nbsp;·&nbsp; '+((r.avgCostUah||0)*(qty>0?qty:1)/Math.max(1,(r.sticks||qty*465))*1000).toFixed(2)+' ₴/1000 паличок':'')
+      +(qty>0&&def.isSticks?' &nbsp;·&nbsp; '+((r.avgCostUah||0)*(qty>0?qty:1)/Math.max(1,(r.sticks||qty*2000))*1000).toFixed(2)+' ₴/1000 паличок':'')
       +'</div>'
       +'</div>';
   });
@@ -2073,7 +2085,7 @@ function renderRawMaterials(){
   // Mini summary bar beneath cards
   var totalSticks=0;
   ["yasuhito","ryo","hanna"].forEach(function(s){
-    var k="sticks_"+s; totalSticks+=(rawStock[k]&&rawStock[k].sticks)||Math.round((rawStock[k]&&rawStock[k].qty||0)*465);
+    var k="sticks_"+s; totalSticks+=(rawStock[k]&&rawStock[k].sticks)||Math.round((rawStock[k]&&rawStock[k].qty||0)*2000);
   });
   var tubesQty=Math.round(rawStock.tubes&&rawStock.tubes.qty||0);
   var labelsQty=Math.round(rawStock.labels&&rawStock.labels.qty||0);
@@ -2834,7 +2846,7 @@ var DEFAULT_BOM = {
   tube20:  { sticks:20, tubes:1, labels:1 },
   tube40:  { sticks:40, tubes:1, labels:1 },
   refill:  { sticks:20, tubes:0, labels:1 },
-  stand:   { sticks:0,  tubes:0, labels:1 },
+  stand:   { sticks:0,  tubes:0, labels:0 },
   other:   { sticks:0,  tubes:0, labels:0 },
 };
 
@@ -2887,7 +2899,7 @@ function calcCogsForGroup(group, supplierKey) {
   var bom = bomData[group] || DEFAULT_BOM[group] || {};
   var mp  = matPrices;
   var pricePerKg = mp[supplierKey || "sticks_per_kg_uah"] || mp.sticks_per_kg_uah || 0;
-  var sticksPerKg = 465; // approximate
+  var sticksPerKg = 2000; // approximate
   var pricePerStick = pricePerKg / sticksPerKg;
   var stickCost   = (bom.sticks || 0) * pricePerStick;
   var tubeCost    = (bom.tubes   || 0) * (mp.tube_uah   || 0);
@@ -3007,8 +3019,7 @@ function renderCogsResult() {
     + '<table class="inv-table" style="min-width:600px"><thead><tr>'
     + '<th>Продукт</th>'
     + '<th style="text-align:right">Матеріали (₴)</th>'
-    + '<th style="text-align:right">+ Робота+дост.+промо</th>'
-    + '<th style="text-align:right">+ Інше '+((matPrices.misc_pct||3))+'%</th>'
+    + '<th style="text-align:right">+ Накладні витрати</th>'
     + '<th style="text-align:right;font-weight:700">COGS разом (₴)</th>'
     + '<th style="text-align:right">Ціна полиці (₴)</th>'
     + '<th style="text-align:right">Маржа (₴)</th>'
@@ -3030,8 +3041,7 @@ function renderCogsResult() {
         + '<td><span style="font-weight:700">' + esc(g.label) + '</span>'
         + ' <span style="font-size:11px;color:var(--ink4)">/ ' + esc(s.label) + '</span></td>'
         + '<td style="text-align:right">' + c.materialCost.toFixed(2) + '</td>'
-        + '<td style="text-align:right;color:var(--ink4)">' + overheadPerPack.toFixed(2) + '</td>'
-        + '<td style="text-align:right;color:var(--ink4)">' + c.miscCost.toFixed(2) + '</td>'
+        + '<td style="text-align:right;color:var(--ink4)">' + (overheadPerPack + c.miscCost).toFixed(2) + '</td>'
         + '<td style="text-align:right;font-weight:700;color:var(--pine)">' + c.totalCost.toFixed(2) + '</td>'
         + '<td style="text-align:right">' + gp.shelf + '</td>'
         + '<td style="text-align:right;font-weight:700;color:' + marginCol + '">' + margin.toFixed(2) + '</td>'
@@ -3053,8 +3063,7 @@ function renderCogsResult() {
     + mkBreakItem("Палички", c20y.stickCost, c20y.totalCost)
     + mkBreakItem("Тубус", c20y.tubeCost, c20y.totalCost)
     + mkBreakItem("Наліпка", c20y.labelCost, c20y.totalCost)
-    + mkBreakItem("Робота+дост.+промо", (matPrices.labor_uah||0)+(matPrices.delivery_per_pack_uah||0)+(matPrices.promo_per_pack_uah||0), c20y.totalCost)
-    + mkBreakItem("Інше "+(matPrices.misc_pct||3)+"%", c20y.miscCost, c20y.totalCost)
+    + mkBreakItem("Накладні витрати", c20y.overheadFixed + c20y.miscCost, c20y.totalCost)
     + '</div></div>';
 
   document.getElementById("cogs-result-table").innerHTML = rhtml;
