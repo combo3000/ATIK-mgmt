@@ -452,7 +452,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
           <option value="sticks">Палички — сировина (кг)</option>
           <option value="tubes">Тубуси (шт)</option>
           <option value="labels">Наліпки / Етикетки (шт)</option>
-          <option value="inserts">Вкладиші / Папір (шт)</option>
           <option value="stands">Підставки (шт)</option>
         </select>
       </div>
@@ -850,11 +849,11 @@ const DEFAULT_BUYERS=[
 // BOM — "recipe" for each finished product group
 // sticks per pack | tube per pack | label per pack
 const BOM={
-  tube20:  {sticks:20, tubes:1, labels:1, inserts:1},
-  tube40:  {sticks:40, tubes:1, labels:1, inserts:1},
-  refill:  {sticks:20, tubes:0, labels:1, inserts:0}, // refil uses only label
-  stand:   {sticks:0,  tubes:0, labels:1, inserts:0},
-  other:   {sticks:0,  tubes:0, labels:0, inserts:0},
+  tube20:  {sticks:20, tubes:1, labels:1},
+  tube40:  {sticks:40, tubes:1, labels:1},
+  refill:  {sticks:20, tubes:0, labels:1},
+  stand:   {sticks:0,  tubes:0, labels:1},
+  other:   {sticks:0,  tubes:0, labels:0},
 };
 
 // ============================================================
@@ -864,7 +863,7 @@ var products=[], buyers=[], journal=[], settings={autoincrement:true};
 // warehouseStock: {productId: {qty, avgCogs, name}}
 var warehouseStock={};
 // rawStock: {type: {qty, avgCostUah, unit}}
-// types: sticks_yasuhito, sticks_ryo, sticks_hanna, tubes, labels, inserts
+// types: sticks_yasuhito, sticks_ryo, sticks_hanna, tubes, labels, stands
 var rawStock={};
 // receiveHistory: [{id,date,type,qty,note,...}]
 var receiveHistory=[];
@@ -1837,7 +1836,6 @@ function onRecvTypeChange(){
     si.textContent="💡 1 кг ≈ 465 паличок. Вводьте кг — автоматично перерахується в палички.";}
   if(t==="tubes"){ql.textContent="Кількість (шт)";si.style.display="none";}
   if(t==="labels"){ql.textContent="Кількість (шт)";si.style.display="none";}
-  if(t==="inserts"){ql.textContent="Кількість (шт)";si.style.display="none";}
   if(t==="stands"){ql.textContent="Кількість (шт)";si.style.display="none";}
 }
 
@@ -1873,7 +1871,6 @@ function receiveGoods(){
       sticks=Math.round(rawQty*465);
     } else if(t==="tubes")  {rawKey="tubes";  unit="шт";}
     else if(t==="labels")   {rawKey="labels"; unit="шт";}
-    else if(t==="inserts")  {rawKey="inserts";unit="шт";}
     else if(t==="stands")   {rawKey="stands"; unit="шт";}
 
     var totalCostUah=rawPrice*rate*rawQty+delivery; // approximate total UAH
@@ -1905,9 +1902,8 @@ function updateAssemblePreview(){
   var p=products.find(function(x){return x.id===pid;});
   var bom=BOM[p&&p.group||"other"]||BOM.other;
   var stikesNeeded=bom.sticks*qty;
-  var tubsNeeded=bom.tubes*qty;
-  var labsNeeded=bom.labels*qty;
-  var insertsNeeded=bom.inserts*qty;
+  var tubsNeeded=(bom.tubes||0)*qty;
+  var labsNeeded=(bom.labels||0)*qty;
   // Sum sticks across all suppliers
   var totalSticksKg=["yasuhito","ryo","hanna"].reduce(function(s,sup){return s+getRawQty("sticks_"+sup);},0);
   var totalSticks=["yasuhito","ryo","hanna"].reduce(function(s,sup){
@@ -1915,16 +1911,13 @@ function updateAssemblePreview(){
   },0);
   var tubsAvail=getRawQty("tubes");
   var labsAvail=getRawQty("labels");
-  var insertsAvail=getRawQty("inserts");
   var ok=totalSticks>=stikesNeeded
     &&(tubsNeeded===0||tubsAvail>=tubsNeeded)
-    &&labsAvail>=labsNeeded
-    &&(insertsNeeded===0||insertsAvail>=insertsNeeded);
+    &&labsAvail>=labsNeeded;
   var parts=[];
   if(stikesNeeded)parts.push("паличок: "+stikesNeeded+" (є: "+totalSticks+")");
   if(tubsNeeded)  parts.push("тубусів: "+tubsNeeded+" (є: "+tubsAvail+")");
   if(labsNeeded)  parts.push("наліпок: "+labsNeeded+" (є: "+labsAvail+")");
-  if(insertsNeeded)parts.push("вкладишів: "+insertsNeeded+" (є: "+insertsAvail+")");
   prev.textContent="Потрібно: "+parts.join(" · ")+(ok?" ✅ Достатньо":" ⚠️ Нестача матеріалів");
   prev.style.borderColor=ok?"var(--moss3)":"var(--gold)";
 }
@@ -1941,7 +1934,6 @@ function assembleBatch(){
   var stikesNeeded=bom.sticks*qty;
   var tubsNeeded=(bom.tubes||0)*qty;
   var labsNeeded=(bom.labels||0)*qty;
-  var insertsNeeded=(bom.inserts||0)*qty;
 
   // deduct sticks raw across suppliers (FIFO: yasuhito first)
   var suppliers=["yasuhito","ryo","hanna"];
@@ -1961,7 +1953,6 @@ function assembleBatch(){
   });
   if(rawStock.tubes)  rawStock.tubes.qty  =Math.max(0,(rawStock.tubes.qty||0)-tubsNeeded);
   if(rawStock.labels) rawStock.labels.qty =Math.max(0,(rawStock.labels.qty||0)-labsNeeded);
-  if(rawStock.inserts)rawStock.inserts.qty=Math.max(0,(rawStock.inserts.qty||0)-insertsNeeded);
 
   // COGS from matPrices (live, not from rawStock averages)
   var mp=matPrices; var mp0=DEFAULT_MAT_PRICES;
@@ -1970,9 +1961,10 @@ function assembleBatch(){
   var stickCost=(bom.sticks||0)*(pricePerKg/sticksPerKg);
   var tubeCost =(bom.tubes||0)*(mp.tube_uah||mp0.tube_uah);
   var labelCost=(bom.labels||0)*(mp.label_uah||mp0.label_uah);
-  var insertCost=(bom.inserts||0)*(mp.insert_uah||mp0.insert_uah);
   var overhead=(mp.labor_uah||mp0.labor_uah)+(mp.delivery_per_pack_uah||mp0.delivery_per_pack_uah)+(mp.promo_per_pack_uah||mp0.promo_per_pack_uah);
-  var cogsPerPack=stickCost+tubeCost+labelCost+insertCost+overhead;
+  var subtotal=stickCost+tubeCost+labelCost+overhead;
+  var miscCost=subtotal*((mp.misc_pct||mp0.misc_pct||3)/100);
+  var cogsPerPack=subtotal+miscCost;
 
   // Add to warehouse
   if(!warehouseStock[pid])warehouseStock[pid]={qty:0,avgCogs:0,name:p.name};
@@ -2029,7 +2021,6 @@ function renderRawMaterials(){
     {key:"sticks_hanna",    icon:"🌿", name:"Палички — Asayu (Hanna)",        sub:"Japan · ~490 шт/кг",               unitKey:"кг", minLow:2,   minOk:5,   isSticks:true},
     {key:"tubes",           icon:"🧪", name:"Тубуси",                        sub:"Упаковка для паличок",              unitKey:"шт", minLow:200, minOk:500, isSticks:false},
     {key:"labels",          icon:"🏷", name:"Наліпки / Етикетки",            sub:"На кожну пачку — 1 шт",             unitKey:"шт", minLow:200, minOk:500, isSticks:false},
-    {key:"inserts",         icon:"📄", name:"Вкладиші / Папір",              sub:"Внутрішнє пакування",               unitKey:"шт", minLow:200, minOk:500, isSticks:false},
   ];
 
   var html='<div class="raw-grid">';
@@ -2831,21 +2822,20 @@ var DEFAULT_MAT_PRICES = {
   sticks_per_kg_hanna: 8652, // ~$210 × 41.2
   tube_uah: 29,              // per piece
   label_uah: 2.5,            // per piece
-  insert_uah: 1.5,           // paper insert per piece
-  box_uah: 0,                // outer box/wrap if any
-  labor_uah: 5,              // assembly labor per pack
-  delivery_per_pack_uah: 4,  // NovaPoshta avg per pack
+  labor_uah: 10,             // assembly labor per pack
+  delivery_per_pack_uah: 4,  // delivery avg per pack
   promo_per_pack_uah: 16,    // marketing amortized per pack
+  misc_pct: 3,               // miscellaneous overhead %
 };
 
 // Default BOM — units of material per 1 finished pack
 // sticks = number of sticks (not kg)
 var DEFAULT_BOM = {
-  tube20:  { sticks:20, tubes:1, labels:1, inserts:1, boxes:0 },
-  tube40:  { sticks:40, tubes:1, labels:1, inserts:1, boxes:0 },
-  refill:  { sticks:20, tubes:0, labels:1, inserts:0, boxes:0 },
-  stand:   { sticks:0,  tubes:0, labels:1, inserts:0, boxes:0 },
-  other:   { sticks:0,  tubes:0, labels:0, inserts:0, boxes:0 },
+  tube20:  { sticks:20, tubes:1, labels:1 },
+  tube40:  { sticks:40, tubes:1, labels:1 },
+  refill:  { sticks:20, tubes:0, labels:1 },
+  stand:   { sticks:0,  tubes:0, labels:1 },
+  other:   { sticks:0,  tubes:0, labels:0 },
 };
 
 var matPrices = {};
@@ -2869,16 +2859,15 @@ function saveCogsPrices() {
 
 // ── Material fields definition ───────────────────────────────
 var MAT_FIELDS = [
-  { key:"sticks_per_kg_uah",      label:"Палички — B-Faith/Yasuhito",  unit:"₴/кг",    hint:"ціна × курс + доставка"},
-  { key:"sticks_per_kg_ryo",      label:"Палички — Awaji Encens (Ryo)", unit:"₴/кг",    hint:""},
-  { key:"sticks_per_kg_hanna",    label:"Палички — Asayu (Hanna)",      unit:"₴/кг",    hint:""},
-  { key:"tube_uah",               label:"Тубус",                       unit:"₴/шт",    hint:"1 тубус на пачку"},
-  { key:"label_uah",              label:"Наліпка / Етикетка",          unit:"₴/шт",    hint:"1 на пачку"},
-  { key:"insert_uah",             label:"Вкладиш / Папір",             unit:"₴/шт",    hint:"1 на пачку"},
-  { key:"box_uah",                label:"Зовнішня коробка",             unit:"₴/шт",    hint:"0 якщо не використовується"},
-  { key:"labor_uah",              label:"Праця (збірка)",               unit:"₴/пачку", hint:""},
-  { key:"delivery_per_pack_uah",  label:"Нова Пошта",                   unit:"₴/пачку", hint:"середня на 1 пачку"},
-  { key:"promo_per_pack_uah",     label:"Маркетинг / Промо",            unit:"₴/пачку", hint:"бюджет ÷ обсяг"},
+  { key:"sticks_per_kg_uah",      label:"Палички — B-Faith/Yasuhito",  unit:"₴/кг",    hint:"ціна × курс + доставка", cat:"Палички"},
+  { key:"sticks_per_kg_ryo",      label:"Палички — Awaji Encens (Ryo)", unit:"₴/кг",    hint:"", cat:"Палички"},
+  { key:"sticks_per_kg_hanna",    label:"Палички — Asayu (Hanna)",      unit:"₴/кг",    hint:"", cat:"Палички"},
+  { key:"tube_uah",               label:"Тубус",                       unit:"₴/шт",    hint:"1 тубус на пачку", cat:"Тубуси"},
+  { key:"label_uah",              label:"Наліпка / Етикетка",          unit:"₴/шт",    hint:"1 на пачку", cat:"Наліпки"},
+  { key:"labor_uah",              label:"Робота (збірка)",              unit:"₴/пачку", hint:"фікс за 1 тубус", cat:"Витрати"},
+  { key:"delivery_per_pack_uah",  label:"Доставка",                    unit:"₴/пачку", hint:"середня на 1 пачку", cat:"Витрати"},
+  { key:"promo_per_pack_uah",     label:"Промо / Реклама",             unit:"₴/пачку", hint:"бюджет ÷ обсяг", cat:"Витрати"},
+  { key:"misc_pct",               label:"Інше (накладні витрати)",      unit:"%",       hint:"% від суми всього вище", cat:"Витрати"},
 ];
 
 // BOM group display
@@ -2892,8 +2881,6 @@ var BOM_ROWS = [
   { key:"sticks", label:"Палички",   unit:"шт/пачку" },
   { key:"tubes",  label:"Тубуси",  unit:"шт/пачку" },
   { key:"labels", label:"Наліпки", unit:"шт/пачку" },
-  { key:"inserts",label:"Вкладиші",unit:"шт/пачку" },
-  { key:"boxes",  label:"Коробки", unit:"шт/пачку" },
 ];
 
 function calcCogsForGroup(group, supplierKey) {
@@ -2905,31 +2892,43 @@ function calcCogsForGroup(group, supplierKey) {
   var stickCost   = (bom.sticks || 0) * pricePerStick;
   var tubeCost    = (bom.tubes   || 0) * (mp.tube_uah   || 0);
   var labelCost   = (bom.labels  || 0) * (mp.label_uah  || 0);
-  var insertCost  = (bom.inserts || 0) * (mp.insert_uah || 0);
-  var boxCost     = (bom.boxes   || 0) * (mp.box_uah    || 0);
-  var materialCost = stickCost + tubeCost + labelCost + insertCost + boxCost;
-  var totalCost    = materialCost + (mp.labor_uah || 0) + (mp.delivery_per_pack_uah || 0) + (mp.promo_per_pack_uah || 0);
+  var materialCost = stickCost + tubeCost + labelCost;
+  var overheadFixed = (mp.labor_uah || 0) + (mp.delivery_per_pack_uah || 0) + (mp.promo_per_pack_uah || 0);
+  var subtotal = materialCost + overheadFixed;
+  var miscPct  = (mp.misc_pct || 0) / 100;
+  var miscCost = subtotal * miscPct;
+  var totalCost = subtotal + miscCost;
   return { stickCost:stickCost, tubeCost:tubeCost, labelCost:labelCost,
-    insertCost:insertCost, boxCost:boxCost, materialCost:materialCost, totalCost:totalCost };
+    materialCost:materialCost, overheadFixed:overheadFixed, miscCost:miscCost, totalCost:totalCost };
 }
 
 function renderCogs() {
   loadCogsPrices();
 
-  // ── Material price input form ────────────────────────────
-  var fhtml = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px">';
+  // ── Material price input form (grouped by category) ────────
+  var cats = [];
+  var catMap = {};
   MAT_FIELDS.forEach(function(f) {
-    var val = matPrices[f.key] != null ? matPrices[f.key] : DEFAULT_MAT_PRICES[f.key];
-    fhtml += '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);padding:12px">'
-      + '<div style="font-weight:700;font-size:12px;color:var(--ink);margin-bottom:2px">' + esc(f.label) + '</div>'
-      + '<div style="font-size:11px;color:var(--ink4);margin-bottom:6px">' + esc(f.hint || f.unit) + '</div>'
-      + '<div style="display:flex;align-items:center;gap:6px">'
-      + '<input type="number" min="0" step="0.01" id="mp_' + f.key + '" value="' + val + '" '
-      + 'style="flex:1;padding:7px 10px;font-weight:700;font-size:14px;color:var(--pine)" oninput="onMatPriceChange()">'
-      + '<span style="color:var(--ink4);font-size:12px;white-space:nowrap">' + esc(f.unit) + '</span>'
-      + '</div></div>';
+    if(!catMap[f.cat]) { catMap[f.cat] = []; cats.push(f.cat); }
+    catMap[f.cat].push(f);
   });
-  fhtml += '</div>';
+  var fhtml = '';
+  cats.forEach(function(cat) {
+    fhtml += '<div style="margin-bottom:14px"><div style="font-weight:700;font-size:13px;color:var(--pine);margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px">' + esc(cat) + '</div>';
+    fhtml += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px">';
+    catMap[cat].forEach(function(f) {
+      var val = matPrices[f.key] != null ? matPrices[f.key] : DEFAULT_MAT_PRICES[f.key];
+      fhtml += '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);padding:12px">'
+        + '<div style="font-weight:700;font-size:12px;color:var(--ink);margin-bottom:2px">' + esc(f.label) + '</div>'
+        + '<div style="font-size:11px;color:var(--ink4);margin-bottom:6px">' + esc(f.hint || f.unit) + '</div>'
+        + '<div style="display:flex;align-items:center;gap:6px">'
+        + '<input type="number" min="0" step="0.01" id="mp_' + f.key + '" value="' + val + '" '
+        + 'style="flex:1;padding:7px 10px;font-weight:700;font-size:14px;color:var(--pine)" oninput="onMatPriceChange()">'
+        + '<span style="color:var(--ink4);font-size:12px;white-space:nowrap">' + esc(f.unit) + '</span>'
+        + '</div></div>';
+    });
+    fhtml += '</div></div>';
+  });
   document.getElementById("cogs-materials-form").innerHTML = fhtml;
 
   // ── BOM table ────────────────────────────────────────────
@@ -3008,7 +3007,8 @@ function renderCogsResult() {
     + '<table class="inv-table" style="min-width:600px"><thead><tr>'
     + '<th>Продукт</th>'
     + '<th style="text-align:right">Матеріали (₴)</th>'
-    + '<th style="text-align:right">+ Праця+доставка+промо</th>'
+    + '<th style="text-align:right">+ Робота+дост.+промо</th>'
+    + '<th style="text-align:right">+ Інше '+((matPrices.misc_pct||3))+'%</th>'
     + '<th style="text-align:right;font-weight:700">COGS разом (₴)</th>'
     + '<th style="text-align:right">Ціна полиці (₴)</th>'
     + '<th style="text-align:right">Маржа (₴)</th>'
@@ -3016,6 +3016,7 @@ function renderCogsResult() {
     + '</tr></thead><tbody>';
 
   var overheadPerPack = (matPrices.labor_uah||0) + (matPrices.delivery_per_pack_uah||0) + (matPrices.promo_per_pack_uah||0);
+  var miscPct = (matPrices.misc_pct||0) / 100;
 
   BOM_GROUPS.forEach(function(g) {
     suppliers.forEach(function(s, si) {
@@ -3030,6 +3031,7 @@ function renderCogsResult() {
         + ' <span style="font-size:11px;color:var(--ink4)">/ ' + esc(s.label) + '</span></td>'
         + '<td style="text-align:right">' + c.materialCost.toFixed(2) + '</td>'
         + '<td style="text-align:right;color:var(--ink4)">' + overheadPerPack.toFixed(2) + '</td>'
+        + '<td style="text-align:right;color:var(--ink4)">' + c.miscCost.toFixed(2) + '</td>'
         + '<td style="text-align:right;font-weight:700;color:var(--pine)">' + c.totalCost.toFixed(2) + '</td>'
         + '<td style="text-align:right">' + gp.shelf + '</td>'
         + '<td style="text-align:right;font-weight:700;color:' + marginCol + '">' + margin.toFixed(2) + '</td>'
@@ -3051,8 +3053,8 @@ function renderCogsResult() {
     + mkBreakItem("Палички", c20y.stickCost, c20y.totalCost)
     + mkBreakItem("Тубус", c20y.tubeCost, c20y.totalCost)
     + mkBreakItem("Наліпка", c20y.labelCost, c20y.totalCost)
-    + mkBreakItem("Вкладиш", c20y.insertCost, c20y.totalCost)
-    + mkBreakItem("Праця+дост.+промо", (matPrices.labor_uah||0)+(matPrices.delivery_per_pack_uah||0)+(matPrices.promo_per_pack_uah||0), c20y.totalCost)
+    + mkBreakItem("Робота+дост.+промо", (matPrices.labor_uah||0)+(matPrices.delivery_per_pack_uah||0)+(matPrices.promo_per_pack_uah||0), c20y.totalCost)
+    + mkBreakItem("Інше "+(matPrices.misc_pct||3)+"%", c20y.miscCost, c20y.totalCost)
     + '</div></div>';
 
   document.getElementById("cogs-result-table").innerHTML = rhtml;
