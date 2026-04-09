@@ -184,13 +184,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 .stat-sub{font-size:11px;color:var(--ink3);margin-top:2px}
 .bar-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);
   padding:14px 16px;margin-bottom:12px}
-.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:12px}
-.bar-label{min-width:150px;max-width:200px;white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis;color:var(--ink2)}
-.bar-bg{flex:1;background:var(--surface3);border-radius:4px;height:12px;overflow:hidden}
+.bar-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px}
+.bar-label{min-width:100px;max-width:180px;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;color:var(--ink2);flex-shrink:0}
+.bar-bg{flex:1;background:var(--surface3);border-radius:4px;height:12px;overflow:hidden;min-width:60px}
 .bar-fill{height:100%;background:linear-gradient(90deg,var(--pine),var(--moss2));
   border-radius:4px;transition:width .6s cubic-bezier(.4,0,.2,1)}
-.bar-val{min-width:72px;text-align:right;font-weight:600;color:var(--pine)}
+.bar-val{min-width:68px;text-align:right;font-weight:600;color:var(--pine);flex-shrink:0}
 
 /* ── MANAGE LISTS ─────────────────────────────────────────── */
 .manage-list{border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:12px}
@@ -1110,6 +1110,16 @@ function getItemPrice(item){
 function getTotal(){return items.filter(function(i){return i.productId&&i.qty>0;}).reduce(function(s,i){return s+getItemPrice(i)*i.qty;},0);}
 function getWHQty(pid){return (warehouseStock[pid]&&warehouseStock[pid].qty)||0;}
 function getWHCogs(pid){return (warehouseStock[pid]&&warehouseStock[pid].avgCogs)||0;}
+function getEstItemCogs(it){
+  // Returns COGS per unit for a journal item: use recorded cogs, then warehouse avg, then BOM estimate
+  if(it.cogs && it.cogs > 0) return it.cogs;
+  var whCogs = getWHCogs(it.id);
+  if(whCogs > 0) return whCogs;
+  var p = products.find(function(x){ return x.id === it.id; });
+  if(!p) return 0;
+  var c = calcCogsForGroup(p.group||"other", "sticks_per_kg_uah");
+  return c.totalCost;
+}
 function getRawQty(type){return (rawStock[type]&&rawStock[type].qty)||0;}
 
 function numberToWords(n){
@@ -2252,14 +2262,14 @@ function renderDashboard(){
   var totalWHQty=Object.keys(warehouseStock).reduce(function(s,k){return s+warehouseStock[k].qty;},0);
   var lowStock=Object.keys(warehouseStock).filter(function(k){return warehouseStock[k].qty>0&&warehouseStock[k].qty<10;}).length;
   var zeroStock=Object.keys(warehouseStock).filter(function(k){return warehouseStock[k].qty===0;}).length;
-  var totalCogs=thisMonth.reduce(function(s,j){return s+j.items.reduce(function(ss,it){return ss+(it.cogs||0)*it.qty;},0);},0);
+  var totalCogs=thisMonth.reduce(function(s,j){return s+j.items.reduce(function(ss,it){return ss+getEstItemCogs(it)*it.qty;},0);},0);
   var grossMargin=revenue>0?((revenue-totalCogs)/revenue*100).toFixed(1):"—";
 
   var unitsSold=thisMonth.reduce(function(s,j){return s+j.items.reduce(function(ss,it){return ss+it.qty;},0);},0);
   var unitsPrev=prevMonth.reduce(function(s,j){return s+j.items.reduce(function(ss,it){return ss+it.qty;},0);},0);
   var unitsChange=unitsPrev>0?((unitsSold-unitsPrev)/unitsPrev*100).toFixed(0):"—";
   var profit=revenue-totalCogs;
-  var profitPrev=revPrev-(prevMonth.reduce(function(s,j){return s+j.items.reduce(function(ss,it){return ss+(it.cogs||0)*it.qty;},0);},0));
+  var profitPrev=revPrev-(prevMonth.reduce(function(s,j){return s+j.items.reduce(function(ss,it){return ss+getEstItemCogs(it)*it.qty;},0);},0));
   var profitChange=profitPrev>0?((profit-profitPrev)/profitPrev*100).toFixed(0):"—";
 
   document.getElementById("dash-kpi").innerHTML=[
