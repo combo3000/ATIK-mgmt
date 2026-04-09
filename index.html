@@ -457,12 +457,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       </div>
       <div class="field" id="recv-supplier-wrap">
         <label>Постачальник</label>
-        <select id="recv-supplier">
-          <option value="yasuhito">B-Faith (Yasuhito)</option>
-          <option value="ryo">Awaji Encens (Ryo)</option>
-          <option value="hanna">Asayu (Hanna)</option>
-          <option value="other">Інший</option>
-        </select>
+        <select id="recv-supplier"></select>
       </div>
     </div>
     <div id="recv-finished-fields">
@@ -536,7 +531,10 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
       <div class="card-title" style="margin:0">🏪 Залишки на точках роздрібу</div>
-      <button class="btn btn-moss btn-sm" onclick="openSalesReportModal()">✏️ Ввести продажі</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-moss btn-sm" onclick="openSalesReportModal()">✏️ Ввести продажі</button>
+        <button class="btn btn-gray btn-sm" onclick="openAddRetailModal()">+ Додати точку</button>
+      </div>
     </div>
     <div id="retail-store-grid"></div>
   </div>
@@ -676,6 +674,12 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <label class="radio-label" style="margin-bottom:14px">
       <input type="checkbox" id="setting-autoincrement" style="width:auto;margin-right:4px"> Автоматично збільшувати номер накладної
     </label>
+    <div class="section-divider">Постачальники сировини</div>
+    <div class="manage-list" id="suppliers-list" style="margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <input id="new-supplier-name" placeholder="Назва нового постачальника" style="flex:1">
+      <button class="btn btn-moss btn-sm" onclick="addSupplier()">+ Додати</button>
+    </div>
     <div class="section-divider">Дані</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn btn-moss btn-sm" onclick="exportBackup()">💾 Резервна копія</button>
@@ -873,6 +877,12 @@ var receiveHistory=[];
 var retailStock={};
 // salesReports: [{id,buyerId,buyerName,month,items,savedAt}]
 var salesReports=[];
+// suppliers: [{id, name, sticks: [{aroma, priceUsdKg}]}]
+var suppliers=[
+  {id:"yasuhito", name:"B-Faith (Yasuhito)", custom:false},
+  {id:"ryo",      name:"Awaji Encens (Ryo)", custom:false},
+  {id:"hanna",    name:"Asayu (Hanna)",      custom:false},
+];
 var generated=null, currentJournalItem=null;
 var items=[{id:Date.now(),productId:"",qty:1,customPrice:""}];
 
@@ -896,6 +906,7 @@ function load(){
     var sh=localStorage.getItem("atik5_recv");     if(sh) receiveHistory=JSON.parse(sh);
     var srt=localStorage.getItem("atik5_retail");  if(srt) retailStock=JSON.parse(srt);
     var srp=localStorage.getItem("atik5_salesrep");if(srp) salesReports=JSON.parse(srp);
+    var ssu=localStorage.getItem("atik5_suppliers");if(ssu) suppliers=JSON.parse(ssu);
     DEFAULT_BUYERS.forEach(function(d){if(!buyers.find(function(x){return x.id===d.id;})) buyers.push(Object.assign({},d));});
     DEFAULT_PRODUCTS.forEach(function(d){if(!products.find(function(x){return x.id===d.id;})) products.push(Object.assign({},d));});
   }catch(e){
@@ -915,6 +926,7 @@ function save(){
   localStorage.setItem("atik5_recv",JSON.stringify(receiveHistory));
   localStorage.setItem("atik5_retail",JSON.stringify(retailStock));
   localStorage.setItem("atik5_salesrep",JSON.stringify(salesReports));
+  localStorage.setItem("atik5_suppliers",JSON.stringify(suppliers));
   scheduleCloudPush();
 }
 
@@ -937,6 +949,7 @@ function applyAppState(data){
   receiveHistory=data.receiveHistory||[];
   retailStock=data.retailStock||{};
   salesReports=data.salesReports||[];
+  if(data.suppliers)suppliers=data.suppliers;
   DEFAULT_BUYERS.forEach(function(d){if(!buyers.find(function(x){return x.id===d.id;})) buyers.push(Object.assign({},d));});
   DEFAULT_PRODUCTS.forEach(function(d){if(!products.find(function(x){return x.id===d.id;})) products.push(Object.assign({},d));});
 }
@@ -1198,7 +1211,7 @@ function switchTab(tab){
   if(tab==="products")   renderProductsList();
   if(tab==="warehouse")  {renderWarehouse();renderRawMaterials();renderReceiveHistory();renderAssembleSelect();}
   if(tab==="retail")     renderRetailTab();
-  if(tab==="settings")   loadSettings();
+  if(tab==="settings")   {loadSettings();renderSuppliersList();}
   if(tab==="cogs")       renderCogs();
 }
 
@@ -1857,6 +1870,12 @@ function duplicateInvoice(g){
 // ============================================================
 // WAREHOUSE — RECEIVE GOODS
 // ============================================================
+function renderSupplierSelect(){
+  var sel=document.getElementById("recv-supplier");
+  if(!sel)return;
+  sel.innerHTML=suppliers.map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+'</option>';}).join("")
+    +'<option value="other">Інший</option>';
+}
 function onRecvTypeChange(){
   var t=document.getElementById("recv-type").value;
   var ff=document.getElementById("recv-finished-fields");
@@ -2162,7 +2181,8 @@ function renderRetailStoreGrid(){
     var lastJ=null;
     journal.filter(function(j){return j.docType==="invoice"&&j.buyer&&j.buyer.id===b.id;}).forEach(function(j){if(!lastJ||j.invoiceDate>lastJ)lastJ=j.invoiceDate;});
     return '<div class="store-card">'
-      +'<div class="store-card-header"><div class="store-card-name">'+esc(b.retailName||b.name)+'</div>'
+      +'<div class="store-card-header"><div style="display:flex;justify-content:space-between;align-items:center"><div class="store-card-name">'+esc(b.retailName||b.name)+'</div>'
+      +(b.custom?'<button class="btn btn-danger btn-sm" style="padding:1px 6px;font-size:10px" onclick="event.stopPropagation();deleteRetailPoint(\''+b.id+'\')">×</button>':'')+'</div>'
       +'<div style="font-size:11px;opacity:.85">'+totalQty+' шт. на залишку</div></div>'
       +'<div class="store-card-body">'
       +(entries.length?entries.slice(0,8).map(function(k){
@@ -2198,6 +2218,22 @@ function deleteRetailReport(id){
   if(!confirm("Видалити звіт?"))return;
   salesReports=salesReports.filter(function(r){return r.id!==id;});
   save();renderRetailHistory();
+}
+function openAddRetailModal(){
+  var name=prompt("Назва точки роздрібу (як буде на картці):");
+  if(!name)return;
+  var fullName=prompt("Повна назва (ФОП або ТОВ):")||name;
+  var receiver=prompt("ПІБ отримувача:")||name;
+  buyers.push({id:uid(),name:name,fullName:fullName,receiver:receiver,
+    iban:null,edrpou:null,bank:null,address:null,contract:null,
+    isRetail:true,retailName:name,custom:true});
+  save();renderRetailTab();renderBuyerSelect();
+}
+function deleteRetailPoint(buyerId){
+  if(!confirm("Видалити цю точку роздрібу?"))return;
+  buyers=buyers.filter(function(b){return b.id!==buyerId;});
+  if(retailStock[buyerId])delete retailStock[buyerId];
+  save();renderRetailTab();renderBuyerSelect();
 }
 
 // ============================================================
@@ -2596,6 +2632,32 @@ function deleteBuyer(id){
 }
 
 // ============================================================
+// SUPPLIERS MANAGE
+// ============================================================
+function renderSuppliersList(){
+  var el=document.getElementById("suppliers-list");
+  if(!el)return;
+  el.innerHTML=suppliers.map(function(s){
+    return '<div class="manage-item">'
+      +'<div class="manage-item-info"><div class="manage-item-name">'+esc(s.name)+(s.custom?'<span class="tag tag-custom">власний</span>':"")+'</div></div>'
+      +(s.custom?'<button class="btn btn-danger btn-sm" onclick="deleteSupplier(\''+s.id+'\')">×</button>':"")
+      +'</div>';
+  }).join("")||'<div style="color:var(--ink4);font-size:12px">Немає постачальників</div>';
+}
+function addSupplier(){
+  var name=document.getElementById("new-supplier-name").value.trim();
+  if(!name){alert("Введіть назву постачальника");return;}
+  suppliers.push({id:uid(),name:name,custom:true});
+  document.getElementById("new-supplier-name").value="";
+  save();renderSuppliersList();renderSupplierSelect();
+}
+function deleteSupplier(id){
+  if(!confirm("Видалити постачальника?"))return;
+  suppliers=suppliers.filter(function(s){return s.id!==id;});
+  save();renderSuppliersList();renderSupplierSelect();
+}
+
+// ============================================================
 // PRODUCTS MANAGE
 // ============================================================
 function renderProductsList(){
@@ -2646,7 +2708,7 @@ document.addEventListener("change",function(e){if(e.target.id==="setting-autoinc
 function exportBackup(){
   var data={products:products,buyers:buyers,journal:journal,settings:settings,
     warehouseStock:warehouseStock,rawStock:rawStock,receiveHistory:receiveHistory,
-    retailStock:retailStock,salesReports:salesReports,exportedAt:new Date().toISOString(),version:"5.0"};
+    retailStock:retailStock,salesReports:salesReports,suppliers:suppliers,exportedAt:new Date().toISOString(),version:"5.0"};
   var blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   var url=URL.createObjectURL(blob);
   var a=document.createElement("a");a.href=url;
@@ -2668,6 +2730,7 @@ function importBackup(input){
       if(data.receiveHistory)receiveHistory=data.receiveHistory;
       if(data.retailStock)retailStock=data.retailStock;
       if(data.salesReports)salesReports=data.salesReports;
+      if(data.suppliers)suppliers=data.suppliers;
       save();location.reload();
     }catch(err){alert("Помилка: "+err.message);}
   };
@@ -2728,7 +2791,8 @@ function convertV4BackupToV5(data){
     rawStock: deepClone(rawStock),
     receiveHistory: deepClone(receiveHistory),
     retailStock: deepClone(retailStock),
-    salesReports: deepClone(salesReports)
+    salesReports: deepClone(salesReports),
+    suppliers: deepClone(suppliers)
   };
 
   converted.products = mergeById(converted.products, data.products || []);
@@ -2792,7 +2856,8 @@ function mergeImportBackup(input){
         rawStock: deepClone(rawStock),
         receiveHistory: deepClone(receiveHistory),
         retailStock: deepClone(retailStock),
-        salesReports: deepClone(salesReports)
+        salesReports: deepClone(salesReports),
+        suppliers: deepClone(suppliers)
       };
 
       var merged;
@@ -3115,6 +3180,7 @@ window.addEventListener("DOMContentLoaded",function(){
   document.getElementById("inv-date").value=new Date().toISOString().split("T")[0];
   document.getElementById("recv-date").value=new Date().toISOString().split("T")[0];
   renderBuyerSelect();
+  renderSupplierSelect();
   renderItems();
   // Populate receive product select
   var recvSel=document.getElementById("recv-product");
