@@ -185,7 +185,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 .bar-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);
   padding:14px 16px;margin-bottom:12px}
 .bar-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px}
-.bar-label{min-width:100px;max-width:180px;white-space:nowrap;overflow:hidden;
+.bar-label{width:180px;min-width:180px;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis;color:var(--ink2);flex-shrink:0}
 .bar-bg{flex:1;background:var(--surface3);border-radius:4px;height:12px;overflow:hidden;min-width:60px}
 .bar-fill{height:100%;background:linear-gradient(90deg,var(--pine),var(--moss2));
@@ -1788,6 +1788,18 @@ function openJournalItem(id){
     +'<div style="font-size:12px"><strong>Разом: '+g.total.toLocaleString("uk-UA",{minimumFractionDigits:2})+' грн</strong>'
     +' <span style="color:var(--ink4);font-size:11px">'+esc(g.priceLabel||'')+'</span><br>'
     +'<em style="font-size:11px;color:var(--ink3)">'+esc(g.totalWords)+'</em></div>'
+    +(function(){
+      // Profitability block (internal, not for client)
+      var docCogs=g.items.reduce(function(s,it){return s+getEstItemCogs(it)*it.qty;},0);
+      var docProfit=g.total-docCogs;
+      var docMargin=g.total>0?(docProfit/g.total*100).toFixed(1):"—";
+      var marginCol=parseFloat(docMargin)>=50?"var(--pine)":parseFloat(docMargin)>=30?"var(--cedar)":"var(--red)";
+      return '<div style="margin-top:8px;padding:8px 12px;background:var(--surface2);border-radius:var(--r2);font-size:12px;display:flex;gap:16px;flex-wrap:wrap">'
+        +'<div><span style="color:var(--ink4)">COGS:</span> <strong>'+docCogs.toFixed(0)+' ₴</strong></div>'
+        +'<div><span style="color:var(--ink4)">Прибуток:</span> <strong style="color:'+marginCol+'">'+docProfit.toFixed(0)+' ₴</strong></div>'
+        +'<div><span style="color:var(--ink4)">Маржа:</span> <strong style="color:'+marginCol+'">'+docMargin+'%</strong></div>'
+        +'</div>';
+    })()
     +(function(){
       var st=g.status||"created";
       var badgeText=st==="paid"?"оплачено":st==="shipped"?"відвантажено":"створено";
