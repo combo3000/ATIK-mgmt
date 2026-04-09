@@ -2255,10 +2255,17 @@ function renderDashboard(){
   var totalCogs=thisMonth.reduce(function(s,j){return s+j.items.reduce(function(ss,it){return ss+(it.cogs||0)*it.qty;},0);},0);
   var grossMargin=revenue>0?((revenue-totalCogs)/revenue*100).toFixed(1):"—";
 
+  var unitsSold=thisMonth.reduce(function(s,j){return s+j.items.reduce(function(ss,it){return ss+it.qty;},0);},0);
+  var unitsPrev=prevMonth.reduce(function(s,j){return s+j.items.reduce(function(ss,it){return ss+it.qty;},0);},0);
+  var unitsChange=unitsPrev>0?((unitsSold-unitsPrev)/unitsPrev*100).toFixed(0):"—";
+  var profit=revenue-totalCogs;
+  var profitPrev=revPrev-(prevMonth.reduce(function(s,j){return s+j.items.reduce(function(ss,it){return ss+(it.cogs||0)*it.qty;},0);},0));
+  var profitChange=profitPrev>0?((profit-profitPrev)/profitPrev*100).toFixed(0):"—";
+
   document.getElementById("dash-kpi").innerHTML=[
     {icon:"🌿",val:fmt(revenue)+" ₴",label:"Виручка (місяць)",sub:revChange!=="—"?(revChange>0?"↑ +"+revChange+"% vs попередній":"↓ "+revChange+"% vs попередній"):""}, 
-    {icon:"📦",val:thisMonth.length,label:"Накладних (місяць)",sub:""},
-    {icon:"🏬",val:totalWHQty+" шт.",label:"На складі (готова)",sub:lowStock>0?"⚠️ "+lowStock+" SKU мало":""},
+    {icon:"💰",val:fmt(profit)+" ₴",label:"Прибуток (місяць)",sub:profitChange!=="—"?(profitChange>0?"↑ +"+profitChange+"% vs попередній":"↓ "+profitChange+"% vs попередній"):""},
+    {icon:"📦",val:unitsSold+" шт.",label:"Продано (місяць)",sub:unitsChange!=="—"?(unitsChange>0?"↑ +"+unitsChange+"% vs попередній":"↓ "+unitsChange+"% vs попередній"):""},
     {icon:"📊",val:grossMargin+"%",label:"Маржа (валова)",sub:""},
   ].map(function(k){
     return '<div class="kpi-card"><div class="kpi-icon">'+k.icon+'</div>'
@@ -2273,7 +2280,7 @@ function renderDashboard(){
   filterByPeriod(journal.filter(function(j){return j.docType==="invoice";}), "year").forEach(function(j){
     var k=j.buyer&&j.buyer.name||"—";bmap[k]=(bmap[k]||0)+j.total;
   });
-  var btop=Object.entries(bmap).sort(function(a,b){return b[1]-a[1];}).slice(0,6);
+  var btop=Object.entries(bmap).sort(function(a,b){return b[1]-a[1];}).slice(0,5);
   var bmax=btop[0]?btop[0][1]:1;
   document.getElementById("dash-top-buyers").innerHTML='<div class="card-title">🏅 Топ покупців (рік)</div>'
     +btop.map(function(e){return '<div class="bar-row"><div class="bar-label">'+esc(e[0])+'</div><div class="bar-bg"><div class="bar-fill" style="width:'+((e[1]/bmax)*100).toFixed(1)+'%"></div></div><div class="bar-val">'+fmt(e[1])+' ₴</div></div>';}).join("")
@@ -2284,7 +2291,7 @@ function renderDashboard(){
   filterByPeriod(journal.filter(function(j){return j.docType==="invoice";}), "year").forEach(function(j){
     j.items.forEach(function(it){var k=shortName(it.name);pmap[k]=(pmap[k]||0)+it.qty;});
   });
-  var ptop=Object.entries(pmap).sort(function(a,b){return b[1]-a[1];}).slice(0,8);
+  var ptop=Object.entries(pmap).sort(function(a,b){return b[1]-a[1];}).slice(0,5);
   var pmax=ptop[0]?ptop[0][1]:1;
   document.getElementById("dash-top-products").innerHTML='<div class="card-title">🌿 Топ товарів (рік, шт.)</div>'
     +ptop.map(function(e){return '<div class="bar-row"><div class="bar-label">'+esc(e[0])+'</div><div class="bar-bg"><div class="bar-fill" style="width:'+((e[1]/pmax)*100).toFixed(1)+'%"></div></div><div class="bar-val">'+e[1]+' шт.</div></div>';}).join("")
