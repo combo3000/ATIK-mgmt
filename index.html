@@ -1206,7 +1206,7 @@ function getEstItemCogs(it){
   if(whCogs > 0) return whCogs;
   var p = products.find(function(x){ return x.id === it.id; });
   if(!p) return 0;
-  var c = calcCogsForGroup(p.group||"other", "sticks_per_kg_uah");
+  var c = calcCogsForProduct(it.id);
   return c.totalCost;
 }
 function getRawQty(type){return (rawStock[type]&&rawStock[type].qty)||0;}
@@ -2136,10 +2136,11 @@ function assembleBatch(){
   if(rawStock.tubes)  rawStock.tubes.qty  =Math.max(0,(rawStock.tubes.qty||0)-tubsNeeded);
   if(rawStock.labels) rawStock.labels.qty =Math.max(0,(rawStock.labels.qty||0)-labsNeeded);
 
-  // COGS from matPrices (live, not from rawStock averages)
+  // COGS from matPrices (live, using aroma-specific price)
   var mp=matPrices; var mp0=DEFAULT_MAT_PRICES;
   var sticksPerKg=2000;
-  var pricePerKg=mp.sticks_per_kg_uah||mp0.sticks_per_kg_uah;
+  var aromaKey=aromaId?"aroma_"+aromaId:"aroma_osmanthus";
+  var pricePerKg=mp[aromaKey]||mp0[aromaKey]||mp0.aroma_osmanthus||0;
   var stickCost=(bom.sticks||0)*(pricePerKg/sticksPerKg);
   var tubeCost =(bom.tubes||0)*(mp.tube_uah||mp0.tube_uah);
   var labelCost=(bom.labels||0)*(mp.label_uah||mp0.label_uah);
@@ -2552,7 +2553,7 @@ function renderStats(){
       j.items.forEach(function(it){
         var p = products.find(function(x){ return x.id === it.id; });
         if(!p) return;
-        var c = calcCogsForGroup(p.group||"other", "sticks_per_kg_uah");
+        var c = calcCogsForProduct(it.id);
         cogsTotal += c.totalCost * it.qty;
       });
     });
@@ -2648,7 +2649,7 @@ function renderStats(){
   list.forEach(function(j){
     j.items.forEach(function(it){
       var k = shortName(it.name);
-      if(!pmap[k]) pmap[k] = {rev:0, cogs:0, qty:0, group: (products.find(function(x){return x.id===it.id;})||{}).group||"other"};
+      if(!pmap[k]) pmap[k] = {rev:0, cogs:0, qty:0, pid:it.id, group: (products.find(function(x){return x.id===it.id;})||{}).group||"other"};
       pmap[k].rev  += it.sum;
       pmap[k].cogs += (it.cogs||0) * it.qty;
       pmap[k].qty  += it.qty;
@@ -2657,7 +2658,7 @@ function renderStats(){
   // Fill in estimated COGS for items with 0 cogs
   Object.keys(pmap).forEach(function(k){
     if(pmap[k].cogs === 0 && pmap[k].qty > 0){
-      var c = calcCogsForGroup(pmap[k].group, "sticks_per_kg_uah");
+      var c = calcCogsForProduct(pmap[k].pid);
       pmap[k].cogs = c.totalCost * pmap[k].qty;
     }
   });
@@ -3113,10 +3114,25 @@ var LOGO_B64="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZEAAAEhCAYAAAC+650i
 // ============================================================
 
 // Default material prices (UAH per unit) — user can edit and save
+// Aroma prices: ₴/кг per aroma (derived from supplier price × rate)
 var DEFAULT_MAT_PRICES = {
-  sticks_per_kg_uah: 2852,   // ~$68.5 × 41.6 UAH/$ (B-Faith avg)
-  sticks_per_kg_ryo: 9571,   // ~$232 × 41.2
-  sticks_per_kg_hanna: 8652, // ~$210 × 41.2
+  // B-Faith aromas (~$68.5 × 41.6)
+  aroma_osmanthus:   2852,
+  aroma_cherry:      2852,
+  aroma_sandalwood:  2852,
+  aroma_camphor:     2852,
+  // Daiwa Co aromas (~$232 × 41.2)
+  aroma_hydrangea:   9571,
+  aroma_blacksandal: 9571,
+  aroma_musk:        9571,
+  aroma_frankincense:9571,
+  // Nippon Paper Trading aromas (ціну потрібно уточнити)
+  aroma_temple:      4000,
+  aroma_honeysandal: 4000,
+  // Asayu aromas (~$210 × 41.2)
+  aroma_gardentree:  8652,
+  aroma_agarwood:    8652,
+  // non-stick materials
   tube_uah: 29,              // per piece
   label_uah: 2.5,            // per piece
   labor_uah: 10,             // assembly labor per pack
@@ -3142,6 +3158,23 @@ function loadCogsPrices() {
   try {
     var mp = localStorage.getItem("atik5_matprices");
     matPrices = mp ? JSON.parse(mp) : JSON.parse(JSON.stringify(DEFAULT_MAT_PRICES));
+    // Migrate old supplier keys → aroma keys if present
+    if(matPrices.sticks_per_kg_uah && !matPrices.aroma_osmanthus){
+      var y=matPrices.sticks_per_kg_uah;
+      ["osmanthus","cherry","sandalwood","camphor"].forEach(function(a){matPrices["aroma_"+a]=y;});
+    }
+    if(matPrices.sticks_per_kg_ryo && !matPrices.aroma_hydrangea){
+      var r=matPrices.sticks_per_kg_ryo;
+      ["hydrangea","blacksandal","musk","frankincense"].forEach(function(a){matPrices["aroma_"+a]=r;});
+    }
+    if(matPrices.sticks_per_kg_hanna && !matPrices.aroma_gardentree){
+      var h=matPrices.sticks_per_kg_hanna;
+      ["gardentree","agarwood"].forEach(function(a){matPrices["aroma_"+a]=h;});
+    }
+    // Ensure all aroma keys exist
+    Object.keys(DEFAULT_MAT_PRICES).forEach(function(k){
+      if(matPrices[k]==null) matPrices[k]=DEFAULT_MAT_PRICES[k];
+    });
     var bd = localStorage.getItem("atik5_bom");
     bomData   = bd ? JSON.parse(bd) : JSON.parse(JSON.stringify(DEFAULT_BOM));
   } catch(e) {
@@ -3156,11 +3189,20 @@ function saveCogsPrices() {
 
 // ── Material fields definition ───────────────────────────────
 var MAT_FIELDS = [
-  { key:"sticks_per_kg_uah",      label:"Палички — B-Faith/Yasuhito",  unit:"₴/кг",    hint:"ціна × курс + доставка", cat:"Палички"},
-  { key:"sticks_per_kg_ryo",      label:"Палички — Awaji Encens (Ryo)", unit:"₴/кг",    hint:"", cat:"Палички"},
-  { key:"sticks_per_kg_hanna",    label:"Палички — Asayu (Hanna)",      unit:"₴/кг",    hint:"", cat:"Палички"},
-  { key:"tube_uah",               label:"Тубус",                       unit:"₴/шт",    hint:"1 тубус на пачку", cat:"Тубуси"},
-  { key:"label_uah",              label:"Наліпка / Етикетка",          unit:"₴/шт",    hint:"1 на пачку", cat:"Наліпки"},
+  { key:"aroma_osmanthus",    label:"Osmanthus (Османтус)",         unit:"₴/кг", hint:"B-Faith / Yasuhito", cat:"B-Faith (Yasuhito)"},
+  { key:"aroma_cherry",       label:"Cherry Bloom (Цвіт Вишні)",    unit:"₴/кг", hint:"B-Faith / Yasuhito", cat:"B-Faith (Yasuhito)"},
+  { key:"aroma_sandalwood",   label:"Sandalwood (Сандалове дерево)", unit:"₴/кг", hint:"B-Faith / Yasuhito", cat:"B-Faith (Yasuhito)"},
+  { key:"aroma_camphor",      label:"Camphor Tree (Камфорне дерево)",unit:"₴/кг", hint:"B-Faith / Yasuhito", cat:"B-Faith (Yasuhito)"},
+  { key:"aroma_hydrangea",    label:"Hydrengea Tea (Чайна гортензія)",unit:"₴/кг",hint:"Daiwa Co / Ryo",     cat:"Daiwa Co (Ryo)"},
+  { key:"aroma_blacksandal",  label:"Black Sandal (Чорний сандал)",  unit:"₴/кг", hint:"Daiwa Co / Ryo",     cat:"Daiwa Co (Ryo)"},
+  { key:"aroma_musk",         label:"Musc (Мускус)",                 unit:"₴/кг", hint:"Daiwa Co / Ryo",     cat:"Daiwa Co (Ryo)"},
+  { key:"aroma_frankincense", label:"Frankincense (Ладан)",          unit:"₴/кг", hint:"Daiwa Co / Ryo",     cat:"Daiwa Co (Ryo)"},
+  { key:"aroma_temple",       label:"Temple Sandal (Храмовий сандал)",unit:"₴/кг",hint:"Nippon Paper / Yoko", cat:"Nippon Paper (Yoko)"},
+  { key:"aroma_honeysandal",  label:"Honey Sandal (Медовий сандал)", unit:"₴/кг", hint:"Nippon Paper / Yoko", cat:"Nippon Paper (Yoko)"},
+  { key:"aroma_gardentree",   label:"Garden Tree (Садове дерево)",   unit:"₴/кг", hint:"Asayu / Hanna",      cat:"Asayu (Hanna)"},
+  { key:"aroma_agarwood",     label:"Agarwood (Агарове дерево)",     unit:"₴/кг", hint:"Asayu / Hanna",      cat:"Asayu (Hanna)"},
+  { key:"tube_uah",               label:"Тубус",                       unit:"₴/шт",    hint:"1 тубус на пачку", cat:"Упаковка"},
+  { key:"label_uah",              label:"Наліпка / Етикетка",          unit:"₴/шт",    hint:"1 на пачку", cat:"Упаковка"},
   { key:"labor_uah",              label:"Робота (збірка)",              unit:"₴/пачку", hint:"фікс за 1 тубус", cat:"Витрати"},
   { key:"delivery_per_pack_uah",  label:"Доставка",                    unit:"₴/пачку", hint:"середня на 1 пачку", cat:"Витрати"},
   { key:"promo_per_pack_uah",     label:"Промо / Реклама",             unit:"₴/пачку", hint:"бюджет ÷ обсяг", cat:"Витрати"},
@@ -3181,10 +3223,11 @@ var BOM_ROWS = [
 ];
 
 function calcCogsForGroup(group, supplierKey) {
+  // Legacy compat — used by renderCogsResult for generic group display
   var bom = bomData[group] || DEFAULT_BOM[group] || {};
   var mp  = matPrices;
-  var pricePerKg = mp[supplierKey || "sticks_per_kg_uah"] || mp.sticks_per_kg_uah || 0;
-  var sticksPerKg = 2000; // approximate
+  var pricePerKg = mp[supplierKey] || mp.aroma_osmanthus || DEFAULT_MAT_PRICES.aroma_osmanthus || 0;
+  var sticksPerKg = 2000;
   var pricePerStick = pricePerKg / sticksPerKg;
   var stickCost   = (bom.sticks || 0) * pricePerStick;
   var tubeCost    = (bom.tubes   || 0) * (mp.tube_uah   || 0);
@@ -3196,7 +3239,17 @@ function calcCogsForGroup(group, supplierKey) {
   var miscCost = subtotal * miscPct;
   var totalCost = subtotal + miscCost;
   return { stickCost:stickCost, tubeCost:tubeCost, labelCost:labelCost,
-    materialCost:materialCost, overheadFixed:overheadFixed, miscCost:miscCost, totalCost:totalCost };
+    materialCost:materialCost, overheadFixed:overheadFixed, miscCost:miscCost, totalCost:totalCost, pricePerKg:pricePerKg };
+}
+
+// Calculate COGS for a specific product (using its aroma price)
+function calcCogsForProduct(productId) {
+  var p = products.find(function(x){return x.id===productId;});
+  if(!p) return calcCogsForGroup("other", "aroma_osmanthus");
+  var group = p.group || "other";
+  var aromaId = PRODUCT_AROMA[productId];
+  var aromaKey = aromaId ? "aroma_"+aromaId : "aroma_osmanthus";
+  return calcCogsForGroup(group, aromaKey);
 }
 
 function renderCogs() {
@@ -3284,72 +3337,127 @@ function saveCogsMaterials() {
 }
 
 function renderCogsResult() {
-  // Build result table: one row per product group, show breakdown + margin vs retail/wholesale price
-  var suppliers = [
-    { key:"sticks_per_kg_uah",   label:"Yasuhito" },
-    { key:"sticks_per_kg_ryo",   label:"Ryo" },
-    { key:"sticks_per_kg_hanna", label:"Hanna" },
-  ];
-
-  // Collect sample retail/wholesale prices per group from products
-  var groupPrices = {};
-  products.forEach(function(p) {
-    var g = p.group;
-    if(!groupPrices[g]) groupPrices[g] = { shelf: p.shelf || 0, pack: p.pack };
-    // use the most common / max shelf price for the group
-    if((p.shelf||0) > groupPrices[g].shelf) groupPrices[g].shelf = p.shelf || 0;
-  });
+  // Build result table: one row per aroma × group, show breakdown + margin
+  var aromaKeys = Object.keys(AROMAS);
 
   var rhtml = '<div style="overflow-x:auto">'
-    + '<table class="inv-table" style="min-width:600px"><thead><tr>'
-    + '<th>Продукт</th>'
+    + '<table class="inv-table" style="min-width:700px"><thead><tr>'
+    + '<th>Аромат</th>'
+    + '<th>Постачальник</th>'
+    + '<th style="text-align:center">Група</th>'
+    + '<th style="text-align:right">₴/кг</th>'
     + '<th style="text-align:right">Матеріали (₴)</th>'
-    + '<th style="text-align:right">+ Накладні витрати</th>'
-    + '<th style="text-align:right;font-weight:700">COGS разом (₴)</th>'
-    + '<th style="text-align:right">Ціна полиці (₴)</th>'
+    + '<th style="text-align:right">+ Накладні</th>'
+    + '<th style="text-align:right;font-weight:700">COGS (₴)</th>'
+    + '<th style="text-align:right">Полиця (₴)</th>'
     + '<th style="text-align:right">Маржа (₴)</th>'
     + '<th style="text-align:center">Маржа %</th>'
     + '</tr></thead><tbody>';
 
-  var overheadPerPack = (matPrices.labor_uah||0) + (matPrices.delivery_per_pack_uah||0) + (matPrices.promo_per_pack_uah||0);
-  var miscPct = (matPrices.misc_pct||0) / 100;
+  // For each aroma, show tube20 row (main SKU)
+  aromaKeys.forEach(function(aId, ai) {
+    var sup = aromaSupplier(aId);
+    var supName = sup ? sup.name : "—";
+    var aromaKey = "aroma_" + aId;
+    var pricePerKg = matPrices[aromaKey] || DEFAULT_MAT_PRICES[aromaKey] || 0;
 
-  BOM_GROUPS.forEach(function(g) {
-    suppliers.forEach(function(s, si) {
-      var c = calcCogsForGroup(g.key, s.key);
-      var gp = groupPrices[g.key] || { shelf: 450, pack: 20 };
-      var margin = gp.shelf - c.totalCost;
-      var marginPct = gp.shelf > 0 ? (margin / gp.shelf * 100) : 0;
-      var rowBg = si === 0 ? "" : "background:var(--washi)";
-      var marginCol = marginPct >= 55 ? "var(--pine)" : marginPct >= 40 ? "var(--cedar)" : "var(--red)";
-      rhtml += '<tr style="' + rowBg + '">'
-        + '<td><span style="font-weight:700">' + esc(g.label) + '</span>'
-        + ' <span style="font-size:11px;color:var(--ink4)">/ ' + esc(s.label) + '</span></td>'
-        + '<td style="text-align:right">' + c.materialCost.toFixed(2) + '</td>'
-        + '<td style="text-align:right;color:var(--ink4)">' + (overheadPerPack + c.miscCost).toFixed(2) + '</td>'
-        + '<td style="text-align:right;font-weight:700;color:var(--pine)">' + c.totalCost.toFixed(2) + '</td>'
-        + '<td style="text-align:right">' + gp.shelf + '</td>'
-        + '<td style="text-align:right;font-weight:700;color:' + marginCol + '">' + margin.toFixed(2) + '</td>'
-        + '<td style="text-align:center">'
-        + '<span class="stock-pill ' + (marginPct>=55?"pill-ok":marginPct>=40?"pill-low":"pill-zero") + '">'
-        + marginPct.toFixed(1) + '%</span></td>'
-        + '</tr>';
+    // Find the 20-stick product for this aroma to get shelf price
+    var pid20 = Object.keys(PRODUCT_AROMA).find(function(pid){
+      return PRODUCT_AROMA[pid]===aId && pid.indexOf("40")<0 && pid.indexOf("ref")<0;
     });
+    var p20 = pid20 ? products.find(function(x){return x.id===pid20;}) : null;
+    var shelf20 = p20 ? (p20.shelf||0) : 450;
+
+    var c = calcCogsForGroup("tube20", aromaKey);
+    var margin = shelf20 - c.totalCost;
+    var marginPct = shelf20 > 0 ? (margin / shelf20 * 100) : 0;
+    var marginCol = marginPct >= 55 ? "var(--pine)" : marginPct >= 40 ? "var(--cedar)" : "var(--red)";
+    var rowBg = ai % 2 === 0 ? "" : "background:var(--washi)";
+
+    rhtml += '<tr style="' + rowBg + '">'
+      + '<td><span style="font-weight:700">' + esc(AROMAS[aId].en) + '</span>'
+      + ' <span style="font-size:11px;color:var(--ink4)">' + esc(AROMAS[aId].uk) + '</span></td>'
+      + '<td style="font-size:11px;color:var(--ink3)">' + esc(supName) + '</td>'
+      + '<td style="text-align:center;font-size:11px">20шт</td>'
+      + '<td style="text-align:right;color:var(--ink3)">' + pricePerKg.toLocaleString("uk-UA") + '</td>'
+      + '<td style="text-align:right">' + c.materialCost.toFixed(2) + '</td>'
+      + '<td style="text-align:right;color:var(--ink4)">' + (c.overheadFixed + c.miscCost).toFixed(2) + '</td>'
+      + '<td style="text-align:right;font-weight:700;color:var(--pine)">' + c.totalCost.toFixed(2) + '</td>'
+      + '<td style="text-align:right">' + shelf20 + '</td>'
+      + '<td style="text-align:right;font-weight:700;color:' + marginCol + '">' + margin.toFixed(2) + '</td>'
+      + '<td style="text-align:center">'
+      + '<span class="stock-pill ' + (marginPct>=55?"pill-ok":marginPct>=40?"pill-low":"pill-zero") + '">'
+      + marginPct.toFixed(1) + '%</span></td>'
+      + '</tr>';
   });
 
   rhtml += '</tbody></table></div>';
 
-  // Cost breakdown summary
-  var c20y = calcCogsForGroup("tube20", "sticks_per_kg_uah");
-  rhtml += '<div style="margin-top:12px;padding:12px 14px;background:var(--surface3);border-radius:var(--r2);'
-    + 'border:1px solid var(--border);font-size:12px">'
-    + '<strong>Розбивка собівартості пачки 20шт (Yasuhito):</strong><br>'
-    + '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">'
-    + mkBreakItem("Палички", c20y.stickCost, c20y.totalCost)
-    + mkBreakItem("Тубус", c20y.tubeCost, c20y.totalCost)
-    + mkBreakItem("Наліпка", c20y.labelCost, c20y.totalCost)
-    + mkBreakItem("Накладні витрати", c20y.overheadFixed + c20y.miscCost, c20y.totalCost)
-    + '</div></div>';
+  // Expandable: 40шт packs
+  rhtml += '<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700;font-size:13px;color:var(--pine);padding:8px 0">📦 Тубус 40шт — по ароматах</summary>';
+  rhtml += '<div style="overflow-x:auto;margin-top:8px"><table class="inv-table" style="min-width:600px"><thead><tr>'
+    + '<th>Аромат</th><th style="text-align:right">₴/кг</th>'
+    + '<th style="text-align:right;font-weight:700">COGS (₴)</th>'
+    + '<th style="text-align:right">Полиця (₴)</th>'
+    + '<th style="text-align:right">Маржа (₴)</th>'
+    + '<th style="text-align:center">Маржа %</th>'
+    + '</tr></thead><tbody>';
+  aromaKeys.forEach(function(aId, ai) {
+    var aromaKey = "aroma_" + aId;
+    var pricePerKg = matPrices[aromaKey] || DEFAULT_MAT_PRICES[aromaKey] || 0;
+    var pid40 = Object.keys(PRODUCT_AROMA).find(function(pid){
+      return PRODUCT_AROMA[pid]===aId && pid.indexOf("40")>=0;
+    });
+    var p40 = pid40 ? products.find(function(x){return x.id===pid40;}) : null;
+    var shelf40 = p40 ? (p40.shelf||0) : 700;
+    var c = calcCogsForGroup("tube40", aromaKey);
+    var margin = shelf40 - c.totalCost;
+    var marginPct = shelf40 > 0 ? (margin / shelf40 * 100) : 0;
+    var marginCol = marginPct >= 55 ? "var(--pine)" : marginPct >= 40 ? "var(--cedar)" : "var(--red)";
+    rhtml += '<tr style="' + (ai%2?"background:var(--washi)":"") + '">'
+      + '<td style="font-weight:600">' + esc(AROMAS[aId].en) + '</td>'
+      + '<td style="text-align:right;color:var(--ink3)">' + pricePerKg.toLocaleString("uk-UA") + '</td>'
+      + '<td style="text-align:right;font-weight:700;color:var(--pine)">' + c.totalCost.toFixed(2) + '</td>'
+      + '<td style="text-align:right">' + shelf40 + '</td>'
+      + '<td style="text-align:right;font-weight:700;color:' + marginCol + '">' + margin.toFixed(2) + '</td>'
+      + '<td style="text-align:center"><span class="stock-pill ' + (marginPct>=55?"pill-ok":marginPct>=40?"pill-low":"pill-zero") + '">' + marginPct.toFixed(1) + '%</span></td></tr>';
+  });
+  rhtml += '</tbody></table></div></details>';
+
+  // Cost breakdown for cheapest and most expensive aroma
+  var cheapest = aromaKeys.reduce(function(best,a){
+    var p=matPrices["aroma_"+a]||DEFAULT_MAT_PRICES["aroma_"+a]||Infinity;
+    return p<best.p?{a:a,p:p}:best;
+  },{a:"",p:Infinity});
+  var expensive = aromaKeys.reduce(function(best,a){
+    var p=matPrices["aroma_"+a]||DEFAULT_MAT_PRICES["aroma_"+a]||0;
+    return p>best.p?{a:a,p:p}:best;
+  },{a:"",p:0});
+
+  if(cheapest.a){
+    var cc = calcCogsForGroup("tube20", "aroma_"+cheapest.a);
+    rhtml += '<div style="margin-top:12px;padding:12px 14px;background:var(--surface3);border-radius:var(--r2);'
+      + 'border:1px solid var(--border);font-size:12px">'
+      + '<strong>Найдешевший аромат — ' + esc(AROMAS[cheapest.a].en) + ' (' + cheapest.p.toLocaleString("uk-UA") + ' ₴/кг):</strong><br>'
+      + '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">'
+      + mkBreakItem("Палички", cc.stickCost, cc.totalCost)
+      + mkBreakItem("Тубус", cc.tubeCost, cc.totalCost)
+      + mkBreakItem("Наліпка", cc.labelCost, cc.totalCost)
+      + mkBreakItem("Накладні", cc.overheadFixed + cc.miscCost, cc.totalCost)
+      + '</div></div>';
+  }
+  if(expensive.a && expensive.a !== cheapest.a){
+    var ce = calcCogsForGroup("tube20", "aroma_"+expensive.a);
+    rhtml += '<div style="margin-top:8px;padding:12px 14px;background:var(--surface3);border-radius:var(--r2);'
+      + 'border:1px solid var(--border);font-size:12px">'
+      + '<strong>Найдорожчий аромат — ' + esc(AROMAS[expensive.a].en) + ' (' + expensive.p.toLocaleString("uk-UA") + ' ₴/кг):</strong><br>'
+      + '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">'
+      + mkBreakItem("Палички", ce.stickCost, ce.totalCost)
+      + mkBreakItem("Тубус", ce.tubeCost, ce.totalCost)
+      + mkBreakItem("Наліпка", ce.labelCost, ce.totalCost)
+      + mkBreakItem("Накладні", ce.overheadFixed + ce.miscCost, ce.totalCost)
+      + '</div></div>';
+  }
 
   document.getElementById("cogs-result-table").innerHTML = rhtml;
 }
