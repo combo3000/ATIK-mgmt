@@ -457,7 +457,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       </div>
       <div class="field" id="recv-supplier-wrap">
         <label>Постачальник</label>
-        <select id="recv-supplier"></select>
+        <select id="recv-supplier" onchange="onRecvSupplierChange()"></select>
+      </div>
+      <div class="field" id="recv-aroma-wrap" style="display:none">
+        <label>Аромат</label>
+        <select id="recv-aroma"></select>
       </div>
     </div>
     <div id="recv-finished-fields">
@@ -676,9 +680,17 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     </label>
     <div class="section-divider">Постачальники сировини</div>
     <div class="manage-list" id="suppliers-list" style="margin-bottom:10px"></div>
-    <div style="display:flex;gap:8px;margin-bottom:16px">
-      <input id="new-supplier-name" placeholder="Назва нового постачальника" style="flex:1">
+    <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+      <input id="new-supplier-name" placeholder="Назва нового постачальника" style="flex:1;min-width:200px">
+      <input id="new-supplier-aromas" placeholder="Аромати (через кому: cherry, musk)" style="flex:1;min-width:200px">
       <button class="btn btn-moss btn-sm" onclick="addSupplier()">+ Додати</button>
+    </div>
+    <div style="font-size:11px;color:var(--ink4);margin-bottom:16px">Доступні ID ароматів: osmanthus, cherry, sandalwood, camphor, hydrangea, blacksandal, musk, frankincense, temple, honeysandal, gardentree, agarwood</div>
+    <div class="section-divider">Міграція</div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:8px">Якщо залишки паличок зараз прив'язані до постачальників (старий формат), натисніть щоб розподілити їх по ароматах:</div>
+      <button class="btn btn-moss btn-sm" onclick="migrateSupplierToAroma()">🔄 Розподілити палички по ароматах</button>
+      <div id="migration-status" style="font-size:12px;color:var(--ink4);margin-top:6px"></div>
     </div>
     <div class="section-divider">Дані</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -877,12 +889,46 @@ var receiveHistory=[];
 var retailStock={};
 // salesReports: [{id,buyerId,buyerName,month,items,savedAt}]
 var salesReports=[];
-// suppliers: [{id, name, sticks: [{aroma, priceUsdKg}]}]
+// suppliers: [{id, name, aromas:[aromaId,...], custom}]
 var suppliers=[
-  {id:"yasuhito", name:"B-Faith (Yasuhito)", custom:false},
-  {id:"ryo",      name:"Awaji Encens (Ryo)", custom:false},
-  {id:"hanna",    name:"Asayu (Hanna)",      custom:false},
+  {id:"yasuhito", name:"B-Faith (Yasuhito)",          aromas:["osmanthus","cherry","sandalwood","camphor"], custom:false},
+  {id:"ryo",      name:"Daiwa Co (Ryo)",              aromas:["hydrangea","blacksandal","musk","frankincense"], custom:false},
+  {id:"yoko",     name:"Nippon Paper Trading (Yoko)",  aromas:["temple","honeysandal"], custom:false},
+  {id:"hanna",    name:"Asayu (Hanna)",                aromas:["gardentree","agarwood"], custom:false},
 ];
+// Aroma definitions — map aromaId → display info
+var AROMAS={
+  osmanthus:   {en:"Osmanthus",      uk:"Османтус"},
+  cherry:      {en:"Cherry Bloom",   uk:"Цвіт Вишні"},
+  sandalwood:  {en:"Sandalwood",     uk:"Сандалове дерево"},
+  camphor:     {en:"Camphor Tree",   uk:"Камфорне дерево"},
+  hydrangea:   {en:"Hydrengea Tea",  uk:"Чайна гортензія"},
+  blacksandal: {en:"Black Sandal",   uk:"Чорний сандал"},
+  musk:        {en:"Musc",           uk:"Мускус"},
+  frankincense:{en:"Frankincense",   uk:"Ладан"},
+  temple:      {en:"Temple Sandal",  uk:"Храмовий сандал"},
+  honeysandal: {en:"Honey Sandal",   uk:"Медовий сандал"},
+  gardentree:  {en:"Garden Tree",    uk:"Садове дерево"},
+  agarwood:    {en:"Agarwood",       uk:"Агарове дерево"},
+};
+// Map productId → aromaId (for assembly deduction)
+var PRODUCT_AROMA={
+  cherry20:"cherry", osmanthus20:"osmanthus", camphor20:"camphor", sandalwood20:"sandalwood",
+  blacksandal20:"blacksandal", musk20:"musk", temple20:"temple", hydrangea20:"hydrangea",
+  honeysandal20:"honeysandal", agarwood20:"agarwood", frankincense20:"frankincense", gardentree20:"gardentree",
+  cherry40:"cherry", osmanthus40:"osmanthus", camphor40:"camphor", sandalwood40:"sandalwood",
+  blacksandal40:"blacksandal", musk40:"musk", temple40:"temple", hydrangea40:"hydrangea",
+  honeysandal40:"honeysandal", agarwood40:"agarwood", frankincense40:"frankincense", gardentree40:"gardentree",
+  ref20_cherry:"cherry", ref20_osmanthus:"osmanthus", ref20_camphor:"camphor", ref20_sandalwood:"sandalwood",
+  ref20_blacksandal:"blacksandal", ref20_musk:"musk", ref20_temple:"temple", ref20_hydrangea:"hydrangea",
+  ref20_honeysandal:"honeysandal", ref20_agarwood:"agarwood", ref20_frankincense:"frankincense", ref20_gardentree:"gardentree",
+  ref10_cherry:"cherry", ref10_osmanthus:"osmanthus", ref10_camphor:"camphor", ref10_sandalwood:"sandalwood",
+  ref10_blacksandal:"blacksandal", ref10_musk:"musk", ref10_temple:"temple", ref10_hydrangea:"hydrangea",
+  ref10_honeysandal:"honeysandal", ref10_agarwood:"agarwood", ref10_frankincense:"frankincense", ref10_gardentree:"gardentree",
+};
+function aromaName(id){ var a=AROMAS[id]; return a?(a.en+", "+a.uk):id; }
+function aromaSupplier(aromaId){ return suppliers.find(function(s){return s.aromas&&s.aromas.indexOf(aromaId)>=0;});}
+
 var generated=null, currentJournalItem=null;
 var items=[{id:Date.now(),productId:"",qty:1,customPrice:""}];
 
@@ -909,6 +955,27 @@ function load(){
     var ssu=localStorage.getItem("atik5_suppliers");if(ssu) suppliers=JSON.parse(ssu);
     DEFAULT_BUYERS.forEach(function(d){if(!buyers.find(function(x){return x.id===d.id;})) buyers.push(Object.assign({},d));});
     DEFAULT_PRODUCTS.forEach(function(d){if(!products.find(function(x){return x.id===d.id;})) products.push(Object.assign({},d));});
+    // Ensure all suppliers have aromas field
+    suppliers.forEach(function(s){if(!s.aromas)s.aromas=[];});
+    // Add missing default suppliers (yoko)
+    var defSup=[
+      {id:"yasuhito",aromas:["osmanthus","cherry","sandalwood","camphor"]},
+      {id:"ryo",aromas:["hydrangea","blacksandal","musk","frankincense"]},
+      {id:"yoko",aromas:["temple","honeysandal"]},
+      {id:"hanna",aromas:["gardentree","agarwood"]}
+    ];
+    defSup.forEach(function(ds){
+      var existing=suppliers.find(function(s){return s.id===ds.id;});
+      if(!existing){
+        var names={yasuhito:"B-Faith (Yasuhito)",ryo:"Daiwa Co (Ryo)",yoko:"Nippon Paper Trading (Yoko)",hanna:"Asayu (Hanna)"};
+        suppliers.push({id:ds.id,name:names[ds.id]||ds.id,aromas:ds.aromas,custom:false});
+      } else if(!existing.aromas||!existing.aromas.length){
+        existing.aromas=ds.aromas;
+      }
+    });
+    // Fix Ryo name if old
+    var ryoSup=suppliers.find(function(s){return s.id==="ryo";});
+    if(ryoSup&&ryoSup.name&&ryoSup.name.indexOf("Awaji")>=0) ryoSup.name="Daiwa Co (Ryo)";
   }catch(e){
     products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
     buyers=JSON.parse(JSON.stringify(DEFAULT_BUYERS));
@@ -934,7 +1001,7 @@ function collectAppState(){
   return {
     products:products, buyers:buyers, journal:journal, settings:settings,
     warehouseStock:warehouseStock, rawStock:rawStock, receiveHistory:receiveHistory,
-    retailStock:retailStock, salesReports:salesReports
+    retailStock:retailStock, salesReports:salesReports, suppliers:suppliers
   };
 }
 
@@ -950,6 +1017,15 @@ function applyAppState(data){
   retailStock=data.retailStock||{};
   salesReports=data.salesReports||[];
   if(data.suppliers)suppliers=data.suppliers;
+  // Ensure suppliers have aromas
+  suppliers.forEach(function(s){if(!s.aromas)s.aromas=[];});
+  var defSup={yasuhito:["osmanthus","cherry","sandalwood","camphor"],ryo:["hydrangea","blacksandal","musk","frankincense"],yoko:["temple","honeysandal"],hanna:["gardentree","agarwood"]};
+  Object.keys(defSup).forEach(function(id){
+    var ex=suppliers.find(function(s){return s.id===id;});
+    if(!ex){var names={yasuhito:"B-Faith (Yasuhito)",ryo:"Daiwa Co (Ryo)",yoko:"Nippon Paper Trading (Yoko)",hanna:"Asayu (Hanna)"};
+      suppliers.push({id:id,name:names[id],aromas:defSup[id],custom:false});}
+    else if(!ex.aromas||!ex.aromas.length) ex.aromas=defSup[id];
+  });
   DEFAULT_BUYERS.forEach(function(d){if(!buyers.find(function(x){return x.id===d.id;})) buyers.push(Object.assign({},d));});
   DEFAULT_PRODUCTS.forEach(function(d){if(!products.find(function(x){return x.id===d.id;})) products.push(Object.assign({},d));});
 }
@@ -1877,18 +1953,34 @@ function renderSupplierSelect(){
   if(!sel)return;
   sel.innerHTML=suppliers.map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+'</option>';}).join("")
     +'<option value="other">Інший</option>';
+  onRecvSupplierChange();
+}
+function onRecvSupplierChange(){
+  var sel=document.getElementById("recv-aroma");
+  if(!sel)return;
+  var supId=document.getElementById("recv-supplier").value;
+  var sup=suppliers.find(function(s){return s.id===supId;});
+  if(sup&&sup.aromas&&sup.aromas.length){
+    sel.innerHTML=sup.aromas.map(function(a){return '<option value="'+a+'">'+esc(aromaName(a))+'</option>';}).join("");
+  } else {
+    // for 'other' or custom suppliers without aromas — show all aromas
+    sel.innerHTML=Object.keys(AROMAS).map(function(a){return '<option value="'+a+'">'+esc(aromaName(a))+'</option>';}).join("");
+  }
 }
 function onRecvTypeChange(){
   var t=document.getElementById("recv-type").value;
   var ff=document.getElementById("recv-finished-fields");
   var rf=document.getElementById("recv-raw-fields");
   var sw=document.getElementById("recv-supplier-wrap");
+  var aw=document.getElementById("recv-aroma-wrap");
   var si=document.getElementById("recv-sticks-info");
   var ql=document.getElementById("recv-qty-label");
-  if(t==="finished"){ff.style.display="";rf.style.display="none";sw.style.display="none";}
+  if(t==="finished"){ff.style.display="";rf.style.display="none";sw.style.display="none";aw.style.display="none";}
   else{ff.style.display="none";rf.style.display="";sw.style.display="";}
-  if(t==="sticks"){ql.textContent="Кількість (кг)";si.style.display="block";
-    si.textContent="💡 1 кг ≈ 2000 паличок. Вводьте кг — автоматично перерахується в палички.";}
+  if(t==="sticks"){ql.textContent="Кількість (кг)";si.style.display="block";aw.style.display="";
+    si.textContent="💡 1 кг ≈ 2000 паличок. Вводьте кг — автоматично перерахується в палички.";
+    onRecvSupplierChange();}
+  else{aw.style.display="none";}
   if(t==="tubes"){ql.textContent="Кількість (шт)";si.style.display="none";}
   if(t==="labels"){ql.textContent="Кількість (шт)";si.style.display="none";}
   if(t==="stands"){ql.textContent="Кількість (шт)";si.style.display="none";}
@@ -1922,7 +2014,9 @@ function receiveGoods(){
 
     var rawKey, unit, sticks=0;
     if(t==="sticks"){
-      rawKey="sticks_"+supplier; unit="кг";
+      var aroma=document.getElementById("recv-aroma").value;
+      if(!aroma){alert("Оберіть аромат");return;}
+      rawKey="sticks_"+aroma; unit="кг";
       sticks=Math.round(rawQty*2000);
     } else if(t==="tubes")  {rawKey="tubes";  unit="шт";}
     else if(t==="labels")   {rawKey="labels"; unit="шт";}
@@ -1935,10 +2029,12 @@ function receiveGoods(){
     var newAvgR=ro.qty>0?(ro.avgCostUah*ro.qty+costPerUnit*rawQty)/(ro.qty+rawQty):costPerUnit;
     ro.qty+=rawQty; ro.avgCostUah=newAvgR;
     if(t==="sticks")ro.sticks=(ro.sticks||0)+sticks;
+    var aromaLabel=t==="sticks"?aromaName(aroma):"";
     receiveHistory.unshift({id:uid(),date:date,type:t,rawKey:rawKey,qty:rawQty,unit:unit,
-      priceUsd:rawPrice,rate:rate,delivery:delivery,totalUah:totalCostUah,supplier:supplier,note:note,savedAt:new Date().toISOString()});
+      priceUsd:rawPrice,rate:rate,delivery:delivery,totalUah:totalCostUah,supplier:supplier,
+      aroma:t==="sticks"?aroma:null,note:note,savedAt:new Date().toISOString()});
     save();renderRawMaterials();renderReceiveHistory();
-    alert("✅ Прийнято "+rawQty+" "+unit+(t==="sticks"?" (≈"+sticks+" паличок)":""));
+    alert("✅ Прийнято "+rawQty+" "+unit+(t==="sticks"?" "+aromaLabel+" (≈"+sticks+" паличок)":""));
   }
 }
 
@@ -1959,18 +2055,28 @@ function updateAssemblePreview(){
   var stikesNeeded=bom.sticks*qty;
   var tubsNeeded=(bom.tubes||0)*qty;
   var labsNeeded=(bom.labels||0)*qty;
-  // Sum sticks across all suppliers
-  var totalSticksKg=["yasuhito","ryo","hanna"].reduce(function(s,sup){return s+getRawQty("sticks_"+sup);},0);
-  var totalSticks=["yasuhito","ryo","hanna"].reduce(function(s,sup){
-    return s+((rawStock["sticks_"+sup]&&rawStock["sticks_"+sup].sticks)||Math.round(getRawQty("sticks_"+sup)*2000));
-  },0);
+  // Check sticks for specific aroma
+  var aromaId=PRODUCT_AROMA[pid];
+  var aromaSticks=0, aromaLabel="";
+  if(aromaId){
+    var k="sticks_"+aromaId;
+    aromaSticks=(rawStock[k]&&rawStock[k].sticks)||Math.round(getRawQty(k)*2000);
+    aromaLabel=AROMAS[aromaId]?AROMAS[aromaId].en:"";
+  } else {
+    // tester — sum all aromas
+    Object.keys(AROMAS).forEach(function(a){
+      var k="sticks_"+a;
+      aromaSticks+=(rawStock[k]&&rawStock[k].sticks)||Math.round(getRawQty(k)*2000);
+    });
+    aromaLabel="будь-який";
+  }
   var tubsAvail=getRawQty("tubes");
   var labsAvail=getRawQty("labels");
-  var ok=totalSticks>=stikesNeeded
+  var ok=aromaSticks>=stikesNeeded
     &&(tubsNeeded===0||tubsAvail>=tubsNeeded)
     &&labsAvail>=labsNeeded;
   var parts=[];
-  if(stikesNeeded)parts.push("паличок: "+stikesNeeded+" (є: "+totalSticks+")");
+  if(stikesNeeded)parts.push(aromaLabel+" паличок: "+stikesNeeded+" (є: "+aromaSticks+")");
   if(tubsNeeded)  parts.push("тубусів: "+tubsNeeded+" (є: "+tubsAvail+")");
   if(labsNeeded)  parts.push("наліпок: "+labsNeeded+" (є: "+labsAvail+")");
   prev.textContent="Потрібно: "+parts.join(" · ")+(ok?" ✅ Достатньо":" ⚠️ Нестача матеріалів");
@@ -1990,22 +2096,43 @@ function assembleBatch(){
   var tubsNeeded=(bom.tubes||0)*qty;
   var labsNeeded=(bom.labels||0)*qty;
 
-  // deduct sticks raw across suppliers (FIFO: yasuhito first)
-  var suppliers=["yasuhito","ryo","hanna"];
-  var remaining=stikesNeeded;
-  // convert sticks needed to kg equivalents per supplier
-  suppliers.forEach(function(s){
-    var k="sticks_"+s;
-    if(!rawStock[k]||rawStock[k].qty<=0||remaining<=0)return;
-    // how many kg covers remaining sticks?
+  // Deduct sticks by AROMA (not by supplier)
+  var aromaId=PRODUCT_AROMA[pid];
+  if(stikesNeeded>0 && aromaId){
+    var k="sticks_"+aromaId;
+    if(!rawStock[k])rawStock[k]={qty:0,avgCostUah:0,sticks:0,unit:"кг"};
     var sticksPerKg=2000;
-    var kgNeeded=remaining/sticksPerKg;
-    var kgDeduct=Math.min(rawStock[k].qty,kgNeeded);
+    var kgNeeded=stikesNeeded/sticksPerKg;
+    var kgDeduct=Math.min(rawStock[k].qty, kgNeeded);
     var sticksDeducted=Math.round(kgDeduct*sticksPerKg);
-    rawStock[k].qty-=kgDeduct;
+    rawStock[k].qty=Math.max(0,rawStock[k].qty-kgDeduct);
     rawStock[k].sticks=Math.max(0,(rawStock[k].sticks||0)-sticksDeducted);
-    remaining-=sticksDeducted;
-  });
+    var remaining=stikesNeeded-sticksDeducted;
+    // If not enough from this aroma, try legacy supplier keys as fallback
+    if(remaining>0){
+      ["yasuhito","ryo","hanna","yoko"].forEach(function(s){
+        var lk="sticks_"+s;
+        if(!rawStock[lk]||rawStock[lk].qty<=0||remaining<=0)return;
+        var kgN=remaining/sticksPerKg;
+        var kgD=Math.min(rawStock[lk].qty,kgN);
+        var sD=Math.round(kgD*sticksPerKg);
+        rawStock[lk].qty-=kgD;
+        rawStock[lk].sticks=Math.max(0,(rawStock[lk].sticks||0)-sD);
+        remaining-=sD;
+      });
+    }
+  } else if(stikesNeeded>0 && !aromaId){
+    // Tester or unknown — deduct from any available aroma
+    var remaining=stikesNeeded;
+    Object.keys(AROMAS).forEach(function(a){
+      var k="sticks_"+a;
+      if(!rawStock[k]||rawStock[k].qty<=0||remaining<=0)return;
+      var kgN=remaining/2000; var kgD=Math.min(rawStock[k].qty,kgN);
+      var sD=Math.round(kgD*2000);
+      rawStock[k].qty-=kgD; rawStock[k].sticks=Math.max(0,(rawStock[k].sticks||0)-sD);
+      remaining-=sD;
+    });
+  }
   if(rawStock.tubes)  rawStock.tubes.qty  =Math.max(0,(rawStock.tubes.qty||0)-tubsNeeded);
   if(rawStock.labels) rawStock.labels.qty =Math.max(0,(rawStock.labels.qty||0)-labsNeeded);
 
@@ -2028,7 +2155,7 @@ function assembleBatch(){
   old.qty+=qty; old.avgCogs=newAvg; old.name=p.name;
 
   receiveHistory.unshift({id:uid(),date:new Date().toISOString().split("T")[0],type:"assembly",
-    productId:pid,name:p.name,qty:qty,cogs:cogsPerPack,note:"Збірка "+qty+" шт.",savedAt:new Date().toISOString()});
+    productId:pid,name:p.name,qty:qty,cogs:cogsPerPack,aroma:aromaId||null,note:"Збірка "+qty+" шт.",savedAt:new Date().toISOString()});
   save();renderWarehouse();renderRawMaterials();renderReceiveHistory();updateAssemblePreview();
   alert("✅ Зібрано "+qty+" пачок "+shortName(p.name)+"\nCOGS/пачку: "+cogsPerPack.toFixed(2)+" ₴");
 }
@@ -2069,70 +2196,75 @@ function renderWarehouse(){
 }
 
 function renderRawMaterials(){
-  // Material definitions: key, icon, label, supplier hint, unit display, min threshold for "low"
-  var RAW_DEF=[
-    {key:"sticks_yasuhito", icon:"🌿", name:"Палички — B-Faith (Yasuhito)", sub:"Awaji Island, Japan · ~2000 шт/кг", unitKey:"кг", minLow:2,   minOk:5,   isSticks:true},
-    {key:"sticks_ryo",      icon:"🌿", name:"Палички — Awaji Encens (Ryo)",  sub:"Awaji Island, Japan · ~2000 шт/кг", unitKey:"кг", minLow:2,   minOk:5,   isSticks:true},
-    {key:"sticks_hanna",    icon:"🌿", name:"Палички — Asayu (Hanna)",        sub:"Japan · ~2000 шт/кг",               unitKey:"кг", minLow:2,   minOk:5,   isSticks:true},
-    {key:"tubes",           icon:"🧪", name:"Тубуси",                        sub:"Упаковка для паличок",              unitKey:"шт", minLow:200, minOk:500, isSticks:false},
-    {key:"labels",          icon:"🏷", name:"Наліпки / Етикетки",            sub:"На кожну пачку — 1 шт",             unitKey:"шт", minLow:200, minOk:500, isSticks:false},
-  ];
-
-  var html='<div class="raw-grid">';
-  RAW_DEF.forEach(function(def){
-    var r=rawStock[def.key]||{qty:0,avgCostUah:0,sticks:0};
+  // Build aroma cards dynamically from AROMAS map
+  var aromaKeys=Object.keys(AROMAS);
+  var html='<div style="font-weight:700;font-size:13px;color:var(--pine);margin-bottom:8px">🌿 Палички по ароматах</div>';
+  html+='<div class="raw-grid">';
+  aromaKeys.forEach(function(aId){
+    var key="sticks_"+aId;
+    var r=rawStock[key]||{qty:0,avgCostUah:0,sticks:0};
     var qty=r.qty||0;
-    // Determine status
+    var sup=aromaSupplier(aId);
+    var supName=sup?sup.name:"—";
     var status, statusClass, barClass, barPct;
-    if(qty<=0){
-      status="Немає"; statusClass="raw-status-zero"; barClass="raw-card-bar-zero"; barPct=0;
-    } else if(qty<def.minLow){
-      status="Мало!"; statusClass="raw-status-low"; barClass="raw-card-bar-low";
-      barPct=Math.round((qty/def.minOk)*100);
-    } else {
-      status="В нормі"; statusClass="raw-status-ok"; barClass="raw-card-bar-ok";
-      barPct=Math.min(100,Math.round((qty/def.minOk)*100));
-    }
+    if(qty<=0){ status="Немає"; statusClass="raw-status-zero"; barClass="raw-card-bar-zero"; barPct=0; }
+    else if(qty<2){ status="Мало!"; statusClass="raw-status-low"; barClass="raw-card-bar-low"; barPct=Math.round((qty/5)*100); }
+    else { status="В нормі"; statusClass="raw-status-ok"; barClass="raw-card-bar-ok"; barPct=Math.min(100,Math.round((qty/5)*100)); }
+    var stickCount=r.sticks||Math.round(qty*2000);
+    html+='<div class="raw-card">'
+      +'<span class="raw-card-status '+statusClass+'">'+status+'</span>'
+      +'<div class="raw-card-icon">🌿</div>'
+      +'<div class="raw-card-name">'+esc(AROMAS[aId].en)+'</div>'
+      +'<div class="raw-card-sub">'+esc(AROMAS[aId].uk)+' · '+esc(supName)+'</div>'
+      +'<div class="raw-card-qty">'+qty.toFixed(2)+'</div>'
+      +'<div class="raw-card-unit">кг</div>'
+      +'<div style="font-size:13px;color:var(--moss);font-weight:600;margin-top:1px">≈ '
+      +stickCount.toLocaleString("uk-UA")+' паличок</div>'
+      +'<div class="raw-card-bar"><div class="raw-card-bar-fill '+barClass+'" style="width:'+barPct+'%"></div></div>'
+      +'<div class="raw-card-avg">Ср. ціна: '+(r.avgCostUah||0).toFixed(2)+' ₴/кг'
+      +(qty>0?' · '+((r.avgCostUah||0)/Math.max(1,2000)*1000).toFixed(2)+' ₴/1000шт':'')
+      +'</div></div>';
+  });
+  html+='</div>';
 
-    // Format quantity display
-    var qtyDisplay, unitDisplay, extraLine="";
-    if(def.isSticks){
-      qtyDisplay=qty.toFixed(2);
-      unitDisplay="кг";
-      var stickCount=r.sticks||Math.round(qty*2000);
-      extraLine='<div style="font-size:13px;color:var(--moss);font-weight:600;margin-top:1px">≈ '+
-        stickCount.toLocaleString("uk-UA")+' паличок</div>';
-    } else {
-      qtyDisplay=Math.round(qty).toLocaleString("uk-UA");
-      unitDisplay="шт";
-    }
-
-    var avgCost=(r.avgCostUah||0).toFixed(2);
-
+  // Non-stick materials
+  html+='<div style="font-weight:700;font-size:13px;color:var(--pine);margin:16px 0 8px">📦 Інші матеріали</div>';
+  html+='<div class="raw-grid">';
+  [{key:"tubes",icon:"🧪",name:"Тубуси",sub:"Упаковка для паличок",minLow:200,minOk:500},
+   {key:"labels",icon:"🏷",name:"Наліпки / Етикетки",sub:"На кожну пачку — 1 шт",minLow:200,minOk:500}
+  ].forEach(function(def){
+    var r=rawStock[def.key]||{qty:0,avgCostUah:0};
+    var qty=r.qty||0;
+    var status, statusClass, barClass, barPct;
+    if(qty<=0){ status="Немає"; statusClass="raw-status-zero"; barClass="raw-card-bar-zero"; barPct=0; }
+    else if(qty<def.minLow){ status="Мало!"; statusClass="raw-status-low"; barClass="raw-card-bar-low"; barPct=Math.round((qty/def.minOk)*100); }
+    else { status="В нормі"; statusClass="raw-status-ok"; barClass="raw-card-bar-ok"; barPct=Math.min(100,Math.round((qty/def.minOk)*100)); }
     html+='<div class="raw-card">'
       +'<span class="raw-card-status '+statusClass+'">'+status+'</span>'
       +'<div class="raw-card-icon">'+def.icon+'</div>'
       +'<div class="raw-card-name">'+esc(def.name)+'</div>'
       +'<div class="raw-card-sub">'+esc(def.sub)+'</div>'
-      +'<div class="raw-card-qty">'+qtyDisplay+'</div>'
-      +'<div class="raw-card-unit">'+unitDisplay+'</div>'
-      +extraLine
+      +'<div class="raw-card-qty">'+Math.round(qty).toLocaleString("uk-UA")+'</div>'
+      +'<div class="raw-card-unit">шт</div>'
       +'<div class="raw-card-bar"><div class="raw-card-bar-fill '+barClass+'" style="width:'+barPct+'%"></div></div>'
-      +'<div class="raw-card-avg">Ср. ціна: '+avgCost+' ₴ / '+unitDisplay
-      +(qty>0&&def.isSticks?' &nbsp;·&nbsp; '+((r.avgCostUah||0)*(qty>0?qty:1)/Math.max(1,(r.sticks||qty*2000))*1000).toFixed(2)+' ₴/1000 паличок':'')
-      +'</div>'
+      +'<div class="raw-card-avg">Ср. ціна: '+(r.avgCostUah||0).toFixed(2)+' ₴/шт</div>'
       +'</div>';
   });
   html+='</div>';
 
-  // Mini summary bar beneath cards
+  // Mini summary bar
   var totalSticks=0;
-  ["yasuhito","ryo","hanna"].forEach(function(s){
-    var k="sticks_"+s; totalSticks+=(rawStock[k]&&rawStock[k].sticks)||Math.round((rawStock[k]&&rawStock[k].qty||0)*2000);
+  aromaKeys.forEach(function(a){
+    var k="sticks_"+a; totalSticks+=(rawStock[k]&&rawStock[k].sticks)||Math.round((rawStock[k]&&rawStock[k].qty||0)*2000);
+  });
+  // Also check legacy supplier-based keys and include them
+  ["yasuhito","ryo","hanna","yoko"].forEach(function(s){
+    var k="sticks_"+s; if(rawStock[k]&&rawStock[k].qty>0){
+      totalSticks+=(rawStock[k].sticks)||Math.round((rawStock[k].qty||0)*2000);
+    }
   });
   var tubesQty=Math.round(rawStock.tubes&&rawStock.tubes.qty||0);
   var labelsQty=Math.round(rawStock.labels&&rawStock.labels.qty||0);
-  // How many packs of 20 can we build?
   var possiblePacks20=Math.floor(Math.min(totalSticks/20, tubesQty, labelsQty));
   html+='<div style="margin-top:12px;padding:12px 14px;background:var(--surface3);border-radius:var(--r2);'
     +'border:1px solid var(--border);font-size:12px;color:var(--ink2)">'
@@ -2151,10 +2283,18 @@ function renderReceiveHistory(){
   if(!list.length){document.getElementById("receive-history").innerHTML='<div class="empty-state" style="padding:20px"><div class="icon">📥</div>Надходжень ще немає</div>';return;}
   document.getElementById("receive-history").innerHTML=list.map(function(r){
     var typeLabels={finished:"📦 Готова продукція",assembly:"🔨 Збірка партії",sticks:"🌿 Палички",tubes:"🧪 Тубуси",labels:"🏷 Наліпки",stands:"🪵 Підставки"};
+    var nameDisplay=r.name||r.rawKey||"";
+    if(r.type==="sticks"&&r.aroma&&AROMAS[r.aroma]){nameDisplay=AROMAS[r.aroma].en+" ("+AROMAS[r.aroma].uk+")";}
+    else if(r.type==="sticks"&&!r.aroma&&r.rawKey){
+      // legacy: try to extract supplier name
+      var supId=r.rawKey.replace("sticks_","");
+      var sup=suppliers.find(function(s){return s.id===supId;});
+      if(sup) nameDisplay=sup.name;
+    }
     return "<div style=\"display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px\">"
       +"<span style=\"color:var(--ink4);min-width:92px\">"+r.date+"</span>"
       +"<span style=\"color:var(--ink3);min-width:150px\">"+(typeLabels[r.type]||r.type)+"</span>"
-      +"<span style=\"flex:1\">"+esc(r.name||r.rawKey||"")+" · <strong>"+r.qty+"</strong> "+(r.unit||"шт.")+"</span>"
+      +"<span style=\"flex:1\">"+esc(nameDisplay)+" · <strong>"+r.qty+"</strong> "+(r.unit||"шт.")+"</span>"
       +(r.note?"<span style=\"color:var(--ink4)\">"+esc(r.note)+"</span>":"")
       +"</div>";
   }).join("");
@@ -2640,8 +2780,10 @@ function renderSuppliersList(){
   var el=document.getElementById("suppliers-list");
   if(!el)return;
   el.innerHTML=suppliers.map(function(s){
+    var aromasTxt=s.aromas&&s.aromas.length?s.aromas.map(function(a){return AROMAS[a]?AROMAS[a].en:a;}).join(", "):"—";
     return '<div class="manage-item">'
-      +'<div class="manage-item-info"><div class="manage-item-name">'+esc(s.name)+(s.custom?'<span class="tag tag-custom">власний</span>':"")+'</div></div>'
+      +'<div class="manage-item-info"><div class="manage-item-name">'+esc(s.name)+(s.custom?'<span class="tag tag-custom">власний</span>':"")+'</div>'
+      +'<div class="manage-item-sub">Аромати: '+esc(aromasTxt)+'</div></div>'
       +(s.custom?'<button class="btn btn-danger btn-sm" onclick="deleteSupplier(\''+s.id+'\')">×</button>':"")
       +'</div>';
   }).join("")||'<div style="color:var(--ink4);font-size:12px">Немає постачальників</div>';
@@ -2649,14 +2791,58 @@ function renderSuppliersList(){
 function addSupplier(){
   var name=document.getElementById("new-supplier-name").value.trim();
   if(!name){alert("Введіть назву постачальника");return;}
-  suppliers.push({id:uid(),name:name,custom:true});
+  var aromasStr=(document.getElementById("new-supplier-aromas").value||"").trim();
+  var aromas=aromasStr?aromasStr.split(",").map(function(a){return a.trim().toLowerCase();}).filter(function(a){return AROMAS[a];}):[];
+  suppliers.push({id:uid(),name:name,aromas:aromas,custom:true});
   document.getElementById("new-supplier-name").value="";
+  document.getElementById("new-supplier-aromas").value="";
   save();renderSuppliersList();renderSupplierSelect();
 }
 function deleteSupplier(id){
   if(!confirm("Видалити постачальника?"))return;
   suppliers=suppliers.filter(function(s){return s.id!==id;});
   save();renderSuppliersList();renderSupplierSelect();
+}
+
+// Migrate legacy sticks_<supplierId> → sticks_<aromaId>
+// Distributes supplier stock evenly across their aromas
+function migrateSupplierToAroma(){
+  var migrated=[];
+  var supplierAromaMap={
+    yasuhito:["osmanthus","cherry","sandalwood","camphor"],
+    ryo:["hydrangea","blacksandal","musk","frankincense"],
+    yoko:["temple","honeysandal"],
+    hanna:["gardentree","agarwood"]
+  };
+  Object.keys(supplierAromaMap).forEach(function(supId){
+    var k="sticks_"+supId;
+    if(!rawStock[k]||rawStock[k].qty<=0)return;
+    var aromas=supplierAromaMap[supId];
+    var totalKg=rawStock[k].qty;
+    var totalSticks=rawStock[k].sticks||Math.round(totalKg*2000);
+    var avgCost=rawStock[k].avgCostUah||0;
+    var kgEach=totalKg/aromas.length;
+    var sticksEach=Math.round(totalSticks/aromas.length);
+    aromas.forEach(function(a){
+      var ak="sticks_"+a;
+      if(!rawStock[ak])rawStock[ak]={qty:0,avgCostUah:0,sticks:0,unit:"кг"};
+      rawStock[ak].qty+=kgEach;
+      rawStock[ak].sticks=(rawStock[ak].sticks||0)+sticksEach;
+      if(rawStock[ak].avgCostUah<=0) rawStock[ak].avgCostUah=avgCost;
+      else rawStock[ak].avgCostUah=(rawStock[ak].avgCostUah+avgCost)/2;
+    });
+    migrated.push(supId+": "+totalKg.toFixed(2)+" кг → "+aromas.join(", ")+" (по "+kgEach.toFixed(2)+" кг)");
+    rawStock[k].qty=0; rawStock[k].sticks=0; // clear legacy
+  });
+  if(migrated.length){
+    save();renderRawMaterials();
+    var el=document.getElementById("migration-status");
+    if(el) el.innerHTML="✅ Мігровано:<br>"+migrated.map(function(m){return "• "+esc(m);}).join("<br>");
+    alert("✅ Мігровано "+migrated.length+" постачальників на аромати. Розподілено рівномірно — відкоригуйте вручну якщо потрібно.");
+  } else {
+    var el=document.getElementById("migration-status");
+    if(el) el.textContent="ℹ️ Нічого мігрувати — всі залишки вже по ароматах або порожні.";
+  }
 }
 
 // ============================================================
