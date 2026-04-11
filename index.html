@@ -343,36 +343,37 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 </div>
 
 <div class="tabs">
-  <button class="tab active"   onclick="switchTab('dashboard')">🏠 Дашборд</button>
-  <button class="tab"          onclick="switchTab('form')">📝 Документи</button>
-  <button class="tab" id="tab-preview" onclick="switchTab('preview')" disabled>👁 Перегляд</button>
-  <button class="tab"          onclick="switchTab('journal')">📚 Журнал</button>
+  <button class="tab active"   onclick="switchTab('dashboard')">🏠</button>
+  <button class="tab"          onclick="switchTab('docs')">📝 Документи</button>
   <button class="tab"          onclick="switchTab('warehouse')">📦 Склад</button>
-  <button class="tab"          onclick="switchTab('retail')">🏪 Точки</button>
-  <button class="tab"          onclick="switchTab('stats')">📊 Аналітика</button>
-  <button class="tab"          onclick="switchTab('buyers')">👥 Покупці</button>
-  <button class="tab"          onclick="switchTab('products')">🌿 Товари</button>
+  <button class="tab"          onclick="switchTab('sales')">🏪 Продажі</button>
+  <button class="tab"          onclick="switchTab('catalog')">📋 Довідники</button>
   <button class="tab"          onclick="switchTab('settings')">⚙️</button>
-  <button class="tab"          onclick="switchTab('cogs')">🧮 Собівартість</button>
 </div>
 
 <!-- ═══ DASHBOARD ═══ -->
 <div id="pane-dashboard">
   <div id="dash-kpi" class="dash-grid"></div>
+  <div class="card" id="dash-alerts-card" style="display:none">
+    <div class="card-title">⚠️ Потребує уваги</div>
+    <div id="dash-alerts"></div>
+  </div>
   <div class="row" style="gap:14px">
-    <div style="flex:1;min-width:280px">
-      <div class="card"><div id="dash-top-buyers"></div></div>
-    </div>
-    <div style="flex:1;min-width:280px">
-      <div class="card"><div id="dash-top-products"></div></div>
-    </div>
+    <div style="flex:1;min-width:280px"><div class="card"><div id="dash-top-buyers"></div></div></div>
+    <div style="flex:1;min-width:280px"><div class="card"><div id="dash-top-products"></div></div></div>
   </div>
   <div class="card"><div id="dash-forecast"></div></div>
   <div class="card"><div id="dash-warehouse-summary"></div></div>
 </div>
 
-<!-- ═══ FORM ═══ -->
-<div id="pane-form" style="display:none">
+<!-- ═══ DOCS (Form + Preview + Journal) ═══ -->
+<div id="pane-docs" style="display:none">
+  <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:8px">
+    <button class="btn btn-gray btn-sm" id="docs-sub-form" onclick="switchDocsSub('form')" style="font-weight:700;background:var(--moss2);color:var(--pine)">✏️ Нова</button>
+    <button class="btn btn-gray btn-sm" id="docs-sub-preview" onclick="switchDocsSub('preview')">👁 Перегляд</button>
+    <button class="btn btn-gray btn-sm" id="docs-sub-journal" onclick="switchDocsSub('journal')">📚 Журнал</button>
+  </div>
+  <div id="docs-form">
   <div class="card">
     <div class="doc-switcher">
       <label><input type="radio" name="doctype" value="invoice" checked onchange="onDocTypeChange()">📦 Видаткова накладна</label>
@@ -403,22 +404,17 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <button class="btn-generate" id="btn-generate" onclick="generate()" disabled>🌿 Згенерувати</button> 
     <button type="button" class="btn-add" style="margin-top:8px;border-color:#ddd;color:#888" onclick="clearForm()">✕ Очистити форму</button>
   </div>
-</div>
-
-<!-- ═══ PREVIEW ═══ -->
-<div id="pane-preview" style="display:none">
-  <div class="action-bar">
-    <button class="btn btn-gray" onclick="switchTab('form')">← Редагувати</button>
-    <button class="btn btn-excel" onclick="doExportExcel(generated)">📊 Excel</button>
-    <button class="btn btn-pdf"   onclick="doExportPDF(generated)">📄 PDF</button>
-    <button class="btn btn-copy"  onclick="doCopyText()">📋 Копіювати</button>
   </div>
-  <div class="hint">💡 <strong>PDF:</strong> друк → «Зберегти як PDF». <strong>Excel:</strong> відкрийте в Excel або Google Sheets.</div>
-  <div class="preview-box" id="preview-content"></div>
-</div>
-
-<!-- ═══ JOURNAL ═══ -->
-<div id="pane-journal" style="display:none">
+  <div id="docs-preview" style="display:none">
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <button class="btn btn-gray btn-sm" onclick="switchDocsSub('form')">← Редагувати</button>
+      <button class="btn btn-excel" onclick="doExportExcel(generated)">📊 Excel</button>
+      <button class="btn btn-pdf" onclick="doExportPDF(generated)">📄 PDF</button>
+      <button class="btn btn-copy" onclick="copyInvoiceText(generated)">📋 Копіювати</button>
+    </div>
+    <div class="preview-box" id="preview-content"></div>
+  </div>
+  <div id="docs-journal" style="display:none">
   <div class="card">
     <div class="row" style="margin-bottom:10px">
       <div class="field"><input id="j-search" placeholder="Пошук за покупцем або №..." oninput="renderJournal()"></div>
@@ -437,9 +433,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     </div>
     <div id="journal-list"></div>
   </div>
+  </div>
 </div>
 
-<!-- ═══ WAREHOUSE ═══ -->
 <div id="pane-warehouse" style="display:none">
   <!-- RECEIVE goods -->
   <div class="card">
@@ -455,7 +451,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
           <option value="stands">Підставки (шт)</option>
         </select>
       </div>
-      <div class="field" id="recv-supplier-wrap">
+      <div class="field" id="recv-supplier-wrap" style="display:none">
         <label>Постачальник</label>
         <select id="recv-supplier" onchange="onRecvSupplierChange()"></select>
       </div>
@@ -474,15 +470,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <div id="recv-raw-fields" style="display:none">
       <div class="row">
         <div class="field" style="flex:0 0 120px"><label id="recv-qty-label">Кількість (кг)</label><input id="recv-raw-qty" type="number" min="0.1" step="0.1" value="5"></div>
-        <div class="field" style="flex:0 0 130px"><label>Ціна ($/кг)</label><input id="recv-raw-price" type="number" min="0" step="0.01"></div>
-        <div class="field" style="flex:0 0 110px"><label>Курс USD→UAH</label><input id="recv-rate" type="number" min="1" step="0.01" value="41.72"></div>
-        <div class="field" style="flex:0 0 110px"><label>Доставка (₴)</label><input id="recv-delivery" type="number" min="0" value="0"></div>
+        <div class="field" style="flex:0 0 150px"><label id="recv-price-label">Ціна (₴/кг)</label><input id="recv-raw-price" type="number" min="0" step="0.01" placeholder="₴"></div>
       </div>
       <div id="recv-sticks-info" class="hint" style="display:none"></div>
     </div>
     <div class="row">
       <div class="field" style="flex:0 0 160px"><label>Дата</label><input id="recv-date" type="date"></div>
-      <div class="field"><label>Примітка (необов'язково)</label><input id="recv-note" placeholder="Партія №5, Yasuhito..."></div>
+      <div class="field"><label>Примітка (необов'язково)</label><input id="recv-note" placeholder="Партія №5..."></div>
     </div>
     <button class="btn btn-moss" onclick="receiveGoods()">📥 Прийняти на склад</button>
   </div>
@@ -518,9 +512,15 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
       <div class="card-title" style="margin:0">🌱 Залишки сировини та матеріалів</div>
-      <div style="font-size:11px;color:var(--ink4)">Оновлюється автоматично при прийомі та збірці</div>
+      <button class="btn btn-gray btn-sm" onclick="toggleRawEdit()">✏️ Редагувати залишки</button>
     </div>
     <div id="raw-materials-cards"></div>
+    <div id="raw-edit-panel" style="display:none" class="manage-form">
+      <div class="card-title" style="font-size:13px">Коригування залишків сировини</div>
+      <div class="hint">Змінюйте кількість та ціну для внесення стартового балансу або коригувань.</div>
+      <div id="raw-edit-fields"></div>
+      <button class="btn btn-moss btn-sm" style="margin-top:10px" onclick="saveRawEdits()">💾 Зберегти коригування</button>
+    </div>
   </div>
 
   <!-- RECEIVE HISTORY -->
@@ -530,32 +530,27 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   </div>
 </div>
 
-<!-- ═══ RETAIL POINTS ═══ -->
-<div id="pane-retail" style="display:none">
+  <!-- COGS / Собівартість -->
   <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
-      <div class="card-title" style="margin:0">🏪 Залишки на точках роздрібу</div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-moss btn-sm" onclick="openSalesReportModal()">✏️ Ввести продажі</button>
-        <button class="btn btn-gray btn-sm" onclick="openAddRetailModal()">+ Додати точку</button>
-      </div>
-    </div>
-    <div id="retail-store-grid"></div>
+    <div class="card-title">💰 Витрати на виробництво</div>
+    <div class="hint">Ціни паличок, тубусів та наліпок беруться з прийомки сировини. Тут лише накладні витрати.</div>
+    <div id="cogs-materials-form"></div>
+    <button class="btn btn-moss btn-sm" style="margin-top:10px" onclick="saveCogsMaterials()">💾 Зберегти витрати</button>
   </div>
-
   <div class="card">
-    <div class="card-title">📋 Історія звітів продажів</div>
-    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-      <select id="retail-history-filter" onchange="renderRetailHistory()" style="width:auto;padding:5px 8px;font-size:12px">
-        <option value="">Всі точки</option>
-      </select>
-    </div>
-    <div id="retail-history-list"></div>
+    <div class="card-title">📋 Рецепти (BOM)</div>
+    <div class="hint">Скільки одиниць кожного матеріалу витрачається на одну пачку.</div>
+    <div id="cogs-bom-table"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">📊 Собівартість по ароматах</div>
+    <div class="hint">Ціна з прийомки × рецепт + накладні витрати.</div>
+    <div id="cogs-result-table"></div>
   </div>
 </div>
 
-<!-- ═══ STATS ═══ -->
-<div id="pane-stats" style="display:none">
+<!-- ═══ SALES (Stats + Retail) ═══ -->
+<div id="pane-sales" style="display:none">
   <div class="card">
     <div class="row" style="margin-bottom:0">
       <div class="field" style="flex:0 0 140px">
@@ -599,10 +594,24 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <div style="flex:1;min-width:260px"><div class="bar-wrap" id="stats-buyers-bar"></div></div>
     <div style="flex:1;min-width:260px"><div class="bar-wrap" id="stats-products-bar"></div></div>
   </div>
+  <div class="card" style="margin-top:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+      <div class="card-title" style="margin:0">🏪 Залишки на точках роздрібу</div>
+      <button class="btn btn-moss btn-sm" onclick="openSalesReportModal()">✏️ Ввести продажі</button>
+    </div>
+    <div id="retail-store-grid"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">📋 Історія звітів продажів</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <select id="retail-history-filter" onchange="renderRetailHistory()" style="width:auto;padding:5px 8px;font-size:12px"><option value="">Всі точки</option></select>
+    </div>
+    <div id="retail-history-list"></div>
+  </div>
 </div>
 
-<!-- ═══ BUYERS ═══ -->
-<div id="pane-buyers" style="display:none">
+<!-- ═══ CATALOG (Buyers + Products + Suppliers) ═══ -->
+<div id="pane-catalog" style="display:none">
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <strong style="font-size:14px">👥 Покупці</strong>
@@ -627,10 +636,10 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       </div>
       <div class="row">
         <div class="field"><label>ПІБ отримувача *</label><input id="nb-receiver"></div>
-        <div class="field"><label style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-          <input type="checkbox" id="nb-isretail" style="width:auto;margin:0">
-          Точка роздрібу (відстежувати залишки)</label>
-          <input id="nb-retailname" placeholder="Назва для картки" style="display:none"></div>
+        <div class="field"><label>Назва точки</label>
+          <input id="nb-retailname" placeholder="Витягується з дужок назви">
+          <input type="hidden" id="nb-isretail" value="1">
+        </div>
       </div>
       <div style="display:flex;gap:10px;margin-top:8px">
         <button class="btn btn-moss btn-sm" onclick="saveBuyer()">💾 Зберегти</button>
@@ -638,9 +647,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       </div>
     </div>
   </div>
-</div>
-
-<!-- ═══ PRODUCTS ═══ -->
 <div id="pane-products" style="display:none">
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
@@ -669,6 +675,16 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       </div>
     </div>
   </div>
+  <div class="card">
+    <strong style="font-size:14px;display:block;margin-bottom:14px">🏭 Постачальники сировини</strong>
+    <div class="manage-list" id="suppliers-list" style="margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+      <input id="new-supplier-name" placeholder="Назва нового постачальника" style="flex:1;min-width:200px">
+      <input id="new-supplier-aromas" placeholder="Аромати (через кому: cherry, musk)" style="flex:1;min-width:200px">
+      <button class="btn btn-moss btn-sm" onclick="addSupplier()">+ Додати</button>
+    </div>
+    <div style="font-size:11px;color:var(--ink4)">ID ароматів: osmanthus, cherry, sandalwood, camphor, hydrangea, blacksandal, musk, frankincense, temple, honeysandal, gardentree, agarwood</div>
+  </div>
 </div>
 
 <!-- ═══ SETTINGS ═══ -->
@@ -678,17 +694,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <label class="radio-label" style="margin-bottom:14px">
       <input type="checkbox" id="setting-autoincrement" style="width:auto;margin-right:4px"> Автоматично збільшувати номер накладної
     </label>
-    <div class="section-divider">Постачальники сировини</div>
-    <div class="manage-list" id="suppliers-list" style="margin-bottom:10px"></div>
-    <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-      <input id="new-supplier-name" placeholder="Назва нового постачальника" style="flex:1;min-width:200px">
-      <input id="new-supplier-aromas" placeholder="Аромати (через кому: cherry, musk)" style="flex:1;min-width:200px">
-      <button class="btn btn-moss btn-sm" onclick="addSupplier()">+ Додати</button>
-    </div>
-    <div style="font-size:11px;color:var(--ink4);margin-bottom:16px">Доступні ID ароматів: osmanthus, cherry, sandalwood, camphor, hydrangea, blacksandal, musk, frankincense, temple, honeysandal, gardentree, agarwood</div>
     <div class="section-divider">Міграція</div>
     <div style="margin-bottom:16px">
-      <div style="font-size:12px;color:var(--ink3);margin-bottom:8px">Якщо залишки паличок зараз прив'язані до постачальників (старий формат), натисніть щоб розподілити їх по ароматах:</div>
       <button class="btn btn-moss btn-sm" onclick="migrateSupplierToAroma()">🔄 Розподілити палички по ароматах</button>
       <div id="migration-status" style="font-size:12px;color:var(--ink4);margin-top:6px"></div>
     </div>
@@ -696,42 +703,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn btn-moss btn-sm" onclick="exportBackup()">💾 Резервна копія</button>
       <button class="btn btn-gray btn-sm" onclick="document.getElementById('import-file').click()">📂 Відновити</button>
-      <button class="btn btn-moss btn-sm" onclick="document.getElementById('merge-file').click()">☁️ Merge backup у хмару</button>
-<input type="file" id="merge-file" accept=".json" style="display:none" onchange="mergeImportBackup(this)">
+      <button class="btn btn-moss btn-sm" onclick="document.getElementById('merge-file').click()">☁️ Merge backup</button>
+      <input type="file" id="merge-file" accept=".json" style="display:none" onchange="mergeImportBackup(this)">
       <input type="file" id="import-file" accept=".json" style="display:none" onchange="importBackup(this)">
       <button class="btn btn-danger btn-sm" onclick="clearJournal()">🗑 Очистити журнал</button>
       <button class="btn btn-danger btn-sm" onclick="resetAll()">⚠️ Скинути все</button>
     </div>
   </div>
-</div>
-
-<!-- ═══ COGS / СОБІВАРТІСТЬ ═══ -->
-<div id="pane-cogs" style="display:none">
-
-  <!-- MATERIAL PRICES -->
-  <div class="card">
-    <div class="card-title">💰 Вартість матеріалів та сировини</div>
-    <div class="hint">Вводьте фактичні ціни закупівлі — собівартість кожного SKU перерахується автоматично.</div>
-    <div id="cogs-materials-form"></div>
-  </div>
-
-  <!-- BOM RECIPES -->
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-      <div class="card-title" style="margin:0">📋 Рецепти (BOM) — склад готової продукції</div>
-      <button class="btn btn-moss btn-sm" onclick="saveCogsMaterials()">💾 Зберегти ціни</button>
-    </div>
-    <div class="hint">Скільки одиниць кожного матеріалу витрачається на одну пачку.</div>
-    <div id="cogs-bom-table"></div>
-  </div>
-
-  <!-- CALCULATED COGS TABLE -->
-  <div class="card">
-    <div class="card-title">📊 Розрахункова собівартість по SKU</div>
-    <div class="hint">Рахується автоматично: ціна матеріалів × кількість по рецепту + витрати на виробництво.</div>
-    <div id="cogs-result-table"></div>
-  </div>
-
 </div>
 
 </div><!-- .app -->
@@ -852,14 +830,14 @@ const DEFAULT_PRODUCTS=[
 ];
 
 const DEFAULT_BUYERS=[
-  {id:"byuro_vyn",  name:'ТОВ "БЮРО ВИН"',fullName:'Товариство з обмеженою відповідальністю "БЮРО ВИН"',address:"Адреса: Україна, 01021, м. Київ, вул. Мечнікова, буд. № 9, тел.: +38 (044) 390-75-00",contract:"Основний договір №28997 від 04.10.24",receiver:"Журавльова Любов Олександрівна",iban:null,edrpou:null,bank:null,isRetail:false},
+  {id:"byuro_vyn",  name:'ТОВ "БЮРО ВИН"',fullName:'Товариство з обмеженою відповідальністю "БЮРО ВИН"',address:"Адреса: Україна, 01021, м. Київ, вул. Мечнікова, буд. № 9, тел.: +38 (044) 390-75-00",contract:"Основний договір №28997 від 04.10.24",receiver:"Журавльова Любов Олександрівна",iban:null,edrpou:null,bank:null,isRetail:true,retailName:"Бюро Вин"},
   {id:"integralist",name:"ФОП Сибіга Яна (Інтегралісt)",fullName:"Фізична особа-підприємець Сибіга Яна Олександрівна",address:null,contract:null,receiver:"Сибіга Яна Олександрівна",iban:"UA453052990000026007036232536",edrpou:"3509311864",bank:'АТ КБ "ПРИВАТБАНК"',isRetail:true,retailName:"Інтеграліст"},
   {id:"kimera",     name:"ФОП Зеленюк (Кімера)",fullName:"Фізична особа-підприємець ФОП Зеленюк Ю.В.",address:null,contract:null,receiver:"Зеленюк Ю.В.",iban:"UA193052990000026006041609166",edrpou:"3346008325",bank:'АТ КБ "ПРИВАТБАНК"',isRetail:true,retailName:"Кімера"},
   {id:"dudchenko",  name:"ФОП Дудченко Поліна (Спільне)",fullName:"Фізична особа-підприємець ДУДЧЕНКО ПОЛІНА ЮРІЇВНА",address:"УКРАЇНА, 76014, ІВАНО-ФРАНКІВСЬКА ОБЛАСТЬ, М.ІВАНО-ФРАНКІВСЬК ВУЛ. СЛАВИ СТЕЦЬКО, БУД 11-А, КВ. 27",contract:null,receiver:"Дудченко Поліна Юріївна",iban:"UA193052990000026006041609166",edrpou:"3460006325",bank:'АТ КБ "ПРИВАТБАНК"',isRetail:true,retailName:"Спільне"},
   {id:"davydenko",  name:"ФОП Давиденко Олександра (Товариство)",fullName:"Фізична особа-підприємець Давиденко Олександра Олегівна",address:null,contract:null,receiver:"Давиденко Олександра Олегівна",iban:"UA783052990000026009011009061",edrpou:"3409409521",bank:'АТ КБ "ПРИВАТБАНК"',isRetail:true,retailName:"Товариство Львів"},
   {id:"sadova",     name:"ФОП Садова Аліна (Octo 66)",fullName:"Фізична особа-підприємець Садова Аліна Володимирівна",address:null,contract:null,receiver:"Садова Аліна Володимирівна",iban:"UA153220010000026203307239547",edrpou:null,bank:"АТ УНІВЕРСАЛ БАНК",isRetail:true,retailName:"Octo Tower"},
-  {id:"evladenko",  name:"ФОП Євладенко Лідія (Ridni Rechi)",fullName:"ФОП Євладенко Лідія Олегівна",address:null,contract:null,receiver:"Євладенко Лідія Олегівна",iban:"UA183220010000026006350045695",edrpou:"3254804042",bank:"АТ УНІВЕРСАЛ БАНК",isRetail:false},
-  {id:"bugera",     name:"ФОП Бугера Ярослав (Vynila)",fullName:"Фізична особа-підприємець Бугера Ярослав Ігорович",address:"Україна, 04136, місто Київ, вулиця Івана Виговського, будинок 9, квартира 126",contract:null,receiver:"Бугера Ярослав Ігорович",iban:null,edrpou:"3640008010",bank:null,isRetail:false},
+  {id:"evladenko",  name:"ФОП Євладенко Лідія (Ridni Rechi)",fullName:"ФОП Євладенко Лідія Олегівна",address:null,contract:null,receiver:"Євладенко Лідія Олегівна",iban:"UA183220010000026006350045695",edrpou:"3254804042",bank:"АТ УНІВЕРСАЛ БАНК",isRetail:true,retailName:"Ridni Rechi"},
+  {id:"bugera",     name:"ФОП Бугера Ярослав (Vynila)",fullName:"Фізична особа-підприємець Бугера Ярослав Ігорович",address:"Україна, 04136, місто Київ, вулиця Івана Виговського, будинок 9, квартира 126",contract:null,receiver:"Бугера Ярослав Ігорович",iban:null,edrpou:"3640008010",bank:null,isRetail:true,retailName:"Vynila"},
   {id:"d2c_instagram", name:"📷 Інстаграм (D2C)",fullName:"Продаж через Instagram",address:null,contract:null,receiver:null,iban:null,edrpou:null,bank:null,isRetail:false,isD2C:true},
   {id:"d2c_site",      name:"🌐 Сайт alltreesiknow.com (D2C)",fullName:"Продаж через сайт",address:null,contract:null,receiver:null,iban:null,edrpou:null,bank:null,isRetail:false,isD2C:true},
 ];
@@ -976,6 +954,15 @@ function load(){
     // Fix Ryo name if old
     var ryoSup=suppliers.find(function(s){return s.id==="ryo";});
     if(ryoSup&&ryoSup.name&&ryoSup.name.indexOf("Awaji")>=0) ryoSup.name="Daiwa Co (Ryo)";
+    // Auto-set all non-D2C buyers as retail points
+    buyers.forEach(function(b){
+      if(b.isD2C) return;
+      if(!b.isRetail) b.isRetail=true;
+      if(!b.retailName){
+        var m=b.name.match(/\(([^)]+)\)/);
+        b.retailName=m?m[1]:b.name;
+      }
+    });
   }catch(e){
     products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
     buyers=JSON.parse(JSON.stringify(DEFAULT_BUYERS));
@@ -1274,21 +1261,30 @@ function getDaysOfStock(pid){
 // ============================================================
 // TAB SWITCHING
 // ============================================================
-var ALL_TABS=["dashboard","form","preview","journal","warehouse","retail","stats","buyers","products","settings","cogs"];
+var ALL_TABS=["dashboard","docs","warehouse","sales","catalog","settings"];
 function switchTab(tab){
   ALL_TABS.forEach(function(t){
     var p=document.getElementById("pane-"+t); if(p)p.style.display=(t===tab?"":"none");
   });
-  document.querySelectorAll(".tab").forEach(function(el,i){el.classList.toggle("active",ALL_TABS[i]===tab);});
+  document.querySelectorAll(".tabs .tab").forEach(function(el,i){el.classList.toggle("active",ALL_TABS[i]===tab);});
   if(tab==="dashboard")  renderDashboard();
-  if(tab==="journal")    renderJournal();
-  if(tab==="stats")      renderStats();
-  if(tab==="buyers")     renderBuyersList();
-  if(tab==="products")   renderProductsList();
-  if(tab==="warehouse")  {renderWarehouse();renderRawMaterials();renderReceiveHistory();renderAssembleSelect();}
-  if(tab==="retail")     renderRetailTab();
-  if(tab==="settings")   {loadSettings();renderSuppliersList();}
-  if(tab==="cogs")       renderCogs();
+  if(tab==="docs")       {renderJournal();}
+  if(tab==="warehouse")  {renderWarehouse();renderRawMaterials();renderReceiveHistory();renderAssembleSelect();renderCogs();}
+  if(tab==="sales")      {renderStats();renderRetailTab();}
+  if(tab==="catalog")    {renderBuyersList();renderProductsList();renderSuppliersList();}
+  if(tab==="settings")   {loadSettings();}
+}
+function switchDocsSub(sub){
+  ["form","preview","journal"].forEach(function(s){
+    var el=document.getElementById("docs-"+s);
+    if(el) el.style.display=(s===sub?"":"none");
+    var btn=document.getElementById("docs-sub-"+s);
+    if(btn){
+      btn.style.fontWeight=s===sub?"700":"400";
+      btn.style.background=s===sub?"var(--moss2)":"";
+      btn.style.color=s===sub?"var(--pine)":"";
+    }
+  });
 }
 
 // ============================================================
@@ -1522,10 +1518,9 @@ var priceLabel={
     }
     generated=g;
     renderPreview();
-    document.getElementById("tab-preview").disabled=false;
     save();
     hideLoader();
-    switchTab("preview");
+    switchTab("docs");switchDocsSub("preview");
   },1200);
 }
 
@@ -1928,7 +1923,7 @@ function loadFromJournal(g){
   document.getElementById("inv-num").value=g.invoiceNum;
   document.getElementById("inv-date").value=g.invoiceDate;
   onBuyerChange();onDocTypeChange();renderItems();
-  closeModal("modal-journal");switchTab("form");
+  closeModal("modal-journal");switchTab("docs");switchDocsSub("form");
 }
 function duplicateInvoice(g){
   if(!g)return;
@@ -1942,7 +1937,7 @@ function duplicateInvoice(g){
   document.getElementById("inv-num").value=(parseInt(g.invoiceNum)||0)+1;
   document.getElementById("inv-date").value=new Date().toISOString().split("T")[0];
   onBuyerChange();onDocTypeChange();renderItems();
-  closeModal("modal-journal");switchTab("form");
+  closeModal("modal-journal");switchTab("docs");switchDocsSub("form");
 }
 
 // ============================================================
@@ -1975,15 +1970,21 @@ function onRecvTypeChange(){
   var aw=document.getElementById("recv-aroma-wrap");
   var si=document.getElementById("recv-sticks-info");
   var ql=document.getElementById("recv-qty-label");
-  if(t==="finished"){ff.style.display="";rf.style.display="none";sw.style.display="none";aw.style.display="none";}
-  else{ff.style.display="none";rf.style.display="";sw.style.display="";}
-  if(t==="sticks"){ql.textContent="Кількість (кг)";si.style.display="block";aw.style.display="";
-    si.textContent="💡 1 кг ≈ 2000 паличок. Вводьте кг — автоматично перерахується в палички.";
-    onRecvSupplierChange();}
-  else{aw.style.display="none";}
-  if(t==="tubes"){ql.textContent="Кількість (шт)";si.style.display="none";}
-  if(t==="labels"){ql.textContent="Кількість (шт)";si.style.display="none";}
-  if(t==="stands"){ql.textContent="Кількість (шт)";si.style.display="none";}
+  var pl=document.getElementById("recv-price-label");
+  if(t==="finished"){
+    ff.style.display="";rf.style.display="none";sw.style.display="none";aw.style.display="none";
+  } else {
+    ff.style.display="none";rf.style.display="";sw.style.display="";
+    if(t==="sticks"){
+      ql.textContent="Кількість (кг)"; pl.textContent="Ціна (₴/кг)";
+      si.style.display="block"; aw.style.display="";
+      si.textContent="💡 1 кг ≈ 2000 паличок. Вводьте кг та ціну в грн за кг.";
+      onRecvSupplierChange();
+    } else {
+      aw.style.display="none"; si.style.display="none";
+      ql.textContent="Кількість (шт)"; pl.textContent="Ціна (₴/шт)";
+    }
+  }
 }
 
 function receiveGoods(){
@@ -2006,15 +2007,14 @@ function receiveGoods(){
     alert("✅ Прийнято "+qty+" шт. "+shortName(p&&p.name||pid));
   } else {
     var rawQty=parseFloat(document.getElementById("recv-raw-qty").value)||0;
-    var rawPrice=parseFloat(document.getElementById("recv-raw-price").value)||0;
-    var rate=parseFloat(document.getElementById("recv-rate").value)||41.72;
-    var delivery=parseFloat(document.getElementById("recv-delivery").value)||0;
+    var priceUah=parseFloat(document.getElementById("recv-raw-price").value)||0;
     var supplier=document.getElementById("recv-supplier").value;
     if(rawQty<=0){alert("Вкажіть кількість");return;}
+    if(priceUah<=0){alert("Вкажіть ціну в ₴");return;}
 
-    var rawKey, unit, sticks=0;
+    var rawKey, unit, sticks=0, aroma=null;
     if(t==="sticks"){
-      var aroma=document.getElementById("recv-aroma").value;
+      aroma=document.getElementById("recv-aroma").value;
       if(!aroma){alert("Оберіть аромат");return;}
       rawKey="sticks_"+aroma; unit="кг";
       sticks=Math.round(rawQty*2000);
@@ -2022,19 +2022,32 @@ function receiveGoods(){
     else if(t==="labels")   {rawKey="labels"; unit="шт";}
     else if(t==="stands")   {rawKey="stands"; unit="шт";}
 
-    var totalCostUah=rawPrice*rate*rawQty+delivery; // approximate total UAH
-    var costPerUnit=rawQty>0?totalCostUah/rawQty:0;
+    // Update rawStock with weighted average price
     if(!rawStock[rawKey])rawStock[rawKey]={qty:0,avgCostUah:0,unit:unit,sticks:0};
     var ro=rawStock[rawKey];
-    var newAvgR=ro.qty>0?(ro.avgCostUah*ro.qty+costPerUnit*rawQty)/(ro.qty+rawQty):costPerUnit;
+    var newAvgR=ro.qty>0?(ro.avgCostUah*ro.qty+priceUah*rawQty)/(ro.qty+rawQty):priceUah;
     ro.qty+=rawQty; ro.avgCostUah=newAvgR;
-    if(t==="sticks")ro.sticks=(ro.sticks||0)+sticks;
-    var aromaLabel=t==="sticks"?aromaName(aroma):"";
+    if(t==="sticks") ro.sticks=(ro.sticks||0)+sticks;
+
+    // Auto-update COGS matPrices for this aroma from rawStock avg
+    if(t==="sticks" && aroma){
+      matPrices["aroma_"+aroma]=ro.avgCostUah;
+      saveCogsPrices();
+    } else if(t==="tubes"){
+      matPrices.tube_uah=ro.avgCostUah;
+      saveCogsPrices();
+    } else if(t==="labels"){
+      matPrices.label_uah=ro.avgCostUah;
+      saveCogsPrices();
+    }
+
+    var aromaLabel=aroma?aromaName(aroma):"";
+    var totalUah=priceUah*rawQty;
     receiveHistory.unshift({id:uid(),date:date,type:t,rawKey:rawKey,qty:rawQty,unit:unit,
-      priceUsd:rawPrice,rate:rate,delivery:delivery,totalUah:totalCostUah,supplier:supplier,
-      aroma:t==="sticks"?aroma:null,note:note,savedAt:new Date().toISOString()});
+      priceUah:priceUah,totalUah:totalUah,supplier:supplier,
+      aroma:aroma,note:note,savedAt:new Date().toISOString()});
     save();renderRawMaterials();renderReceiveHistory();
-    alert("✅ Прийнято "+rawQty+" "+unit+(t==="sticks"?" "+aromaLabel+" (≈"+sticks+" паличок)":""));
+    alert("✅ Прийнято "+rawQty+" "+unit+(t==="sticks"?" "+aromaLabel+" (≈"+sticks+" паличок)":"")+" за "+priceUah+" ₴/"+unit);
   }
 }
 
@@ -2136,14 +2149,17 @@ function assembleBatch(){
   if(rawStock.tubes)  rawStock.tubes.qty  =Math.max(0,(rawStock.tubes.qty||0)-tubsNeeded);
   if(rawStock.labels) rawStock.labels.qty =Math.max(0,(rawStock.labels.qty||0)-labsNeeded);
 
-  // COGS from matPrices (live, using aroma-specific price)
+  // COGS from rawStock avg prices (updated on each receiving)
   var mp=matPrices; var mp0=DEFAULT_MAT_PRICES;
   var sticksPerKg=2000;
   var aromaKey=aromaId?"aroma_"+aromaId:"aroma_osmanthus";
-  var pricePerKg=mp[aromaKey]||mp0[aromaKey]||mp0.aroma_osmanthus||0;
+  var aromaRawKey=aromaId?"sticks_"+aromaId:null;
+  var pricePerKg=aromaRawKey&&rawStock[aromaRawKey]&&rawStock[aromaRawKey].avgCostUah>0?rawStock[aromaRawKey].avgCostUah:(mp[aromaKey]||mp0[aromaKey]||0);
   var stickCost=(bom.sticks||0)*(pricePerKg/sticksPerKg);
-  var tubeCost =(bom.tubes||0)*(mp.tube_uah||mp0.tube_uah);
-  var labelCost=(bom.labels||0)*(mp.label_uah||mp0.label_uah);
+  var tubePrice=(rawStock.tubes&&rawStock.tubes.avgCostUah>0)?rawStock.tubes.avgCostUah:(mp.tube_uah||mp0.tube_uah||0);
+  var labelPrice=(rawStock.labels&&rawStock.labels.avgCostUah>0)?rawStock.labels.avgCostUah:(mp.label_uah||mp0.label_uah||0);
+  var tubeCost =(bom.tubes||0)*tubePrice;
+  var labelCost=(bom.labels||0)*labelPrice;
   var overhead=(mp.labor_uah||mp0.labor_uah)+(mp.delivery_per_pack_uah||mp0.delivery_per_pack_uah)+(mp.promo_per_pack_uah||mp0.promo_per_pack_uah);
   var subtotal=stickCost+tubeCost+labelCost+overhead;
   var miscCost=subtotal*((mp.misc_pct||mp0.misc_pct||3)/100);
@@ -2279,6 +2295,81 @@ function renderRawMaterials(){
   if(el)el.innerHTML=html;
 }
 
+function toggleRawEdit(){
+  var panel=document.getElementById("raw-edit-panel");
+  if(panel.style.display==="none"){
+    panel.style.display="";
+    renderRawEditFields();
+  } else {
+    panel.style.display="none";
+  }
+}
+function renderRawEditFields(){
+  var html='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px">';
+  // Aroma sticks
+  Object.keys(AROMAS).forEach(function(aId){
+    var k="sticks_"+aId;
+    var r=rawStock[k]||{qty:0,avgCostUah:0,sticks:0};
+    html+='<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);padding:10px">'
+      +'<div style="font-weight:700;font-size:12px">🌿 '+esc(AROMAS[aId].en)+'</div>'
+      +'<div style="display:flex;gap:8px;margin-top:6px">'
+      +'<div style="flex:1"><label style="font-size:11px">Кількість (кг)</label>'
+      +'<input type="number" step="0.01" min="0" value="'+r.qty.toFixed(2)+'" id="redit_qty_'+k+'" style="font-size:13px;padding:5px"></div>'
+      +'<div style="flex:1"><label style="font-size:11px">Ціна (₴/кг)</label>'
+      +'<input type="number" step="0.01" min="0" value="'+(r.avgCostUah||0).toFixed(2)+'" id="redit_price_'+k+'" style="font-size:13px;padding:5px"></div>'
+      +'</div></div>';
+  });
+  // Tubes, labels
+  [{key:"tubes",label:"🧪 Тубуси",unitL:"шт",priceL:"₴/шт"},{key:"labels",label:"🏷 Наліпки",unitL:"шт",priceL:"₴/шт"}].forEach(function(def){
+    var r=rawStock[def.key]||{qty:0,avgCostUah:0};
+    html+='<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);padding:10px">'
+      +'<div style="font-weight:700;font-size:12px">'+def.label+'</div>'
+      +'<div style="display:flex;gap:8px;margin-top:6px">'
+      +'<div style="flex:1"><label style="font-size:11px">Кількість ('+def.unitL+')</label>'
+      +'<input type="number" step="1" min="0" value="'+Math.round(r.qty)+'" id="redit_qty_'+def.key+'" style="font-size:13px;padding:5px"></div>'
+      +'<div style="flex:1"><label style="font-size:11px">Ціна ('+def.priceL+')</label>'
+      +'<input type="number" step="0.01" min="0" value="'+(r.avgCostUah||0).toFixed(2)+'" id="redit_price_'+def.key+'" style="font-size:13px;padding:5px"></div>'
+      +'</div></div>';
+  });
+  html+='</div>';
+  document.getElementById("raw-edit-fields").innerHTML=html;
+}
+function saveRawEdits(){
+  // Save aroma sticks
+  Object.keys(AROMAS).forEach(function(aId){
+    var k="sticks_"+aId;
+    var qtyEl=document.getElementById("redit_qty_"+k);
+    var priceEl=document.getElementById("redit_price_"+k);
+    if(!qtyEl||!priceEl)return;
+    var newQty=parseFloat(qtyEl.value)||0;
+    var newPrice=parseFloat(priceEl.value)||0;
+    if(!rawStock[k])rawStock[k]={qty:0,avgCostUah:0,sticks:0,unit:"кг"};
+    rawStock[k].qty=newQty;
+    rawStock[k].avgCostUah=newPrice;
+    rawStock[k].sticks=Math.round(newQty*2000);
+    // Sync to COGS matPrices
+    if(newPrice>0) matPrices["aroma_"+aId]=newPrice;
+  });
+  // Save tubes, labels
+  ["tubes","labels"].forEach(function(k){
+    var qtyEl=document.getElementById("redit_qty_"+k);
+    var priceEl=document.getElementById("redit_price_"+k);
+    if(!qtyEl||!priceEl)return;
+    var newQty=parseFloat(qtyEl.value)||0;
+    var newPrice=parseFloat(priceEl.value)||0;
+    if(!rawStock[k])rawStock[k]={qty:0,avgCostUah:0,unit:"шт"};
+    rawStock[k].qty=newQty;
+    rawStock[k].avgCostUah=newPrice;
+    if(k==="tubes"&&newPrice>0) matPrices.tube_uah=newPrice;
+    if(k==="labels"&&newPrice>0) matPrices.label_uah=newPrice;
+  });
+  saveCogsPrices();
+  save();
+  renderRawMaterials();
+  document.getElementById("raw-edit-panel").style.display="none";
+  alert("✅ Залишки оновлено");
+}
+
 function renderReceiveHistory(){
   var list=receiveHistory.slice(0,30);
   if(!list.length){document.getElementById("receive-history").innerHTML='<div class="empty-state" style="padding:20px"><div class="icon">📥</div>Надходжень ще немає</div>';return;}
@@ -2292,10 +2383,13 @@ function renderReceiveHistory(){
       var sup=suppliers.find(function(s){return s.id===supId;});
       if(sup) nameDisplay=sup.name;
     }
+    var priceInfo="";
+    if(r.priceUah>0) priceInfo=" · "+r.priceUah+"₴/"+(r.unit||"шт");
+    else if(r.priceUsd>0) priceInfo=" · $"+r.priceUsd+(r.rate?" ×"+r.rate:"");
     return "<div style=\"display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px\">"
       +"<span style=\"color:var(--ink4);min-width:92px\">"+r.date+"</span>"
       +"<span style=\"color:var(--ink3);min-width:150px\">"+(typeLabels[r.type]||r.type)+"</span>"
-      +"<span style=\"flex:1\">"+esc(nameDisplay)+" · <strong>"+r.qty+"</strong> "+(r.unit||"шт.")+"</span>"
+      +"<span style=\"flex:1\">"+esc(nameDisplay)+" · <strong>"+r.qty+"</strong> "+(r.unit||"шт.")+priceInfo+"</span>"
       +(r.note?"<span style=\"color:var(--ink4)\">"+esc(r.note)+"</span>":"")
       +"</div>";
   }).join("");
@@ -2528,6 +2622,35 @@ function renderDashboard(){
     +'<div><div style="font-size:11px;color:var(--ink4)">Підставки</div><div style="font-size:20px;font-weight:700;color:var(--pine)">'+groups.stand+'</div></div>'
     +'<div><div style="font-size:11px;color:var(--ink4)">Тубуси (сировина)</div><div style="font-size:20px;font-weight:700;color:var(--pine)">'+((rawStock.tubes&&rawStock.tubes.qty.toFixed(0))||0)+'</div></div>'
     +'</div>';
+
+  // ── Alerts: low raw materials ────────────────────────────────
+  var alerts=[];
+  Object.keys(AROMAS).forEach(function(aId){
+    var k="sticks_"+aId;
+    var qty=(rawStock[k]&&rawStock[k].qty)||0;
+    if(qty<1) alerts.push({icon:"🌿",name:AROMAS[aId].en+" ("+AROMAS[aId].uk+")",val:qty.toFixed(2)+" кг",level:qty<=0?"zero":"low"});
+  });
+  if(rawStock.tubes&&rawStock.tubes.qty<100) alerts.push({icon:"🧪",name:"Тубуси",val:Math.round(rawStock.tubes.qty)+" шт",level:rawStock.tubes.qty<=0?"zero":"low"});
+  else if(!rawStock.tubes) alerts.push({icon:"🧪",name:"Тубуси",val:"0 шт",level:"zero"});
+  if(rawStock.labels&&rawStock.labels.qty<100) alerts.push({icon:"🏷",name:"Наліпки",val:Math.round(rawStock.labels.qty)+" шт",level:rawStock.labels.qty<=0?"zero":"low"});
+  else if(!rawStock.labels) alerts.push({icon:"🏷",name:"Наліпки",val:"0 шт",level:"zero"});
+
+  var alertCard=document.getElementById("dash-alerts-card");
+  var alertEl=document.getElementById("dash-alerts");
+  if(alerts.length>0){
+    alertCard.style.display="";
+    alertEl.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">'
+      +alerts.map(function(a){
+        var bg=a.level==="zero"?"var(--red2)":"#fff8e1";
+        var col=a.level==="zero"?"var(--red)":"var(--cedar)";
+        return '<div style="padding:10px 12px;border-radius:var(--r2);background:'+bg+';border:1px solid '+col+'22;display:flex;align-items:center;gap:8px">'
+          +'<span style="font-size:18px">'+a.icon+'</span>'
+          +'<div><div style="font-weight:700;font-size:12px;color:'+col+'">'+esc(a.name)+'</div>'
+          +'<div style="font-size:13px;font-weight:700;color:'+col+'">'+esc(a.val)+'</div></div></div>';
+      }).join("")+'</div>';
+  } else {
+    alertCard.style.display="none";
+  }
 }
 
 // ============================================================
@@ -2728,21 +2851,17 @@ function renderBuyersList(){
       +'</div>';
   }).join("")||'<div class="empty-state">Немає покупців</div>';
 }
-document.addEventListener("change",function(e){
-  if(e.target.id==="nb-isretail"){document.getElementById("nb-retailname").style.display=e.target.checked?"":"none";}
-});
+document.addEventListener("change",function(e){});
 function showBuyerForm(editId){
   document.getElementById("buyer-form-title").textContent=editId?"Редагувати покупця":"Новий покупець";
   document.getElementById("edit-buyer-id").value=editId||"";
   ["name","fullName","edrpou","iban","bank","address","contract","receiver","retailname"].forEach(function(f){
     var el=document.getElementById("nb-"+f);if(el)el.value="";
   });
-  document.getElementById("nb-isretail").checked=false;
-  document.getElementById("nb-retailname").style.display="none";
   if(editId){
     var b=buyers.find(function(x){return x.id===editId;});
     if(b){["name","fullName","edrpou","iban","bank","address","contract","receiver"].forEach(function(f){var el=document.getElementById("nb-"+f);if(el)el.value=b[f]||"";});
-      if(b.isRetail){document.getElementById("nb-isretail").checked=true;document.getElementById("nb-retailname").value=b.retailName||"";document.getElementById("nb-retailname").style.display="";}
+      document.getElementById("nb-retailname").value=b.retailName||"";
     }
   }
   document.getElementById("buyer-form").style.display="";
@@ -2755,14 +2874,18 @@ function saveBuyer(){
   var fullName=document.getElementById("nb-fullName").value.trim();
   var receiver=document.getElementById("nb-receiver").value.trim();
   if(!name||!fullName||!receiver){alert("Заповніть обов'язкові поля: Коротка назва, Повна назва, ПІБ отримувача");return;}
+  // Auto-extract retail name from parentheses: "ФОП Сибіга Яна (Інтегралісt)" → "Інтегралісt"
+  var retailNameInput=document.getElementById("nb-retailname").value.trim();
+  var autoRetailName=name.match(/\(([^)]+)\)/);
+  var retailName=retailNameInput || (autoRetailName?autoRetailName[1]:name);
   var data={id:editId||uid(),name:name,fullName:fullName,receiver:receiver,
     edrpou:document.getElementById("nb-edrpou").value.trim()||null,
     iban:document.getElementById("nb-iban").value.trim()||null,
     bank:document.getElementById("nb-bank").value.trim()||null,
     address:document.getElementById("nb-address").value.trim()||null,
     contract:document.getElementById("nb-contract").value.trim()||null,
-    isRetail:document.getElementById("nb-isretail").checked,
-    retailName:document.getElementById("nb-retailname").value.trim()||name,
+    isRetail:true, // all buyers are retail points
+    retailName:retailName,
     custom:true};
   if(editId){var idx=buyers.findIndex(function(b){return b.id===editId;});if(idx>=0)buyers[idx]=Object.assign({},buyers[idx],data);}
   else buyers.push(data);
@@ -3189,20 +3312,6 @@ function saveCogsPrices() {
 
 // ── Material fields definition ───────────────────────────────
 var MAT_FIELDS = [
-  { key:"aroma_osmanthus",    label:"Osmanthus (Османтус)",         unit:"₴/кг", hint:"B-Faith / Yasuhito", cat:"B-Faith (Yasuhito)"},
-  { key:"aroma_cherry",       label:"Cherry Bloom (Цвіт Вишні)",    unit:"₴/кг", hint:"B-Faith / Yasuhito", cat:"B-Faith (Yasuhito)"},
-  { key:"aroma_sandalwood",   label:"Sandalwood (Сандалове дерево)", unit:"₴/кг", hint:"B-Faith / Yasuhito", cat:"B-Faith (Yasuhito)"},
-  { key:"aroma_camphor",      label:"Camphor Tree (Камфорне дерево)",unit:"₴/кг", hint:"B-Faith / Yasuhito", cat:"B-Faith (Yasuhito)"},
-  { key:"aroma_hydrangea",    label:"Hydrengea Tea (Чайна гортензія)",unit:"₴/кг",hint:"Daiwa Co / Ryo",     cat:"Daiwa Co (Ryo)"},
-  { key:"aroma_blacksandal",  label:"Black Sandal (Чорний сандал)",  unit:"₴/кг", hint:"Daiwa Co / Ryo",     cat:"Daiwa Co (Ryo)"},
-  { key:"aroma_musk",         label:"Musc (Мускус)",                 unit:"₴/кг", hint:"Daiwa Co / Ryo",     cat:"Daiwa Co (Ryo)"},
-  { key:"aroma_frankincense", label:"Frankincense (Ладан)",          unit:"₴/кг", hint:"Daiwa Co / Ryo",     cat:"Daiwa Co (Ryo)"},
-  { key:"aroma_temple",       label:"Temple Sandal (Храмовий сандал)",unit:"₴/кг",hint:"Nippon Paper / Yoko", cat:"Nippon Paper (Yoko)"},
-  { key:"aroma_honeysandal",  label:"Honey Sandal (Медовий сандал)", unit:"₴/кг", hint:"Nippon Paper / Yoko", cat:"Nippon Paper (Yoko)"},
-  { key:"aroma_gardentree",   label:"Garden Tree (Садове дерево)",   unit:"₴/кг", hint:"Asayu / Hanna",      cat:"Asayu (Hanna)"},
-  { key:"aroma_agarwood",     label:"Agarwood (Агарове дерево)",     unit:"₴/кг", hint:"Asayu / Hanna",      cat:"Asayu (Hanna)"},
-  { key:"tube_uah",               label:"Тубус",                       unit:"₴/шт",    hint:"1 тубус на пачку", cat:"Упаковка"},
-  { key:"label_uah",              label:"Наліпка / Етикетка",          unit:"₴/шт",    hint:"1 на пачку", cat:"Упаковка"},
   { key:"labor_uah",              label:"Робота (збірка)",              unit:"₴/пачку", hint:"фікс за 1 тубус", cat:"Витрати"},
   { key:"delivery_per_pack_uah",  label:"Доставка",                    unit:"₴/пачку", hint:"середня на 1 пачку", cat:"Витрати"},
   { key:"promo_per_pack_uah",     label:"Промо / Реклама",             unit:"₴/пачку", hint:"бюджет ÷ обсяг", cat:"Витрати"},
@@ -3223,15 +3332,26 @@ var BOM_ROWS = [
 ];
 
 function calcCogsForGroup(group, supplierKey) {
-  // Legacy compat — used by renderCogsResult for generic group display
+  // supplierKey can be "aroma_xxx" — get price from rawStock or matPrices fallback
   var bom = bomData[group] || DEFAULT_BOM[group] || {};
   var mp  = matPrices;
-  var pricePerKg = mp[supplierKey] || mp.aroma_osmanthus || DEFAULT_MAT_PRICES.aroma_osmanthus || 0;
+  // Stick price: from rawStock average for this aroma, fallback to matPrices
+  var pricePerKg = 0;
+  if(supplierKey && supplierKey.indexOf("aroma_")===0){
+    var aId=supplierKey.replace("aroma_","");
+    var rk="sticks_"+aId;
+    pricePerKg=(rawStock[rk]&&rawStock[rk].avgCostUah>0)?rawStock[rk].avgCostUah:(mp[supplierKey]||DEFAULT_MAT_PRICES[supplierKey]||0);
+  } else {
+    pricePerKg = mp[supplierKey] || DEFAULT_MAT_PRICES.aroma_osmanthus || 0;
+  }
   var sticksPerKg = 2000;
   var pricePerStick = pricePerKg / sticksPerKg;
   var stickCost   = (bom.sticks || 0) * pricePerStick;
-  var tubeCost    = (bom.tubes   || 0) * (mp.tube_uah   || 0);
-  var labelCost   = (bom.labels  || 0) * (mp.label_uah  || 0);
+  // Tube/label price from rawStock avg
+  var tubePrice=(rawStock.tubes&&rawStock.tubes.avgCostUah>0)?rawStock.tubes.avgCostUah:(mp.tube_uah||DEFAULT_MAT_PRICES.tube_uah||0);
+  var labelPrice=(rawStock.labels&&rawStock.labels.avgCostUah>0)?rawStock.labels.avgCostUah:(mp.label_uah||DEFAULT_MAT_PRICES.label_uah||0);
+  var tubeCost    = (bom.tubes   || 0) * tubePrice;
+  var labelCost   = (bom.labels  || 0) * labelPrice;
   var materialCost = stickCost + tubeCost + labelCost;
   var overheadFixed = (mp.labor_uah || 0) + (mp.delivery_per_pack_uah || 0) + (mp.promo_per_pack_uah || 0);
   var subtotal = materialCost + overheadFixed;
