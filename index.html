@@ -151,6 +151,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   border-top:1px solid var(--border)}
 .badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px}
 .badge-created{background:#fff3e0;color:#e65100}
+.badge-new{background:#e8eaf6;color:#283593}
+.badge-confirmed{background:#e8f5e9;color:#2e7d32}
+.badge-declined{background:#ffebee;color:#c62828}
 .badge-paid{background:#e8f5e9;color:#2e7d32}
 .badge-shipped{background:#e3f2fd;color:#1565c0}
 .pay-box{background:#f7faf8;border:1px solid #b7dfc9;border-radius:6px;padding:10px 14px;margin:10px 0 14px;line-height:1.6}
@@ -347,6 +350,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   <button class="tab"          onclick="switchTab('docs')">📝 Документи</button>
   <button class="tab"          onclick="switchTab('warehouse')">📦 Склад</button>
   <button class="tab"          onclick="switchTab('sales')">🏪 Продажі</button>
+  <button class="tab"          onclick="switchTab('orders')">📬 Замовлення</button>
   <button class="tab"          onclick="switchTab('catalog')">📋 Довідники</button>
   <button class="tab"          onclick="switchTab('settings')">⚙️</button>
 </div>
@@ -586,6 +590,25 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   </div>
 </div>
 
+<!-- ═══ ORDERS ═══ -->
+<div id="pane-orders" style="display:none">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <strong style="font-size:14px">📬 Вхідні замовлення</strong>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="orders-filter" onchange="renderOrders()" style="padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--r2)">
+          <option value="all">Всі статуси</option>
+          <option value="new">Нові</option>
+          <option value="confirmed">Підтверджені</option>
+          <option value="declined">Відхилені</option>
+        </select>
+        <button class="btn btn-gray btn-sm" onclick="loadOrders()">🔄 Оновити</button>
+      </div>
+    </div>
+    <div id="orders-list"></div>
+  </div>
+</div>
+
 <!-- ═══ CATALOG (Buyers + Products + Suppliers) ═══ -->
 <div id="pane-catalog" style="display:none">
   <!-- BUYERS -->
@@ -674,6 +697,22 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <label class="radio-label" style="margin-bottom:14px">
       <input type="checkbox" id="setting-autoincrement" style="width:auto;margin-right:4px"> Автоматично збільшувати номер накладної
     </label>
+    <div class="section-divider">Форма замовлень — Firestore Rules</div>
+    <div style="margin-bottom:16px;font-size:12px;color:var(--ink3);line-height:1.7">
+      <div style="margin-bottom:6px">Вставте в <strong>Firebase Console → Firestore → Rules</strong> і натисніть Publish:</div>
+      <code style="display:block;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r2);padding:10px 12px;font-size:11px;color:var(--ink2);white-space:pre;overflow-x:auto;user-select:all">rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /shared/{doc} {
+      allow read, write: if request.auth != null;
+    }
+    match /orders/{orderId} {
+      allow create: if true;
+      allow read, update, delete: if request.auth != null;
+    }
+  }
+}</code>
+    </div>
     <div class="section-divider">Міграція</div>
     <div style="margin-bottom:16px">
       <button class="btn btn-moss btn-sm" onclick="migrateSupplierToAroma()">🔄 Розподілити палички по ароматах</button>
@@ -1249,7 +1288,7 @@ function getDaysOfStock(pid){
 // ============================================================
 // TAB SWITCHING
 // ============================================================
-var ALL_TABS=["dashboard","docs","warehouse","sales","catalog","settings"];
+var ALL_TABS=["dashboard","docs","warehouse","sales","orders","catalog","settings"];
 function switchTab(tab){
   ALL_TABS.forEach(function(t){
     var p=document.getElementById("pane-"+t); if(p)p.style.display=(t===tab?"":"none");
@@ -1259,6 +1298,7 @@ function switchTab(tab){
   if(tab==="docs")       {renderJournal();}
   if(tab==="warehouse")  {renderRawMaterials();renderReceiveHistory();renderAssembleSelect();renderCogs();}
   if(tab==="sales")      {renderStats();renderRetailTab();}
+  if(tab==="orders")     {loadOrders();}
   if(tab==="catalog")    {renderBuyersList();renderProductsList();renderSuppliersList();}
   if(tab==="settings")   {loadSettings();}
 }
@@ -2554,6 +2594,12 @@ function renderDashboard(){
     {icon:"📦",val:unitsSold+" шт.",label:"Продано (місяць)",sub:unitsChange!=="—"?(unitsChange>0?"↑ +"+unitsChange+"% vs попередній":"↓ "+unitsChange+"% vs попередній"):""},
     {icon:"💳",val:unpaidBills.length+" шт.",label:"Рахунки неоплачені",sub:unpaidBills.length>0?fmt(unpaidSum)+" ₴ очікується":"",alert:unpaidBills.length>0},
     {icon:"🚚",val:unshippedInv.length+" шт.",label:"Накладні не відвантажені",sub:"",alert:unshippedInv.length>0},
+    {icon:"📬",val:(typeof ordersData!=="undefined"?ordersData.filter(function(o){return o.status==="new";}).length:0)+" шт.",
+     label:"Нові замовлення",
+     sub:(typeof ordersData!=="undefined"&&ordersData.filter(function(o){return o.status==="new";}).length>0
+       ?fmt(ordersData.filter(function(o){return o.status==="new";}).reduce(function(s,o){return s+(o.totalDiscounted||0);},0))+" ₴ оптова":""),
+     alert:(typeof ordersData!=="undefined"&&ordersData.filter(function(o){return o.status==="new";}).length>0),
+     onclick:"switchTab('orders')"},
   ].map(function(k){
     var border=k.alert?"border-color:var(--cedar);":"";
     return '<div class="kpi-card" style="'+border+'"><div class="kpi-icon">'+k.icon+'</div>'
@@ -3613,6 +3659,144 @@ window.addEventListener("DOMContentLoaded",function(){
   renderDashboard();
   renderAssembleSelect();
 });
+
+// ============================================================
+// ORDERS — Firestore orders collection
+// ============================================================
+var ordersData = [];
+
+function loadOrders() {
+  var listEl = document.getElementById("orders-list");
+  if (!listEl) return;
+  if (!cloudDb) {
+    listEl.innerHTML = '<div style="color:var(--ink4);font-size:12px;padding:12px 0">⚠️ Firebase не підключено.</div>';
+    return;
+  }
+  listEl.innerHTML = '<div style="color:var(--ink4);font-size:12px;padding:8px 0">Завантаження...</div>';
+  cloudDb.collection("orders").orderBy("createdAt","desc").limit(100).get()
+    .then(function(snap){
+      ordersData = [];
+      snap.forEach(function(doc){ ordersData.push(Object.assign({_id:doc.id},doc.data())); });
+      renderOrders();
+      // Refresh dashboard KPI if visible
+      if (document.getElementById("pane-dashboard").style.display !== "none") renderDashboard();
+    })
+    .catch(function(e){
+      listEl.innerHTML = '<div style="color:var(--red);font-size:12px;padding:8px 0">Помилка: '+esc(e.message)+'</div>';
+    });
+}
+
+function renderOrders() {
+  var listEl = document.getElementById("orders-list");
+  if (!listEl) return;
+  var filter = (document.getElementById("orders-filter")||{}).value||"all";
+  var list = filter==="all" ? ordersData : ordersData.filter(function(o){return o.status===filter;});
+
+  if (!list.length) {
+    listEl.innerHTML = '<div class="empty-state" style="padding:20px"><div class="icon">📬</div>'
+      +(ordersData.length?"Немає замовлень з таким статусом":"Замовлень ще немає")+'</div>';
+    return;
+  }
+
+  listEl.innerHTML = list.map(function(o){
+    var sLbl={new:"нове",confirmed:"підтверджено",declined:"відхилено"}[o.status]||o.status;
+    var sCls={new:"badge-new",confirmed:"badge-confirmed",declined:"badge-declined"}[o.status]||"badge-created";
+    var date=(o.createdAt||"").substring(0,10)||"—";
+    var itemsHtml=(o.items||[]).map(function(it){
+      return '<span style="font-size:11px;color:var(--ink3)">'+esc(it.id)+'×'+it.qty+'</span>';
+    }).join(' &nbsp;');
+
+    var btns="";
+    if(o.status==="new"){
+      btns+='<button class="btn btn-sm" style="background:var(--moss4);color:var(--pine);border:1px solid var(--moss3)" '
+        +'onclick="confirmOrder(\''+o._id+'\')">✓ Підтвердити → накладна</button>';
+      btns+=' <button class="btn btn-sm btn-gray" onclick="declineOrder(\''+o._id+'\')">✕ Відхилити</button>';
+    }
+    if(o.status==="confirmed"){
+      btns+='<button class="btn btn-sm btn-gray" onclick="createInvoiceFromOrder(\''+o._id+'\')">📝 Нова накладна</button>';
+    }
+
+    return '<div style="border:1px solid var(--border);border-radius:var(--r2);padding:12px 14px;margin-bottom:8px;background:var(--surface)">'
+      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
+      +'<div>'
+      +'<div style="font-weight:700;font-size:13px">'+esc(o.company||"—")+'</div>'
+      +'<div style="font-size:12px;color:var(--ink3);margin-top:2px">'+esc(o.contact||"")+(o.phone?" · "+esc(o.phone):"")+(o.address?" · "+esc(o.address):"")+'</div>'
+      +(o.notes?'<div style="font-size:11px;color:var(--ink4);margin-top:2px;font-style:italic">'+esc(o.notes)+'</div>':"")
+      +'</div>'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'
+      +'<span style="font-size:11px;color:var(--ink4)">'+date+'</span>'
+      +'<span class="badge '+sCls+'">'+sLbl+'</span>'
+      +'</div></div>'
+      +'<div style="margin-bottom:10px;line-height:1.8">'+itemsHtml+'</div>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">'
+      +'<div style="font-size:12px">'
+      +'<span style="color:var(--ink4)">прайс </span>'
+      +'<span style="text-decoration:line-through;color:var(--ink3)">'+fmt(o.total||0)+'</span>'
+      +' <span style="color:var(--ink4)">→</span> '
+      +'<strong style="color:var(--pine)">'+fmt(o.totalDiscounted||0)+' ₴</strong>'
+      +'</div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap">'+btns+'</div>'
+      +'</div></div>';
+  }).join("");
+}
+
+function confirmOrder(orderId) {
+  var o=ordersData.find(function(x){return x._id===orderId;});
+  if(!o)return;
+  if(!confirm("Підтвердити замовлення від "+(o.company||"")+" і створити накладну?"))return;
+  cloudDb.collection("orders").doc(orderId).update({status:"confirmed"})
+    .then(function(){
+      o.status="confirmed";
+      renderOrders();
+      createInvoiceFromOrder(orderId);
+    })
+    .catch(function(e){alert("Помилка: "+e.message);});
+}
+
+function declineOrder(orderId) {
+  var o=ordersData.find(function(x){return x._id===orderId;});
+  if(!o)return;
+  if(!confirm("Відхилити замовлення від "+(o.company||"")+"?"))return;
+  cloudDb.collection("orders").doc(orderId).update({status:"declined"})
+    .then(function(){o.status="declined";renderOrders();renderDashboard();})
+    .catch(function(e){alert("Помилка: "+e.message);});
+}
+
+function createInvoiceFromOrder(orderId) {
+  var o=ordersData.find(function(x){return x._id===orderId;});
+  if(!o)return;
+
+  // Find buyer or create temp
+  var buyer=buyers.find(function(b){
+    return b.name&&o.company&&b.name.toLowerCase().indexOf(o.company.toLowerCase())>=0;
+  });
+  if(!buyer){
+    buyer={id:"order_"+orderId,name:o.company||"Замовлення з форми",
+      fullName:o.company||"Замовлення з форми",receiver:o.contact||"",
+      phone:o.phone||"",iban:null,edrpou:null,bank:null,
+      address:o.address||null,contract:null};
+    if(!buyers.find(function(b){return b.id===buyer.id;})) buyers.push(buyer);
+  }
+
+  switchTab("docs"); switchDocsSub("form");
+
+  var sel=document.getElementById("buyer-select");
+  if(sel){
+    renderBuyerSelect();
+    sel.value=buyer.id;
+    onBuyerChange();
+  }
+
+  items=[];
+  (o.items||[]).forEach(function(it){
+    var p=products.find(function(x){return x.id===it.id;});
+    if(p) items.push({id:Date.now()+Math.random(),productId:it.id,qty:it.qty,customPrice:""});
+  });
+  renderItems();
+  alert("✅ Форму накладної заповнено. Перевірте та натисніть «Згенерувати».");
+}
+
+// Load orders on dashboard tab to refresh KPI
 </script>
 </body>
 </html>
