@@ -444,7 +444,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       <div class="field">
         <label>Тип надходження</label>
         <select id="recv-type" onchange="onRecvTypeChange()">
-          <option value="finished">Готова продукція (пачки)</option>
           <option value="sticks">Палички — сировина (кг)</option>
           <option value="tubes">Тубуси (шт)</option>
           <option value="labels">Наліпки / Етикетки (шт)</option>
@@ -460,14 +459,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
         <select id="recv-aroma"></select>
       </div>
     </div>
-    <div id="recv-finished-fields">
-      <div class="row">
-        <div class="field"><label>Товар</label><select id="recv-product"></select></div>
-        <div class="field" style="flex:0 0 100px"><label>Кількість (пачок)</label><input id="recv-qty" type="number" min="1" value="50"></div>
-        <div class="field" style="flex:0 0 130px"><label>Собівартість (₴/пачку)</label><input id="recv-cogs" type="number" min="0" step="0.01" placeholder="авто"></div>
-      </div>
-    </div>
-    <div id="recv-raw-fields" style="display:none">
+    <div id="recv-raw-fields">
       <div class="row">
         <div class="field" style="flex:0 0 120px"><label id="recv-qty-label">Кількість (кг)</label><input id="recv-raw-qty" type="number" min="0.1" step="0.1" value="5"></div>
         <div class="field" style="flex:0 0 150px"><label id="recv-price-label">Ціна (₴/кг)</label><input id="recv-raw-price" type="number" min="0" step="0.01" placeholder="₴"></div>
@@ -481,33 +473,25 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <button class="btn btn-moss" onclick="receiveGoods()">📥 Прийняти на склад</button>
   </div>
 
-  <!-- ASSEMBLE batches (raw → finished) -->
+  <!-- DEDUCTION CALCULATOR (recipe preview only, no WH write) -->
   <div class="card">
-    <div class="card-title">🧪 Збірка партії (палички → пачки)</div>
+    <div class="card-title">🧮 Калькулятор списання (рецепт)</div>
+    <div class="hint">Перегляд скільки сировини буде списано при продажу. Фактичне списання відбувається автоматично при створенні накладної.</div>
     <div class="row">
-      <div class="field"><label>Товар для збірки</label><select id="assemble-product"></select></div>
+      <div class="field"><label>Товар</label><select id="assemble-product"></select></div>
       <div class="field" style="flex:0 0 120px"><label>Кількість пачок</label><input id="assemble-qty" type="number" min="1" value="50"></div>
     </div>
     <div id="assemble-preview" class="hint"></div>
-    <button class="btn btn-moss btn-sm" onclick="assembleBatch()">🔨 Зібрати партію</button>
   </div>
 
   <!-- STOCK TABLE -->
   <div class="card">
-    <div class="card-title">📦 Залишки
-      <div style="margin-left:auto;display:flex;gap:8px">
-        <select id="wh-filter" onchange="renderWarehouse()" style="width:auto;padding:5px 8px;font-size:12px">
-          <option value="">Всі групи</option>
-          <option value="tube20">Тубус 20шт</option>
-          <option value="tube40">Тубус 40шт</option>
-          <option value="refill">Рефіл</option>
-          <option value="stand">Підставки</option>
-        </select>
+    <div class="card-title">📦 Залишки сировини
+      <div style="margin-left:auto">
         <button class="btn btn-gray btn-sm" onclick="toggleRawEdit()">✏️ Коригувати</button>
       </div>
     </div>
-    <div id="warehouse-table"></div>
-    <div id="raw-materials-cards" style="margin-top:14px"></div>
+    <div id="raw-materials-cards"></div>
     <div id="raw-edit-panel" style="display:none" class="manage-form">
       <div class="card-title" style="font-size:13px">Коригування залишків</div>
       <div class="hint">Змінюйте кількість та ціну для внесення стартового балансу або коригувань.</div>
@@ -1027,12 +1011,6 @@ function rerenderAfterStateChange(){
   renderBuyersList();
   renderProductsList();
   renderCogs();
-  var recvSel=document.getElementById("recv-product");
-  if(recvSel){
-    var finishedOpts=products.filter(function(p){return p.group==="tube20"||p.group==="tube40"||p.group==="refill"||p.group==="stand";})
-      .map(function(p){return "<option value=\""+p.id+"\">"+shortName(p.name)+"</option>";}).join("");
-    recvSel.innerHTML="<option value=\"\">— Оберіть SKU —</option>"+finishedOpts;
-  }
   if(settings.autoincrement){
     var maxNum=journal.reduce(function(m,j){return Math.max(m,parseInt(j.invoiceNum)||0);},0);
     if(maxNum>0&&document.getElementById("inv-num"))document.getElementById("inv-num").value=maxNum+1;
@@ -1248,10 +1226,24 @@ function getSalesVelocity(pid,days){
   return totalSold/days; // packs per day
 }
 function getDaysOfStock(pid){
-  var qty=getWHQty(pid);
+  // Estimate available packs from raw sticks for this product's aroma
+  var p=products.find(function(x){return x.id===pid;});
+  var group=p&&p.group||"other";
+  var bom=bomData[group]||DEFAULT_BOM[group]||{};
+  var sticksPerPack=bom.sticks||0;
+  var aromaId=PRODUCT_AROMA[pid];
+  var availPacks=0;
+  if(sticksPerPack>0 && aromaId){
+    var k="sticks_"+aromaId;
+    var sticks=(rawStock[k]&&rawStock[k].sticks)||Math.round((rawStock[k]&&rawStock[k].qty||0)*2000);
+    availPacks=Math.floor(sticks/sticksPerPack);
+    // Also constrain by tubes
+    var tubes=Math.round(rawStock.tubes&&rawStock.tubes.qty||0);
+    if(bom.tubes>0) availPacks=Math.min(availPacks,Math.floor(tubes/bom.tubes));
+  }
   var vel=getSalesVelocity(pid,90);
-  if(vel<=0)return qty>0?999:0;
-  return Math.round(qty/vel);
+  if(vel<=0)return availPacks>0?999:0;
+  return Math.round(availPacks/vel);
 }
 
 // ============================================================
@@ -1265,7 +1257,7 @@ function switchTab(tab){
   document.querySelectorAll(".tabs .tab").forEach(function(el,i){el.classList.toggle("active",ALL_TABS[i]===tab);});
   if(tab==="dashboard")  renderDashboard();
   if(tab==="docs")       {renderJournal();}
-  if(tab==="warehouse")  {renderWarehouse();renderRawMaterials();renderReceiveHistory();renderAssembleSelect();renderCogs();}
+  if(tab==="warehouse")  {renderRawMaterials();renderReceiveHistory();renderAssembleSelect();renderCogs();}
   if(tab==="sales")      {renderStats();renderRetailTab();}
   if(tab==="catalog")    {renderBuyersList();renderProductsList();renderSuppliersList();}
   if(tab==="settings")   {loadSettings();}
@@ -1343,10 +1335,17 @@ function renderItems(){
     var price=getItemPrice(item),sum=price*item.qty;
     var prod=products.find(function(p){return p.id===item.productId;});
     var ph=prod?calcPrice(prod):"ціна";
-    var whqty=item.productId?getWHQty(item.productId):null;
-    var stockBadge=item.productId?("<span style=\"font-size:10px;margin-left:6px;color:"
-      +(whqty===0?"var(--red)":whqty<10?"var(--cedar)":"var(--moss)")+"\">"
-      +(whqty===0?"⚠ нема":whqty<10?"⚡ "+whqty+" шт":"✓ "+whqty+" шт")+"</span>"):"";
+    var stockBadge="";
+    if(item.productId){
+      var _aid=PRODUCT_AROMA[item.productId];
+      if(_aid){
+        var _rk="sticks_"+_aid;
+        var _av=(rawStock[_rk]&&rawStock[_rk].sticks)||Math.round((rawStock[_rk]&&rawStock[_rk].qty||0)*2000);
+        var _col=_av===0?"var(--red)":_av<100?"var(--cedar)":"var(--moss)";
+        stockBadge="<span style=\"font-size:10px;margin-left:6px;color:"+_col+"\">"
+          +(_av===0?"⚠ нема":_av.toLocaleString("uk-UA")+" пал.")+"</span>";
+      }
+    }
     var selHtml=opts.replace("value=\""+item.productId+"\"","value=\""+item.productId+"\" selected");
     return "<div class=\"item-row\" data-item-id=\""+item.id+"\">"
       +"<div class=\"item-name\"><select data-iid=\""+item.id+"\" data-role=\"product\">"+selHtml+"</select>"+stockBadge+"</div>"
@@ -1458,18 +1457,28 @@ var priceLabel={
   "opt":"Викуп (60%)"
 }[getPriceType()]||"";
 
-  // Check warehouse availability (for invoices only)
+  // Check raw material availability (for invoices only)
   if(dt==="invoice"){
     var shortages=[];
     filled.forEach(function(i){
-      var avail=getWHQty(i.productId);
-      if(avail<i.qty){
-        var p=products.find(function(x){return x.id===i.productId;});
-        shortages.push(shortName(p&&p.name||i.productId)+": потрібно "+i.qty+", є "+avail);
+      var p=products.find(function(x){return x.id===i.productId;});
+      var group=p&&p.group||"other";
+      var bom=bomData[group]||DEFAULT_BOM[group]||{};
+      var aromaId=PRODUCT_AROMA[i.productId];
+      var sticksNeeded=(bom.sticks||0)*i.qty;
+      var tubesNeeded=(bom.tubes||0)*i.qty;
+      if(sticksNeeded>0 && aromaId){
+        var k="sticks_"+aromaId;
+        var avail=(rawStock[k]&&rawStock[k].sticks)||Math.round((rawStock[k]&&rawStock[k].qty||0)*2000);
+        if(avail<sticksNeeded) shortages.push(AROMAS[aromaId].en+": потрібно "+sticksNeeded+" пал., є "+avail);
+      }
+      if(tubesNeeded>0){
+        var tubAvail=Math.round(rawStock.tubes&&rawStock.tubes.qty||0);
+        if(tubAvail<tubesNeeded) shortages.push("Тубуси: потрібно "+tubesNeeded+", є "+tubAvail);
       }
     });
     if(shortages.length){
-      if(!confirm("⚠️ Недостатньо на складі:\n"+shortages.join("\n")+"\n\nПродовжити без списання?"))return;
+      if(!confirm("⚠️ Недостатньо сировини:\n"+shortages.join("\n")+"\n\nПродовжити без списання?"))return;
     }
   }
 
@@ -1488,15 +1497,9 @@ var priceLabel={
       savedAt:new Date().toISOString()
     };
 
-    // AUTO DEDUCT from warehouse stock (invoices only)
+    // AUTO DEDUCT from rawStock directly (invoices only, no assembly step)
     if(dt==="invoice"){
-      g.items.forEach(function(it){
-        if(warehouseStock[it.id]&&warehouseStock[it.id].qty>=it.qty){
-          warehouseStock[it.id].qty-=it.qty;
-        } else if(warehouseStock[it.id]){
-          warehouseStock[it.id].qty=0;
-        }
-      });
+      deductRawForItems(g.items);
       // Update retail stock if buyer is a retail point
       if(buyer.isRetail){
         if(!retailStock[buyer.id])retailStock[buyer.id]={};
@@ -1960,26 +1963,21 @@ function onRecvSupplierChange(){
 }
 function onRecvTypeChange(){
   var t=document.getElementById("recv-type").value;
-  var ff=document.getElementById("recv-finished-fields");
   var rf=document.getElementById("recv-raw-fields");
   var sw=document.getElementById("recv-supplier-wrap");
   var aw=document.getElementById("recv-aroma-wrap");
   var si=document.getElementById("recv-sticks-info");
   var ql=document.getElementById("recv-qty-label");
   var pl=document.getElementById("recv-price-label");
-  if(t==="finished"){
-    ff.style.display="";rf.style.display="none";sw.style.display="none";aw.style.display="none";
+  rf.style.display=""; sw.style.display="";
+  if(t==="sticks"){
+    ql.textContent="Кількість (кг)"; pl.textContent="Ціна (₴/кг)";
+    si.style.display="block"; aw.style.display="";
+    si.textContent="💡 1 кг ≈ 2000 паличок. Вводьте кг та ціну в грн за кг.";
+    onRecvSupplierChange();
   } else {
-    ff.style.display="none";rf.style.display="";sw.style.display="";
-    if(t==="sticks"){
-      ql.textContent="Кількість (кг)"; pl.textContent="Ціна (₴/кг)";
-      si.style.display="block"; aw.style.display="";
-      si.textContent="💡 1 кг ≈ 2000 паличок. Вводьте кг та ціну в грн за кг.";
-      onRecvSupplierChange();
-    } else {
-      aw.style.display="none"; si.style.display="none";
-      ql.textContent="Кількість (шт)"; pl.textContent="Ціна (₴/шт)";
-    }
+    aw.style.display="none"; si.style.display="none";
+    ql.textContent="Кількість (шт)"; pl.textContent="Ціна (₴/шт)";
   }
 }
 
@@ -1988,63 +1986,46 @@ function receiveGoods(){
   var date=document.getElementById("recv-date").value||new Date().toISOString().split("T")[0];
   var note=document.getElementById("recv-note").value;
 
-  if(t==="finished"){
-    var pid=document.getElementById("recv-product").value;
-    var qty=parseInt(document.getElementById("recv-qty").value)||0;
-    var cogs=parseFloat(document.getElementById("recv-cogs").value)||0;
-    if(!pid||qty<=0){alert("Вкажіть товар та кількість");return;}
-    var p=products.find(function(x){return x.id===pid;});
-    if(!warehouseStock[pid])warehouseStock[pid]={qty:0,avgCogs:0,name:p&&p.name||pid};
-    var old=warehouseStock[pid];
-    var newAvg=old.qty>0?(old.avgCogs*old.qty+cogs*qty)/(old.qty+qty):cogs;
-    old.qty+=qty; old.avgCogs=newAvg; old.name=p&&p.name||pid;
-    receiveHistory.unshift({id:uid(),date:date,type:"finished",productId:pid,name:p&&p.name||pid,qty:qty,cogs:cogs,note:note,savedAt:new Date().toISOString()});
-    save();renderWarehouse();renderReceiveHistory();
-    alert("✅ Прийнято "+qty+" шт. "+shortName(p&&p.name||pid));
-  } else {
-    var rawQty=parseFloat(document.getElementById("recv-raw-qty").value)||0;
-    var priceUah=parseFloat(document.getElementById("recv-raw-price").value)||0;
-    var supplier=document.getElementById("recv-supplier").value;
-    if(rawQty<=0){alert("Вкажіть кількість");return;}
-    if(priceUah<=0){alert("Вкажіть ціну в ₴");return;}
+  var rawQty=parseFloat(document.getElementById("recv-raw-qty").value)||0;
+  var priceUah=parseFloat(document.getElementById("recv-raw-price").value)||0;
+  var supplier=document.getElementById("recv-supplier").value;
+  if(rawQty<=0){alert("Вкажіть кількість");return;}
+  if(priceUah<=0){alert("Вкажіть ціну в ₴");return;}
 
-    var rawKey, unit, sticks=0, aroma=null;
-    if(t==="sticks"){
-      aroma=document.getElementById("recv-aroma").value;
-      if(!aroma){alert("Оберіть аромат");return;}
-      rawKey="sticks_"+aroma; unit="кг";
-      sticks=Math.round(rawQty*2000);
-    } else if(t==="tubes")  {rawKey="tubes";  unit="шт";}
-    else if(t==="labels")   {rawKey="labels"; unit="шт";}
-    else if(t==="stands")   {rawKey="stands"; unit="шт";}
+  var rawKey, unit, sticks=0, aroma=null;
+  if(t==="sticks"){
+    aroma=document.getElementById("recv-aroma").value;
+    if(!aroma){alert("Оберіть аромат");return;}
+    rawKey="sticks_"+aroma; unit="кг";
+    sticks=Math.round(rawQty*2000);
+  } else if(t==="tubes")  {rawKey="tubes";  unit="шт";}
+  else if(t==="labels")   {rawKey="labels"; unit="шт";}
+  else if(t==="stands")   {rawKey="stands"; unit="шт";}
 
-    // Update rawStock with weighted average price
-    if(!rawStock[rawKey])rawStock[rawKey]={qty:0,avgCostUah:0,unit:unit,sticks:0};
-    var ro=rawStock[rawKey];
-    var newAvgR=ro.qty>0?(ro.avgCostUah*ro.qty+priceUah*rawQty)/(ro.qty+rawQty):priceUah;
-    ro.qty+=rawQty; ro.avgCostUah=newAvgR;
-    if(t==="sticks") ro.sticks=(ro.sticks||0)+sticks;
+  if(!rawStock[rawKey])rawStock[rawKey]={qty:0,avgCostUah:0,unit:unit,sticks:0};
+  var ro=rawStock[rawKey];
+  var newAvgR=ro.qty>0?(ro.avgCostUah*ro.qty+priceUah*rawQty)/(ro.qty+rawQty):priceUah;
+  ro.qty+=rawQty; ro.avgCostUah=newAvgR;
+  if(t==="sticks") ro.sticks=(ro.sticks||0)+sticks;
 
-    // Auto-update COGS matPrices for this aroma from rawStock avg
-    if(t==="sticks" && aroma){
-      matPrices["aroma_"+aroma]=ro.avgCostUah;
-      saveCogsPrices();
-    } else if(t==="tubes"){
-      matPrices.tube_uah=ro.avgCostUah;
-      saveCogsPrices();
-    } else if(t==="labels"){
-      matPrices.label_uah=ro.avgCostUah;
-      saveCogsPrices();
-    }
-
-    var aromaLabel=aroma?aromaName(aroma):"";
-    var totalUah=priceUah*rawQty;
-    receiveHistory.unshift({id:uid(),date:date,type:t,rawKey:rawKey,qty:rawQty,unit:unit,
-      priceUah:priceUah,totalUah:totalUah,supplier:supplier,
-      aroma:aroma,note:note,savedAt:new Date().toISOString()});
-    save();renderRawMaterials();renderReceiveHistory();
-    alert("✅ Прийнято "+rawQty+" "+unit+(t==="sticks"?" "+aromaLabel+" (≈"+sticks+" паличок)":"")+" за "+priceUah+" ₴/"+unit);
+  if(t==="sticks" && aroma){
+    matPrices["aroma_"+aroma]=ro.avgCostUah;
+    saveCogsPrices();
+  } else if(t==="tubes"){
+    matPrices.tube_uah=ro.avgCostUah;
+    saveCogsPrices();
+  } else if(t==="labels"){
+    matPrices.label_uah=ro.avgCostUah;
+    saveCogsPrices();
   }
+
+  var aromaLabel=aroma?aromaName(aroma):"";
+  var totalUah=priceUah*rawQty;
+  receiveHistory.unshift({id:uid(),date:date,type:t,rawKey:rawKey,qty:rawQty,unit:unit,
+    priceUah:priceUah,totalUah:totalUah,supplier:supplier,
+    aroma:aroma,note:note,savedAt:new Date().toISOString()});
+  save();renderRawMaterials();renderReceiveHistory();
+  alert("✅ Прийнято "+rawQty+" "+unit+(t==="sticks"?" "+aromaLabel+" (≈"+sticks+" паличок)":"")+" за "+priceUah+" ₴/"+unit);
 }
 
 function renderAssembleSelect(){
@@ -2169,44 +2150,53 @@ function assembleBatch(){
 
   receiveHistory.unshift({id:uid(),date:new Date().toISOString().split("T")[0],type:"assembly",
     productId:pid,name:p.name,qty:qty,cogs:cogsPerPack,aroma:aromaId||null,note:"Збірка "+qty+" шт.",savedAt:new Date().toISOString()});
-  save();renderWarehouse();renderRawMaterials();renderReceiveHistory();updateAssemblePreview();
-  alert("✅ Зібрано "+qty+" пачок "+shortName(p.name)+"\nCOGS/пачку: "+cogsPerPack.toFixed(2)+" ₴");
+  save();renderRawMaterials();renderReceiveHistory();updateAssemblePreview();
 }
 
-function renderWarehouse(){
-  var filter=document.getElementById("wh-filter").value;
-  var grouped={};
-  products.forEach(function(p){
-    var qty=getWHQty(p.id);
-    if(filter&&p.group!==filter)return;
-    if(!grouped[p.group])grouped[p.group]=[];
-    grouped[p.group].push({p:p,qty:qty,cogs:getWHCogs(p.id)});
+// ============================================================
+// DEDUCT RAW MATERIALS FOR INVOICE ITEMS (replaces assembly step)
+// ============================================================
+function deductRawForItems(invoiceItems){
+  var sticksPerKg=2000;
+  invoiceItems.forEach(function(it){
+    var p=products.find(function(x){return x.id===it.id;});
+    if(!p) return;
+    var group=p.group||"other";
+    var bom=bomData[group]||DEFAULT_BOM[group]||{};
+    var sticksNeeded=(bom.sticks||0)*it.qty;
+    var tubesNeeded=(bom.tubes||0)*it.qty;
+    var labelsNeeded=(bom.labels||0)*it.qty;
+    var aromaId=PRODUCT_AROMA[it.id];
+
+    if(sticksNeeded>0 && aromaId){
+      var k="sticks_"+aromaId;
+      if(!rawStock[k])rawStock[k]={qty:0,avgCostUah:0,sticks:0,unit:"кг"};
+      var kgNeeded=sticksNeeded/sticksPerKg;
+      var kgDeduct=Math.min(rawStock[k].qty,kgNeeded);
+      var sticksDeducted=Math.round(kgDeduct*sticksPerKg);
+      rawStock[k].qty=Math.max(0,rawStock[k].qty-kgDeduct);
+      rawStock[k].sticks=Math.max(0,(rawStock[k].sticks||0)-sticksDeducted);
+    } else if(sticksNeeded>0 && !aromaId){
+      var remaining=sticksNeeded;
+      Object.keys(AROMAS).forEach(function(a){
+        var k="sticks_"+a;
+        if(!rawStock[k]||rawStock[k].qty<=0||remaining<=0)return;
+        var kgN=remaining/sticksPerKg; var kgD=Math.min(rawStock[k].qty,kgN);
+        var sD=Math.round(kgD*sticksPerKg);
+        rawStock[k].qty-=kgD; rawStock[k].sticks=Math.max(0,(rawStock[k].sticks||0)-sD);
+        remaining-=sD;
+      });
+    }
+    if(tubesNeeded>0 && rawStock.tubes)
+      rawStock.tubes.qty=Math.max(0,(rawStock.tubes.qty||0)-tubesNeeded);
+    if(labelsNeeded>0 && rawStock.labels)
+      rawStock.labels.qty=Math.max(0,(rawStock.labels.qty||0)-labelsNeeded);
   });
-  var groupLabels={tube20:"🌿 Палички 20шт (тубус)",tube40:"🌿 Палички 40шт (тубус)",
-    refill:"📄 Рефіл (папір)",stand:"🪵 Підставки",other:"📦 Інше"};
-  var html="";
-  Object.keys(groupLabels).forEach(function(g){
-    if(!grouped[g])return;
-    html+="<div style=\"font-weight:700;font-size:12px;color:var(--ink3);padding:8px 0 4px\">"
-      +groupLabels[g]+"</div>"
-      +"<table class=\"inv-table\"><thead><tr>"
-      +"<th>Товар</th><th style=\"width:90px;text-align:center\">Залишок</th>"
-      +"<th style=\"width:100px;text-align:right\">COGS/пачку</th>"
-      +"<th style=\"width:90px;text-align:center\">Прогноз (дні)</th></tr></thead><tbody>";
-    grouped[g].forEach(function(row){
-      var days=getDaysOfStock(row.p.id);
-      var cls=days===0?"pill-zero":days<30?"pill-low":"pill-ok";
-      var daysTxt=days===999?"∞":days+" д.";
-      html+="<tr><td>"+esc(shortName(row.p.name))+"</td>"
-        +"<td style=\"text-align:center\"><span class=\"stock-pill "+cls+"\">"+row.qty+" шт.</span></td>"
-        +"<td style=\"text-align:right;color:var(--ink3)\">"+row.cogs.toFixed(0)+" ₴</td>"
-        +"<td style=\"text-align:center\"><span class=\"stock-pill "+cls+"\">"+daysTxt+"</span></td></tr>";
-    });
-    html+="</tbody></table>";
-  });
-  if(!html)html='<div class="empty-state"><div class="icon">📦</div>Склад порожній — додайте надходження</div>';
-  document.getElementById("warehouse-table").innerHTML=html;
 }
+
+// warehouseStock kept for COGS avgCogs only; no stock-table UI
+function renderWarehouse(){ /* no-op: finished goods table removed */ }
+
 
 function renderRawMaterials(){
   // Build aroma cards dynamically from AROMAS map
@@ -2302,18 +2292,6 @@ function toggleRawEdit(){
 }
 function renderRawEditFields(){
   var html='';
-  // Finished products
-  html+='<div style="font-weight:700;font-size:13px;color:var(--pine);margin-bottom:8px">📦 Готова продукція</div>';
-  html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px;margin-bottom:16px">';
-  products.forEach(function(p){
-    if(p.group==="other"&&p.id!=="tester20"&&p.id!=="tester_paper10")return;
-    var qty=getWHQty(p.id);
-    html+='<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);padding:8px 10px;display:flex;align-items:center;gap:8px">'
-      +'<div style="flex:1;font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(shortName(p.name))+'</div>'
-      +'<input type="number" step="1" min="0" value="'+qty+'" id="redit_wh_'+p.id+'" style="width:70px;font-size:13px;padding:4px 6px;text-align:center">'
-      +'<span style="font-size:11px;color:var(--ink4)">шт</span></div>';
-  });
-  html+='</div>';
   // Aroma sticks
   html+='<div style="font-weight:700;font-size:13px;color:var(--pine);margin-bottom:8px">🌿 Палички (сировина)</div>';
   html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;margin-bottom:16px">';
@@ -2348,15 +2326,6 @@ function renderRawEditFields(){
   document.getElementById("raw-edit-fields").innerHTML=html;
 }
 function saveRawEdits(){
-  // Save finished products
-  products.forEach(function(p){
-    var el=document.getElementById("redit_wh_"+p.id);
-    if(!el)return;
-    var newQty=parseInt(el.value)||0;
-    if(!warehouseStock[p.id])warehouseStock[p.id]={qty:0,avgCogs:0,name:p.name};
-    warehouseStock[p.id].qty=newQty;
-    warehouseStock[p.id].name=p.name;
-  });
   // Save aroma sticks
   Object.keys(AROMAS).forEach(function(aId){
     var k="sticks_"+aId;
@@ -2386,7 +2355,7 @@ function saveRawEdits(){
   });
   saveCogsPrices();
   save();
-  renderWarehouse();renderRawMaterials();
+  renderRawMaterials();
   document.getElementById("raw-edit-panel").style.display="none";
   alert("✅ Залишки оновлено");
 }
@@ -2395,7 +2364,7 @@ function renderReceiveHistory(){
   var list=receiveHistory.slice(0,30);
   if(!list.length){document.getElementById("receive-history").innerHTML='<div class="empty-state" style="padding:20px"><div class="icon">📥</div>Надходжень ще немає</div>';return;}
   document.getElementById("receive-history").innerHTML=list.map(function(r){
-    var typeLabels={finished:"📦 Готова продукція",assembly:"🔨 Збірка партії",sticks:"🌿 Палички",tubes:"🧪 Тубуси",labels:"🏷 Наліпки",stands:"🪵 Підставки"};
+    var typeLabels={sticks:"🌿 Палички",tubes:"🧪 Тубуси",labels:"🏷 Наліпки",stands:"🪵 Підставки"};
     var nameDisplay=r.name||r.rawKey||"";
     if(r.type==="sticks"&&r.aroma&&AROMAS[r.aroma]){nameDisplay=AROMAS[r.aroma].en+" ("+AROMAS[r.aroma].uk+")";}
     else if(r.type==="sticks"&&!r.aroma&&r.rawKey){
@@ -2565,11 +2534,7 @@ function renderDashboard(){
   var revPrev=prevMonth.reduce(function(s,j){return s+j.total;},0);
   var revChange=revPrev>0?((revenue-revPrev)/revPrev*100).toFixed(0):"—";
 
-  var totalWHQty=Object.keys(warehouseStock).reduce(function(s,k){return s+warehouseStock[k].qty;},0);
-  var lowStock=Object.keys(warehouseStock).filter(function(k){return warehouseStock[k].qty>0&&warehouseStock[k].qty<10;}).length;
-  var zeroStock=Object.keys(warehouseStock).filter(function(k){return warehouseStock[k].qty===0;}).length;
   var totalCogs=thisMonth.reduce(function(s,j){return s+j.items.reduce(function(ss,it){return ss+getEstItemCogs(it)*it.qty;},0);},0);
-  var grossMargin=revenue>0?((revenue-totalCogs)/revenue*100).toFixed(1):"—";
 
   var unitsSold=thisMonth.reduce(function(s,j){return s+j.items.reduce(function(ss,it){return ss+it.qty;},0);},0);
   var unitsPrev=prevMonth.reduce(function(s,j){return s+j.items.reduce(function(ss,it){return ss+it.qty;},0);},0);
@@ -2578,14 +2543,21 @@ function renderDashboard(){
   var profitPrev=revPrev-(prevMonth.reduce(function(s,j){return s+j.items.reduce(function(ss,it){return ss+getEstItemCogs(it)*it.qty;},0);},0));
   var profitChange=profitPrev>0?((profit-profitPrev)/profitPrev*100).toFixed(0):"—";
 
+  // Status KPIs
+  var unpaidBills=journal.filter(function(j){return j.docType==="bill"&&j.status!=="paid";});
+  var unpaidSum=unpaidBills.reduce(function(s,j){return s+j.total;},0);
+  var unshippedInv=journal.filter(function(j){return j.docType==="invoice"&&j.status!=="shipped";});
+
   document.getElementById("dash-kpi").innerHTML=[
-    {icon:"🌿",val:fmt(revenue)+" ₴",label:"Виручка (місяць)",sub:revChange!=="—"?(revChange>0?"↑ +"+revChange+"% vs попередній":"↓ "+revChange+"% vs попередній"):""}, 
+    {icon:"🌿",val:fmt(revenue)+" ₴",label:"Виручка (місяць)",sub:revChange!=="—"?(revChange>0?"↑ +"+revChange+"% vs попередній":"↓ "+revChange+"% vs попередній"):""},
     {icon:"💰",val:fmt(profit)+" ₴",label:"Прибуток (місяць)",sub:profitChange!=="—"?(profitChange>0?"↑ +"+profitChange+"% vs попередній":"↓ "+profitChange+"% vs попередній"):""},
     {icon:"📦",val:unitsSold+" шт.",label:"Продано (місяць)",sub:unitsChange!=="—"?(unitsChange>0?"↑ +"+unitsChange+"% vs попередній":"↓ "+unitsChange+"% vs попередній"):""},
-    {icon:"📊",val:grossMargin+"%",label:"Маржа (валова)",sub:""},
+    {icon:"💳",val:unpaidBills.length+" шт.",label:"Рахунки неоплачені",sub:unpaidBills.length>0?fmt(unpaidSum)+" ₴ очікується":"",alert:unpaidBills.length>0},
+    {icon:"🚚",val:unshippedInv.length+" шт.",label:"Накладні не відвантажені",sub:"",alert:unshippedInv.length>0},
   ].map(function(k){
-    return '<div class="kpi-card"><div class="kpi-icon">'+k.icon+'</div>'
-      +'<div class="kpi-val">'+esc(String(k.val))+'</div>'
+    var border=k.alert?"border-color:var(--cedar);":"";
+    return '<div class="kpi-card" style="'+border+'"><div class="kpi-icon">'+k.icon+'</div>'
+      +'<div class="kpi-val" style="'+(k.alert?"color:var(--cedar)":"")+'">'+esc(String(k.val))+'</div>'
       +'<div class="kpi-label">'+esc(k.label)+'</div>'
       +(k.sub?'<div style="font-size:11px;color:var(--ink4);margin-top:2px">'+esc(k.sub)+'</div>':"")
       +'</div>';
@@ -2613,10 +2585,15 @@ function renderDashboard(){
     +ptop.map(function(e){return '<div class="bar-row"><div class="bar-label">'+esc(e[0])+'</div><div class="bar-bg"><div class="bar-fill" style="width:'+((e[1]/pmax)*100).toFixed(1)+'%"></div></div><div class="bar-val">'+e[1]+' шт.</div></div>';}).join("")
     +(ptop.length===0?'<div style="color:var(--ink4);font-size:12px">Немає даних</div>':"");
 
-  // Forecast
+  // Forecast — based on rawStock sticks per aroma
   var forecastItems=products.filter(function(p){return p.group==="tube20"||p.group==="tube40";}).map(function(p){
-    var days=getDaysOfStock(p.id); var qty=getWHQty(p.id);
-    return{name:shortName(p.name),days:days,qty:qty};
+    var days=getDaysOfStock(p.id);
+    var aromaId=PRODUCT_AROMA[p.id];
+    var bom=bomData[p.group]||DEFAULT_BOM[p.group]||{};
+    var sticksPerPack=bom.sticks||0;
+    var sticks=aromaId?((rawStock["sticks_"+aromaId]&&rawStock["sticks_"+aromaId].sticks)||Math.round((rawStock["sticks_"+aromaId]&&rawStock["sticks_"+aromaId].qty||0)*2000)):0;
+    var availPacks=sticksPerPack>0?Math.floor(sticks/sticksPerPack):0;
+    return{name:shortName(p.name),days:days,qty:availPacks};
   }).filter(function(f){return f.days<60;}).sort(function(a,b){return a.days-b.days;}).slice(0,10);
   if(forecastItems.length){
     document.getElementById("dash-forecast").innerHTML='<div class="card-title">⏱ Прогноз залишків (SKU < 60 днів)</div>'
@@ -2625,24 +2602,30 @@ function renderDashboard(){
         var daysTxt=f.days===999?"∞":f.days+" д.";
         return '<div class="forecast-row"><span class="forecast-days '+cls+'">'+daysTxt+'</span>'
           +'<span style="flex:1;color:var(--ink2)">'+esc(f.name)+'</span>'
-          +'<span style="color:var(--ink4);font-size:11px">'+f.qty+' шт. на складі</span></div>';
+          +'<span style="color:var(--ink4);font-size:11px">'+f.qty.toLocaleString("uk-UA")+' пачок зі стиків</span></div>';
       }).join("");
   }else{
     document.getElementById("dash-forecast").innerHTML='<div class="card-title">⏱ Прогноз залишків</div>'
       +'<div style="color:var(--ink4);font-size:12px;padding:8px 0">Всі SKU в нормі (> 60 днів) або немає даних продажів</div>';
   }
 
-  // Warehouse mini-summary
-  var groups={tube20:0,tube40:0,refill:0,stand:0};
-  products.forEach(function(p){if(groups[p.group]!==undefined)groups[p.group]+=getWHQty(p.id);});
-  document.getElementById("dash-warehouse-summary").innerHTML='<div class="card-title">📦 Склад (загальне)</div>'
+  // Warehouse mini-summary (rawStock only — no finished goods)
+  var totalSticksDash=0;
+  Object.keys(AROMAS).forEach(function(a){
+    var k="sticks_"+a;
+    totalSticksDash+=(rawStock[k]&&rawStock[k].sticks)||Math.round((rawStock[k]&&rawStock[k].qty||0)*2000);
+  });
+  var tubesDash=Math.round(rawStock.tubes&&rawStock.tubes.qty||0);
+  var possible20=Math.floor(Math.min(totalSticksDash/20, tubesDash));
+  var possible40=Math.floor(Math.min(totalSticksDash/40, tubesDash));
+  document.getElementById("dash-warehouse-summary").innerHTML='<div class="card-title">📦 Сировина (зведення)</div>'
     +'<div style="display:flex;gap:16px;flex-wrap:wrap">'
-    +'<div><div style="font-size:11px;color:var(--ink4)">Тубус 20шт</div><div style="font-size:20px;font-weight:700;color:var(--pine)">'+groups.tube20+'</div></div>'
-    +'<div><div style="font-size:11px;color:var(--ink4)">Тубус 40шт</div><div style="font-size:20px;font-weight:700;color:var(--pine)">'+groups.tube40+'</div></div>'
-    +'<div><div style="font-size:11px;color:var(--ink4)">Рефіл</div><div style="font-size:20px;font-weight:700;color:var(--pine)">'+groups.refill+'</div></div>'
-    +'<div><div style="font-size:11px;color:var(--ink4)">Підставки</div><div style="font-size:20px;font-weight:700;color:var(--pine)">'+groups.stand+'</div></div>'
-    +'<div><div style="font-size:11px;color:var(--ink4)">Тубуси (сировина)</div><div style="font-size:20px;font-weight:700;color:var(--pine)">'+((rawStock.tubes&&rawStock.tubes.qty.toFixed(0))||0)+'</div></div>'
+    +'<div><div style="font-size:11px;color:var(--ink4)">Палички (всього)</div><div style="font-size:20px;font-weight:700;color:var(--pine)">'+totalSticksDash.toLocaleString("uk-UA")+'</div></div>'
+    +'<div><div style="font-size:11px;color:var(--ink4)">Тубуси порожні</div><div style="font-size:20px;font-weight:700;color:var(--pine)">'+tubesDash.toLocaleString("uk-UA")+'</div></div>'
+    +'<div><div style="font-size:11px;color:var(--ink4)">Можливо пачок 20шт</div><div style="font-size:20px;font-weight:700;color:var(--moss)">'+possible20.toLocaleString("uk-UA")+'</div></div>'
+    +'<div><div style="font-size:11px;color:var(--ink4)">Можливо пачок 40шт</div><div style="font-size:20px;font-weight:700;color:var(--moss)">'+possible40.toLocaleString("uk-UA")+'</div></div>'
     +'</div>';
+
 
   // ── Alerts: low raw materials ────────────────────────────────
   var alerts=[];
@@ -3252,7 +3235,7 @@ document.addEventListener("click",function(e){if(e.target.classList.contains("mo
 
 // ============================================================
 // LOGO (base64 transparent PNG)
-var LOGO_B64="data:image/png;base64,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ZIDX64VevXq5cpwePnwY27ZtC3/++Sf8/fffoCgKKIoCx44d459p1aoVTJs2DS677DJ+Dlb3bbSUlpZiZmam1KFDB9yxYwe0atUKBg8eDDfffDO0adMmbv23detW7N+/Pxw6dIi/pygKBAIB+O233wARoXfv3jB79mzo1KlTzNv5zDPP4MSJE6GkpAQAAHw+H/z111/875IkgSzLIEkSVFZWQmVlJTRp0gRuuukmGD16NOTl5cWlL++66y585pln4NixY1BZWQm9e/eGNWvWuPK+IAgiApgPet26ddinTx+Da6RJkyZ40UUX1erysHt/CADATTfdFPGmPKdYu3Ytnn766bx/AoEANmzYEIcNG4ZFRUUxbWu4qL558+bh4MGDsXnz5iGuLFVVsVu3bjhu3Dj88MMPHe/LcOsbmZmZCADYo0cPWnIgCIKINW4MC4+GN998E4cOHRp1xBpBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBEARBuIr/B+N73DHgVSxRAAAAAElFTkSuQmCC";
+var LOGO_B64="data:image/png;base64,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bH26htrnTV1TMIqeKSSUggnzJwxpw0E4I6KVSIOFcLewB2eluN0uF/ZdbrcqdkEjIYOSGBodzENJPM/Jx1Ib5eS7qiIC1vdPTbtYbb6i0vG9kctzt01NC94y1kjmHkcfgHYP4LZEQVVN2Q3ddenWgbdak9obIY+c0LxATnGRMR4fL+tzY+Klhw1cKtHpKqptVbiezXK9xESUttYQ+npHeYc8+Ukg7Y91p6jmOCJSogLwais1s1DYq2x3mjjrLdXQugqIH+T2OGCPUH0I6g4I6r3ogrs3o4VdfaRu09RpGhqNVWF7i6F9M0OqogfJkkQ6uI/SYCDjOG5wubW3Zrdm4VbaaDbfVTHu8jUWuWBn4vkaGj8SrXEQQt2T4N6k1MF33TrI2QtIcLNRS8znn0lmb0A9QzOc/aCmPZ7bb7Pa6a12qip6GhpYxHBTwRhkcbR5AAdAvWiAsBuBo/T+u9K1emtS0Laugqm9R5PjePsyMd9147H+8EhZ9EFbVn4aNb3Heu4bfiN8Nvt0ofU3l8R8EUrurHt7Oe5vkwH7QIJAaSLAdttEad290lS6Z0zRCmo4Blzj1knkP2pJHfeccefyAwAANkRAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERAREQEREBERB//2Q==";
 
 // COGS / BOM MODULE
 // ============================================================
@@ -3621,18 +3604,13 @@ window.addEventListener("DOMContentLoaded",function(){
   document.getElementById("recv-date").value=new Date().toISOString().split("T")[0];
   renderBuyerSelect();
   renderSupplierSelect();
+  onRecvTypeChange();
   renderItems();
-  // Populate receive product select
-  var recvSel=document.getElementById("recv-product");
-  var finishedOpts=products.filter(function(p){return p.group==="tube20"||p.group==="tube40"||p.group==="refill"||p.group==="stand";})
-    .map(function(p){return "<option value=\""+p.id+"\">"+shortName(p.name)+"</option>";}).join("");
-  recvSel.innerHTML="<option value=\"\">— Оберіть SKU —</option>"+finishedOpts;
   if(settings.autoincrement){
     var maxNum=journal.reduce(function(m,j){return Math.max(m,parseInt(j.invoiceNum)||0);},0);
     if(maxNum>0)document.getElementById("inv-num").value=maxNum+1;
   }
   renderDashboard();
-  // Render assemble select in background
   renderAssembleSelect();
 });
 </script>
