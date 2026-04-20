@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>All Trees I Know — Замовлення</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Noto+Serif+JP:wght@300;400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink:      #111110;
+  --ink2:     #3a3a38;
+  --ink3:     #88887f;
+  --paper:    #f5f3ef;
+  --warm:     #eceae4;
+  --card:     #faf9f6;
+  --line:     rgba(17,17,16,.09);
+  --line2:    rgba(17,17,16,.17);
+  --green:    #2a5c42;
+  --gbg:      rgba(42,92,66,.07);
+  --amber:    #9a7420;
+  --abg:      rgba(154,116,32,.09);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Space Grotesk',sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;overflow-x:hidden;font-size:14px}
+
+/* ── HEADER ─────────────────────────────────── */
+.hdr{position:sticky;top:0;z-index:60;background:var(--paper);border-bottom:1px solid var(--ink)}
+.hdr-top{display:flex;align-items:stretch;height:52px}
+.hdr-logo{display:flex;align-items:center;padding:0 20px;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;border-right:1px solid var(--line2);white-space:nowrap;flex-shrink:0}
+.hdr-logo img{height:26px;mix-blend-mode:multiply;opacity:.85}
+.hdr-nav{display:flex;flex:1}
+.hnav{font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink3);background:none;border:none;border-right:1px solid var(--line2);
+  padding:0 18px;cursor:pointer;transition:all .12s;white-space:nowrap;
+  display:flex;align-items:center}
+.hnav:hover:not(.on){background:var(--warm);color:var(--ink)}
+.hnav.on{background:var(--ink);color:#fff}
+.hdr-progress{padding:8px 20px 10px;border-top:1px solid var(--line)}
+.prog-row{display:flex;align-items:center;gap:14px}
+.prog-lbl{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink3);flex-shrink:0}
+.prog-track{flex:1;height:2px;background:var(--warm)}
+.prog-fill{height:100%;transition:width .4s cubic-bezier(.16,1,.3,1),background .4s}
+.prog-num{font-size:12px;font-weight:600;flex-shrink:0;transition:color .4s}
+.prog-hint{font-size:11px;flex-shrink:0;transition:color .4s}
+
+/* ── PANES ────────────────────────────────────── */
+.page{position:relative}
+.pane{display:none}.pane.on{display:block}
+
+/* ── LAST ORDER BANNER ──────────────────────── */
+.last-order-banner{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:9px 20px;background:var(--warm);border-bottom:1px solid var(--line2);
+  font-size:12px;color:var(--ink2)
+}
+.lob-info{display:flex;align-items:center;gap:8px}
+.lob-ico{font-size:14px}
+.lob-btn{font-family:'Space Grotesk',sans-serif;font-size:11px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;background:var(--ink);color:#fff;
+  border:none;padding:5px 13px;cursor:pointer;flex-shrink:0}
+.lob-btn:hover{background:var(--ink2)}
+.lob-dismiss{background:none;border:none;font-size:16px;color:var(--ink3);cursor:pointer;padding:0 2px}
+.lob-dismiss:hover{color:var(--ink)}
+
+/* ── FILTERS ─────────────────────────────────── */
+.filters-wrap{border-bottom:1px solid var(--line2);background:#fff}
+.filter-row{display:flex;align-items:center;gap:0;padding:0 20px;min-height:40px;flex-wrap:wrap}
+.filter-row+.filter-row{border-top:1px solid var(--line)}
+.flbl{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink3);
+  margin-right:10px;white-space:nowrap;flex-shrink:0}
+.chips{display:flex;flex-wrap:wrap;gap:5px;padding:7px 0;flex:1}
+.chip{font-family:'Space Grotesk',sans-serif;font-size:10px;font-weight:500;
+  letter-spacing:.09em;text-transform:uppercase;padding:3px 10px;
+  border:1px solid var(--line2);background:none;color:var(--ink3);
+  cursor:pointer;transition:all .12s;border-radius:20px}
+.chip:hover:not(.on){border-color:var(--ink3);color:var(--ink)}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.chip.on-note{background:var(--green);border-color:var(--green);color:#fff}
+.clear-notes{font-family:'Space Grotesk',sans-serif;font-size:10px;font-weight:500;
+  letter-spacing:.1em;text-transform:uppercase;background:none;border:none;
+  color:var(--amber);cursor:pointer;padding:3px 0;margin-left:4px;flex-shrink:0}
+.clear-notes:hover{text-decoration:underline}
+
+/* ── CATALOG ─────────────────────────────────── */
+.cat-wrap{max-width:860px;margin:0 auto;padding-bottom:80px}
+
+.coll-hdr{display:flex;align-items:center;gap:12px;padding:0 20px;height:34px;
+  border-bottom:1px solid var(--line)}
+.coll-name{font-size:10px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--ink3)}
+.coll-count{font-size:10px;color:var(--line2)}
+
+/* ── PRODUCT ROW ──────────────────────────────── */
+.prow{border-bottom:1px solid var(--line);background:#fff;transition:background .15s}
+.prow.sel{background:var(--gbg)}
+.prow:hover:not(.sel){background:var(--card)}
+
+/* Flash animation */
+@keyframes rowFlash{0%{background:transparent}25%{background:rgba(42,92,66,.12)}100%{background:var(--gbg)}}
+.prow.flash{animation:rowFlash .7s ease-out forwards}
+
+.prow-top{display:flex;align-items:center;gap:0;min-height:52px;padding:6px 20px 6px 12px;cursor:pointer}
+
+/* Thumb */
+.thumb{width:40px;height:56px;flex-shrink:0;margin-right:14px;
+  background:var(--warm);overflow:hidden;position:relative}
+.thumb img{width:100%;height:100%;object-fit:cover;object-position:center top;display:block}
+.thumb-lbl{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:7px;letter-spacing:.04em;color:var(--ink3);font-family:'Space Grotesk',sans-serif}
+.thumb.stand{background:#e8e4da}
+
+/* Name block */
+.prow-name{flex:1;min-width:0;padding-right:10px}
+.p-en{display:block;font-size:13px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink);line-height:1.2}
+.p-notes-lbl{display:block;font-size:10px;color:var(--ink3);letter-spacing:.04em;
+  text-transform:uppercase;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.p-ua{display:none}
+
+/* Compact qty controls (always visible in row) */
+.prow-controls{display:flex;align-items:center;gap:6px;flex-shrink:0;margin-right:10px}
+.qc-blk{display:flex;align-items:stretch;border:1px solid var(--line2);background:#fff}
+.qc-blk:focus-within{border-color:var(--ink)}
+.qc-lbl{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);
+  padding:0 6px;background:var(--warm);border-right:1px solid var(--line);
+  display:flex;align-items:center;font-weight:500;flex-shrink:0}
+.qc-btn{width:22px;height:30px;border:none;background:none;
+  font-size:14px;color:var(--ink3);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .1s;font-weight:300;line-height:1;flex-shrink:0}
+.qc-btn:hover{color:var(--green);background:var(--gbg)}
+.qc-btn:active{transform:scale(.85)}
+.qc-inp{width:28px;height:30px;border:none;outline:none;text-align:center;
+  font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:600;
+  color:var(--ink);background:transparent;-moz-appearance:textfield}
+.qc-inp::-webkit-outer-spin-button,.qc-inp::-webkit-inner-spin-button{-webkit-appearance:none}
+
+/* Row right */
+.prow-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.prow-sum{font-size:14px;font-weight:600;min-width:70px;text-align:right;transition:color .2s}
+.prow-sum.active{color:var(--green)}
+.prow-sum.muted{color:var(--ink3);font-weight:400;font-size:12px}
+.arr{font-size:11px;color:var(--ink3);width:16px;text-align:center;
+  transition:transform .2s;flex-shrink:0}
+.prow.open .arr{transform:rotate(180deg)}
+
+/* Expanded body */
+.prow-body{display:none;padding:0 20px 14px 56px;border-top:1px solid var(--line)}
+.prow.open .prow-body{display:block}
+.p-desc{font-family:'Noto Serif JP',serif;font-size:13px;font-weight:300;
+  color:var(--ink3);line-height:1.85;margin:10px 0 8px;max-width:480px}
+.p-tags{display:flex;flex-wrap:wrap;gap:4px}
+.ptag{font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink3);background:var(--warm);border:1px solid var(--line2);
+  border-radius:20px;padding:2px 8px}
+
+/* ── CONTACT PANE ──────────────────────────── */
+.cont-wrap{max-width:600px;margin:0 auto;padding:32px 20px 100px}
+.pane-title{font-size:24px;font-weight:700;letter-spacing:.04em;margin-bottom:4px}
+.pane-sub{font-size:13px;color:var(--ink3);margin-bottom:24px;
+  padding-left:12px;border-left:2px solid var(--green);line-height:1.7}
+.recap{background:var(--warm);border:1px solid var(--line2);padding:14px 16px;margin-bottom:24px}
+.recap-ttl{font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--ink3);margin-bottom:10px;font-weight:600}
+.recap-item{display:flex;justify-content:space-between;align-items:baseline;
+  font-size:13px;color:var(--ink2);padding:4px 0;border-bottom:1px solid var(--line)}
+.recap-item:last-child{border:none}
+.ri-nm{font-weight:400}.ri-pr{font-size:11px;color:var(--ink3);font-weight:500}
+.recap-total{display:flex;justify-content:flex-end;align-items:baseline;gap:8px;
+  padding-top:10px;margin-top:6px;border-top:1px solid var(--line2)}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.frow.full{grid-template-columns:1fr}
+.field label{display:block;font-size:10px;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--ink3);margin-bottom:5px;font-weight:500}
+.field input,.field textarea{width:100%;background:#fff;border:1px solid var(--line2);
+  padding:9px 12px;font-family:'Space Grotesk',sans-serif;font-size:14px;
+  color:var(--ink);outline:none;transition:border-color .14s;border-radius:0}
+.field input:focus,.field textarea:focus{border-color:var(--ink)}
+.field input.err{border-color:#c0392b}
+.field textarea{resize:vertical;min-height:64px;line-height:1.6}
+.sbtn{width:100%;height:48px;background:var(--ink);color:#fff;border:none;
+  font-family:'Space Grotesk',sans-serif;font-size:11px;font-weight:700;
+  letter-spacing:.18em;text-transform:uppercase;cursor:pointer;transition:background .14s;margin-top:6px}
+.sbtn:hover{background:var(--ink2)}
+.snote{font-size:11px;color:var(--ink3);text-align:center;margin-top:8px;line-height:1.6}
+
+/* ── TERMS ────────────────────────────────── */
+.terms-wrap{max-width:520px;margin:0 auto;padding:32px 20px 80px}
+.tsec{margin-bottom:22px}
+.tsttl{font-size:10px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--green);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(42,92,66,.2)}
+.trow{display:flex;gap:14px;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px;line-height:1.5}
+.trow:last-child{border:none}
+.tkey{font-size:10px;letter-spacing:.06em;color:var(--ink3);min-width:120px;padding-top:2px;flex-shrink:0;font-weight:500}
+.tval{color:var(--ink2);flex:1}.tval strong{font-weight:700;color:var(--ink)}
+
+/* ── SUCCESS ──────────────────────────────── */
+.suc-wrap{display:none;max-width:480px;margin:60px auto;padding:0 20px;text-align:center}
+.suc-wrap.on{display:block}
+.suc-ttl{font-size:22px;font-weight:700;letter-spacing:.04em;margin-bottom:8px}
+.suc-txt{font-size:13px;color:var(--ink3);line-height:1.8;margin-bottom:20px;font-family:'Noto Serif JP',serif;font-weight:300}
+.suc-recap{background:var(--warm);border:1px solid var(--line2);padding:14px 16px;text-align:left;margin-bottom:18px;font-size:13px;color:var(--ink3);line-height:1.9}
+.suc-recap strong{color:var(--ink);font-weight:700}
+.rbtn{background:none;border:1px solid var(--line2);padding:9px 22px;
+  font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);cursor:pointer;transition:all .14s}
+.rbtn:hover{border-color:var(--ink);color:var(--ink)}
+
+/* ── STICKY FOOTER ────────────────────────── */
+.summary{position:fixed;bottom:0;left:0;right:0;z-index:50;
+  background:rgba(245,243,239,.97);backdrop-filter:blur(18px);
+  border-top:1px solid var(--ink);height:56px;
+  display:flex;align-items:center;justify-content:space-between;padding:0 20px;gap:12px;
+  transform:translateY(100%);transition:transform .32s cubic-bezier(.16,1,.3,1)}
+.summary.on{transform:translateY(0)}
+.smeta{font-size:12px;color:var(--ink3);white-space:nowrap}
+.smeta strong{color:var(--ink);font-weight:600}
+.sfooter-right{display:flex;align-items:center;gap:12px;flex-shrink:0}
+.share-btn{font-family:'Space Grotesk',sans-serif;font-size:10px;font-weight:600;
+  letter-spacing:.12em;text-transform:uppercase;background:none;
+  border:1px solid var(--line2);color:var(--ink3);padding:0 14px;height:36px;cursor:pointer;transition:all .12s}
+.share-btn:hover{border-color:var(--ink);color:var(--ink)}
+.sfull{font-size:12px;color:var(--ink3);text-decoration:line-through}
+.sdisc-lbl{font-size:10px;color:var(--green);font-weight:600}
+.sval-wrap{text-align:right}
+.sval-lbl{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink3);display:block}
+.sval{font-size:24px;font-weight:700;color:var(--ink);line-height:1}
+.scta{height:40px;padding:0 22px;background:var(--ink);color:#fff;border:none;
+  font-family:'Space Grotesk',sans-serif;font-size:11px;font-weight:700;
+  letter-spacing:.14em;text-transform:uppercase;cursor:pointer;transition:background .14s;white-space:nowrap}
+.scta:hover{background:var(--ink2)}
+.scta:disabled{opacity:.3;cursor:not-allowed}
+
+/* ── SHARE PANEL ──────────────────────────── */
+.share-overlay{position:fixed;inset:0;z-index:70;background:rgba(17,17,16,.4);
+  opacity:0;pointer-events:none;transition:opacity .22s}
+.share-overlay.on{opacity:1;pointer-events:auto}
+.share-panel{position:fixed;bottom:0;left:0;right:0;z-index:71;
+  background:#fff;border-top:1px solid var(--ink);padding:22px 24px 28px;
+  transform:translateY(100%);transition:transform .3s cubic-bezier(.16,1,.3,1)}
+.share-panel.on{transform:translateY(0)}
+.share-panel-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+.share-panel-ttl{font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase}
+.share-close{background:none;border:none;font-size:18px;color:var(--ink3);cursor:pointer}
+.share-close:hover{color:var(--ink)}
+.share-actions{display:flex;gap:10px;flex-wrap:wrap}
+.share-action{display:flex;align-items:center;gap:8px;padding:10px 18px;
+  border:1px solid var(--line2);background:none;cursor:pointer;
+  font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);transition:all .12s;flex:1;min-width:140px}
+.share-action:hover{border-color:var(--ink);background:var(--warm);color:var(--ink)}
+.share-action .ico{font-size:18px;flex-shrink:0}
+
+/* ── PRINT STYLES ──────────────────────────── */
+@media print{
+  .hdr,.filters-wrap,.last-order-banner,.summary,.share-overlay,.share-panel{display:none!important}
+  .pane{display:block!important}
+  #pane-cat,#pane-terms,#pane-success{display:none!important}
+  #pane-contact{display:block!important}
+  .cont-wrap{max-width:100%;padding:20px}
+  .sbtn,.snote{display:none}
+  body{background:#fff;font-size:12px}
+}
+
+/* ── RESPONSIVE ────────────────────────────── */
+@media(max-width:640px){
+  .hdr-logo{padding:0 12px;font-size:11px}
+  .hnav{padding:0 12px;font-size:10px}
+  .prow-top{padding:6px 12px 6px 8px}
+  .thumb{width:24px;margin-right:8px}
+  .frow{grid-template-columns:1fr}
+  .cont-wrap,.terms-wrap{padding-left:14px;padding-right:14px}
+  .prow-controls{gap:4px}
+  .qc-lbl{padding:0 4px;font-size:8px}
+  .share-actions{flex-direction:column}
+}
+</style>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script>
+window.ATIK_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDjvtVfe7LUwthxe1GH-cCQBe8k0272Poo",
+  authDomain: "atik-16335.firebaseapp.com",
+  projectId: "atik-16335",
+  storageBucket: "atik-16335.firebasestorage.app",
+  messagingSenderId: "787085067684",
+  appId: "1:787085067684:web:6345bd0ca70dd4d4c0ed31"
+};
+</script>
+</head>
+<body>
+
+<!-- ── HEADER ─────────────────────────────────── -->
+<header class="hdr">
+  <div class="hdr-top">
+    <div class="hdr-logo">All Trees I Know</div>
+    <nav class="hdr-nav">
+      <button class="hnav on"  onclick="goPane('cat',this)">Каталог</button>
+      <button class="hnav"     onclick="goPane('contact',this)">Оформити</button>
+      <button class="hnav"     onclick="goPane('terms',this)">Умови</button>
+    </nav>
+  </div>
+  <div class="hdr-progress" id="hdr-progress" style="display:none">
+    <div class="prog-row">
+      <span class="prog-lbl">Мін. замовлення</span>
+      <div class="prog-track"><div class="prog-fill" id="prog-fill"></div></div>
+      <span class="prog-num" id="prog-num"></span>
+      <span class="prog-hint" id="prog-hint"></span>
+    </div>
+  </div>
+</header>
+
+<div class="page">
+
+<!-- ── CATALOG ──────────────────────────────── -->
+<div class="pane on" id="pane-cat">
+
+  <!-- Last order banner -->
+  <div class="last-order-banner" id="last-banner" style="display:none">
+    <div class="lob-info">
+      <span class="lob-ico">↺</span>
+      <span id="last-banner-text">Попереднє замовлення</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button class="lob-btn" onclick="restoreLastOrder()">Завантажити</button>
+      <button class="lob-dismiss" onclick="dismissBanner()" title="Сховати">×</button>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="filters-wrap">
+    <div class="filter-row">
+      <span class="flbl">Колекція</span>
+      <div class="chips" id="coll-chips">
+        <button class="chip on" onclick="setColl('all',this)">Всі</button>
+        <button class="chip"    onclick="setColl('0F',this)">0F</button>
+        <button class="chip"    onclick="setColl('0W',this)">0W</button>
+        <button class="chip"    onclick="setColl('00',this)">00</button>
+        <button class="chip"    onclick="setColl('stand',this)">Підставки</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="cat-wrap" id="cat-content"></div>
+</div>
+
+<!-- ── CONTACT ──────────────────────────────── -->
+<div class="pane" id="pane-contact">
+<div class="cont-wrap">
+  <h1 class="pane-title">Оформити замовлення</h1>
+  <p class="pane-sub">Залиште контакти — підтвердимо та узгодимо відвантаження найближчим часом.</p>
+  <div class="recap" id="order-recap"></div>
+  <div class="frow">
+    <div class="field"><label>Компанія / ФОП *</label><input id="f-co" placeholder="ТОВ «Назва»"></div>
+    <div class="field"><label>Контактна особа *</label><input id="f-ct" placeholder="Ім'я та прізвище"></div>
+  </div>
+  <div class="frow">
+    <div class="field"><label>Телефон *</label><input id="f-ph" type="tel" placeholder="+380 __ ___ __ __"></div>
+    <div class="field"><label>Email</label><input id="f-em" type="email" placeholder="для підтвердження"></div>
+  </div>
+  <div class="frow full">
+    <div class="field"><label>Місто / Нова Пошта</label><input id="f-ad" placeholder="Київ, відд. 12"></div>
+  </div>
+  <div class="frow full">
+    <div class="field"><label>Коментар</label><textarea id="f-nt" placeholder="Побажання, питання…"></textarea></div>
+  </div>
+  <button class="sbtn" onclick="submitOrder()">Надіслати замовлення →</button>
+  <p class="snote">Мін. замовлення 10 000 грн · знижка −30% від ціни каталогу</p>
+</div>
+</div>
+
+<!-- ── TERMS ─────────────────────────────────── -->
+<div class="pane" id="pane-terms">
+<div class="terms-wrap">
+  <h1 class="pane-title" style="margin-bottom:22px">Умови співпраці</h1>
+  <div class="tsec">
+    <div class="tsttl">Ціноутворення</div>
+    <div class="trow"><span class="tkey">Ціна в каталозі</span><span class="tval">Роздрібна ціна полиці</span></div>
+    <div class="trow"><span class="tkey">Оптова знижка</span><span class="tval"><strong>−30%</strong> для всіх партнерів</span></div>
+    <div class="trow"><span class="tkey">Мін. замовлення</span><span class="tval"><strong>10 000 грн</strong> за оптовою ціною</span></div>
+  </div>
+  <div class="tsec">
+    <div class="tsttl">Оплата та доставка</div>
+    <div class="trow"><span class="tkey">Оплата</span><span class="tval">100% передоплата на рахунок ФОП</span></div>
+    <div class="trow"><span class="tkey">Відвантаження</span><span class="tval">1–2 робочі дні після оплати</span></div>
+    <div class="trow"><span class="tkey">Доставка</span><span class="tval">Нова Пошта за рахунок покупця</span></div>
+  </div>
+  <div class="tsec">
+    <div class="tsttl">Бонуси та контакти</div>
+    <div class="trow"><span class="tkey">Нові партнери</span><span class="tval">Безкоштовний тестовий набір при першому замовленні</span></div>
+    <div class="trow"><span class="tkey">Instagram</span><span class="tval">@alltreesiknow</span></div>
+    <div class="trow"><span class="tkey">Телефон</span><span class="tval">+38 (093) 767-42-90</span></div>
+  </div>
+</div>
+</div>
+
+<!-- ── SUCCESS ───────────────────────────────── -->
+<div class="suc-wrap" id="pane-success">
+  <h2 class="suc-ttl">Замовлення отримано</h2>
+  <p class="suc-txt">Дякуємо! Зв'яжемося для підтвердження та узгодження відвантаження.</p>
+  <div class="suc-recap" id="suc-recap"></div>
+  <button class="rbtn" onclick="resetAll()">Нове замовлення</button>
+</div>
+
+</div><!-- /page -->
+
+<!-- ── STICKY FOOTER ─────────────────────────── -->
+<div class="summary" id="summary">
+  <span class="smeta" id="smeta"></span>
+  <div class="sfooter-right">
+    <button class="share-btn" onclick="openShare()">Поділитись ↗</button>
+    <div class="sval-wrap">
+      <span class="sval-lbl">До оплати −30%</span>
+      <div style="display:flex;align-items:baseline;gap:6px">
+        <span class="sfull" id="sfull"></span>
+        <span class="sdisc-lbl" id="sdisc-lbl"></span>
+        <span class="sval" id="sval">0</span>
+        <span style="font-size:11px;color:var(--ink3)">₴</span>
+      </div>
+    </div>
+    <button class="scta" id="scta" onclick="goCont()" disabled>Оформити →</button>
+  </div>
+</div>
+
+<!-- ── SHARE PANEL ───────────────────────────── -->
+<div class="share-overlay" id="share-overlay" onclick="closeShare()"></div>
+<div class="share-panel" id="share-panel">
+  <div class="share-panel-hdr">
+    <span class="share-panel-ttl">Поділитись замовленням</span>
+    <button class="share-close" onclick="closeShare()">×</button>
+  </div>
+  <div class="share-actions">
+    <button class="share-action" onclick="shareWhatsApp()">
+      <span class="ico">💬</span> WhatsApp
+    </button>
+    <button class="share-action" onclick="shareTelegram()">
+      <span class="ico">✈</span> Telegram
+    </button>
+    <button class="share-action" onclick="copyOrderText()">
+      <span class="ico">⎘</span> <span id="copy-btn-lbl">Скопіювати текст</span>
+    </button>
+    <button class="share-action" onclick="printOrder()">
+      <span class="ico">⎙</span> Роздрукувати / PDF
+    </button>
+  </div>
+</div>
+
+<script>
+// ── DATA ──────────────────────────────────────────────────────────────
+const PRODUCTS = [
+  { id:"honeysandal", en:"Honey Sandal",    ua:"Медовий сандал",   coll:"0F",
+    notes:"кремові, солодкі, деревні, бальзамічні",
+    desc:"Сандал в обрамленні медово-квіткового серця. Тепло та солодкість у рівній мірі — ніжна розкіш для затишного вечора.",
+    tags:["кремовий","солодкий","деревний","бальзамічний"], p20:550, p40:800 },
+  { id:"agarwood",    en:"Agarwood",         ua:"Агарове дерево",   coll:"0F",
+    notes:"амброві, солодкі, деревні, пряні",
+    desc:"Уд — один із найдавніших і найцінніших ароматів Сходу. Амброво-пряний, з тваринною глибиною.",
+    tags:["амброво","пряний","деревний","глибокий"], p20:550, p40:800 },
+  { id:"frankincense",en:"Frankincense",     ua:"Ладан",            coll:"0F",
+    notes:"деревні, димні, пряні, глибокі",
+    desc:"Бальзамічний, смоляний, піднесений. Сакральний аромат із тисячолітньою традицією.",
+    tags:["деревний","димний","пряний","сакральний"], p20:650, p40:1000 },
+  { id:"gardentree",  en:"Garden Tree",      ua:"Садове дерево",    coll:"0F",
+    notes:"деревні, землисті, вогкі, глибокі",
+    desc:"Земляний, вогкий деревний аромат — після дощу в саду, свіже листя та темна земля.",
+    tags:["деревний","землистий","вогкий","природа"], p20:550, p40:800 },
+  { id:"blacksandal", en:"Black Sandal",     ua:"Чорний сандал",    coll:"0W",
+    notes:"деревні, пряні, солодкі, теплі",
+    desc:"Темний, багатошаровий сандал із глибоким пряним характером. Вечірній аромат зрілості.",
+    tags:["деревний","пряний","солодкий","теплий"], p20:550, p40:800 },
+  { id:"musk",        en:"Musc",             ua:"Мускус",           coll:"0W",
+    notes:"солодкі, пряні, глибокі, кремові",
+    desc:"М'який кремово-солодкий мускус із пряним шлейфом. Розкривається повільно протягом дня.",
+    tags:["солодкий","пряний","кремовий","глибокий"], p20:450, p40:700 },
+  { id:"temple",      en:"Temple Sandal",    ua:"Храмовий сандал",  coll:"0W",
+    notes:"деревні, теплі, димні, глибокі",
+    desc:"Теплий, трохи димний сандал. Аромат буддистського храму — зосереджуючий і духовний.",
+    tags:["деревний","теплий","димний","духовний"], p20:450, p40:700 },
+  { id:"hydrangea",   en:"Hydrangea Tea",    ua:"Чайна гортензія",  coll:"0W",
+    notes:"трав'янисті, зелені, солодкі, квіткові",
+    desc:"Трав'яниста свіжість із зеленими квітковими нотами. По-японськи стримано.",
+    tags:["трав'янистий","зелений","квітковий","свіжий"], p20:450, p40:700 },
+  { id:"cherry",      en:"Cherry Bloom",     ua:"Цвіт вишні",       coll:"00",
+    notes:"квіткові, фруктові, зелені, трав'янисті",
+    desc:"Ніжний весняний аромат японської сакури. Квітково-фруктовий із зеленою підкладкою.",
+    tags:["квітковий","фруктовий","зелений","трав'янистий"], p20:450, p40:650 },
+  { id:"osmanthus",   en:"Osmanthus",        ua:"Османтус",         coll:"00",
+    notes:"квіткові, оливкові, зелені, свіжі",
+    desc:"«Золота кінна» японської парфумерії. Свіжий, квітково-оливковий.",
+    tags:["квітковий","оливковий","зелений","свіжий"], p20:450, p40:700 },
+  { id:"camphor",     en:"Camphor Tree",     ua:"Камфорне дерево",  coll:"00",
+    notes:"деревні, димні, глибокі, пряні",
+    desc:"Глибокий деревний аромат із димним пряним характером. Традиційно — в синтоїстських обрядах.",
+    tags:["деревний","димний","пряний","очищення"], p20:450, p40:700 },
+  { id:"sandalwood",  en:"Sandalwood",       ua:"Сандалове дерево", coll:"00",
+    notes:"пряні, деревні, трав'янисті, теплі",
+    desc:"Теплий пряно-деревний сандал із трав'янистою підкладкою. Класика медитативної практики.",
+    tags:["пряний","деревний","трав'янистий","теплий"], p20:450, p40:700 },
+];
+
+const STANDS = [
+  { id:"stand_round",    en:"Anumo Round",     ua:"Підставка кругла",   notes:"кераміка · Anumo · 9 см",  tags:["Anumo","кераміка"], price:225 },
+  { id:"stand_long",     en:"Anumo Long",      ua:"Підставка довга",    notes:"кераміка · Anumo · 22 см", tags:["Anumo","кераміка"], price:310 },
+  { id:"stand_tri",      en:"Anumo Triangle",  ua:"Підставка трикутна", notes:"кераміка · Anumo",          tags:["Anumo","кераміка"], price:475 },
+  { id:"sofika_beige",   en:"Sofika Beige",    ua:"Sofika бежева",      notes:"авторська кераміка · Sofika",tags:["Sofika","кераміка"], price:650 },
+  { id:"sofika_green",   en:"Sofika Green",    ua:"Sofika зелена",      notes:"авторська кераміка · Sofika",tags:["Sofika","кераміка"], price:650 },
+  { id:"sofika_spotted", en:"Sofika Spotted",  ua:"Sofika плямиста",    notes:"авторська кераміка · Sofika",tags:["Sofika","кераміка"], price:650 },
+  { id:"sofika_brown",   en:"Sofika Brown",    ua:"Sofika коричнева",   notes:"авторська кераміка · Sofika",tags:["Sofika","кераміка"], price:650 },
+];
+
+const PRICES = {};
+PRODUCTS.forEach(p => { PRICES[p.id+"20"]=p.p20; PRICES[p.id+"40"]=p.p40; });
+STANDS.forEach(s => { PRICES[s.id]=s.price; });
+
+const MIN_ORDER = 10000;
+const DISCOUNT  = 0.70; // pay 70%
+
+let order = {}, curColl = "all";
+let displayedDiscTotal = 0; // for ticker
+
+
+
+// ── RENDER ────────────────────────────────────────────────────────────
+function productPassesFilter(p) {
+  if (curColl !== 'all' && p.coll !== curColl) return false;
+  return true;
+}
+
+function renderCatalog() {
+  const el = document.getElementById('cat-content');
+  let html = '';
+  let sticksShown = false;
+
+  ['0F','0W','00'].forEach(coll => {
+    if (curColl !== 'all' && curColl !== coll) return;
+    const items = PRODUCTS.filter(p => p.coll === coll && productPassesFilter(p));
+    if (!items.length) return;
+    if (!sticksShown) {
+      html += collHdr('Палички', coll, items.length);
+      sticksShown = true;
+    } else {
+      html += collHdr('', coll, items.length);
+    }
+    html += items.map(prodRow).join('');
+  });
+
+  if (curColl === 'all' || curColl === 'stand') {
+    html += collHdr('Підставки', '', STANDS.length);
+    html += STANDS.map(standRow).join('');
+  }
+
+  if (!html) {
+    html = `<div style="padding:40px 20px;text-align:center;color:var(--ink3);font-size:14px">
+      Нічого не знайдено — <button onclick="clearNotes()" style="background:none;border:none;color:var(--green);cursor:pointer;font-family:inherit;font-size:14px;text-decoration:underline">скинути фільтр нот</button>
+    </div>`;
+  }
+
+  el.innerHTML = html;
+  restoreOpen();
+}
+
+function collHdr(label, coll, count) {
+  const name = label
+    ? `${label}${coll ? ' · ' + coll : ''}`
+    : (coll || '');
+  return `<div class="coll-hdr">
+    <span class="coll-name">${name}</span>
+    <span class="coll-count">${count} позиц${count===1?'ія':count<5?'ії':'ій'}</span>
+  </div>`;
+}
+
+function prodRow(p) {
+  const q20 = order[p.id+'20']||0, q40 = order[p.id+'40']||0;
+  const rowSum = q20*p.p20 + q40*p.p40;
+  const hasSel = q20>0||q40>0;
+  const tags = p.tags.map(t=>`<span class="ptag">${t}</span>`).join('');
+  return `<div class="prow${hasSel?' sel':''}" id="row-${p.id}">
+    <div class="prow-top" onclick="toggle('${p.id}',event)">
+      <div class="thumb"><img src="images/${p.id}.png" alt="${p.en}" loading="lazy"></div>
+      <div class="prow-name">
+        <span class="p-en">${p.en}</span>
+        <span class="p-notes-lbl">${p.notes}</span>
+      </div>
+      <div class="prow-controls" onclick="event.stopPropagation()">
+        ${qcBlk(p.id+'20', q20, '20шт')}
+        ${qcBlk(p.id+'40', q40, '40шт')}
+      </div>
+      <div class="prow-right">
+        <span class="prow-sum${hasSel?' active':' muted'}" id="rs-${p.id}">${hasSel ? rowSum.toLocaleString('uk-UA')+' ₴' : 'від '+Math.min(p.p20,p.p40)+' ₴'}</span>
+        <span class="arr">▾</span>
+      </div>
+    </div>
+    <div class="prow-body">
+      <p class="p-desc">${p.desc}</p>
+      <div class="p-tags">${tags}</div>
+    </div>
+  </div>`;
+}
+
+function standRow(s) {
+  const qty = order[s.id]||0;
+  const hasSel = qty > 0;
+  const tags = s.tags.map(t=>`<span class="ptag">${t}</span>`).join('');
+  return `<div class="prow${hasSel?' sel':''}" id="row-${s.id}">
+    <div class="prow-top" onclick="toggle('${s.id}',event)">
+      <div class="thumb stand"><img src="images/${s.id.startsWith('sofika') ? 'sofika' : 'anumo'}.png" alt="${s.en}" loading="lazy"></div>
+      <div class="prow-name">
+        <span class="p-en">${s.en}</span>
+        <span class="p-notes-lbl">${s.notes}</span>
+      </div>
+      <div class="prow-controls" onclick="event.stopPropagation()">
+        ${qcBlk(s.id, qty, 'шт')}
+      </div>
+      <div class="prow-right">
+        <span class="prow-sum${hasSel?' active':' muted'}" id="rs-${s.id}">${hasSel ? (qty*s.price).toLocaleString('uk-UA')+' ₴' : s.price+' ₴'}</span>
+        <span class="arr">▾</span>
+      </div>
+    </div>
+    <div class="prow-body">
+      <div class="p-tags">${tags}</div>
+    </div>
+  </div>`;
+}
+
+function qcBlk(id, qty, lbl) {
+  return `<div class="qc-blk">
+    <span class="qc-lbl">${lbl}</span>
+    <button class="qc-btn" onclick="step('${id}',-1)">−</button>
+    <input class="qc-inp" type="number" min="0" step="1" placeholder="0"
+      value="${qty||''}" data-id="${id}" onchange="onQ(this)" oninput="onQ(this)">
+    <button class="qc-btn" onclick="step('${id}',1)">+</button>
+  </div>`;
+}
+
+// ── OPEN STATE ────────────────────────────────────────────────────────
+const openRows = new Set();
+function restoreOpen() {
+  openRows.forEach(id => {
+    document.getElementById('row-'+id)?.classList.add('open');
+  });
+}
+function toggle(id, e) {
+  const row = document.getElementById('row-'+id);
+  if (!row) return;
+  row.classList.toggle('open');
+  if (row.classList.contains('open')) openRows.add(id);
+  else openRows.delete(id);
+}
+
+// ── QTY ──────────────────────────────────────────────────────────────
+function onQ(inp) {
+  const id  = inp.dataset.id;
+  const qty = Math.max(0, parseInt(inp.value)||0);
+  if (!qty) { delete order[id]; inp.value=''; }
+  else order[id] = qty;
+  refreshRowSum(id);
+  flashRow(id);
+  updateSummary();
+}
+
+function step(id, delta) {
+  const inp = document.querySelector(`input[data-id="${id}"]`);
+  if (!inp) return;
+  const next = Math.max(0, (parseInt(inp.value)||0) + delta);
+  inp.value = next || '';
+  onQ(inp);
+}
+
+function flashRow(id) {
+  // Find the product parent row
+  const p = PRODUCTS.find(p => id===p.id+'20'||id===p.id+'40');
+  const rowId = p ? p.id : id;
+  const row = document.getElementById('row-'+rowId);
+  if (!row) return;
+  const qty = p
+    ? (order[p.id+'20']||0) + (order[p.id+'40']||0)
+    : (order[id]||0);
+  if (qty > 0) {
+    row.classList.remove('flash');
+    void row.offsetWidth; // reflow
+    row.classList.add('flash');
+    setTimeout(() => row.classList.remove('flash'), 750);
+  }
+}
+
+function refreshRowSum(id) {
+  const p = PRODUCTS.find(p => id===p.id+'20'||id===p.id+'40');
+  const rowId = p ? p.id : id;
+  const row = document.getElementById('row-'+rowId);
+  if (!row) return;
+  let rowSum = 0, hasSel = false;
+  if (p) {
+    const q20=order[p.id+'20']||0, q40=order[p.id+'40']||0;
+    rowSum = q20*p.p20 + q40*p.p40;
+    hasSel = q20>0||q40>0;
+  } else {
+    const s = STANDS.find(s=>s.id===id);
+    const qty=order[id]||0; hasSel=qty>0;
+    rowSum = qty*(s?.price||0);
+  }
+  row.classList.toggle('sel', hasSel);
+  const sumEl = document.getElementById('rs-'+rowId);
+  if (sumEl) {
+    const s = STANDS.find(s=>s.id===rowId);
+    const p2 = PRODUCTS.find(p=>p.id===rowId);
+    sumEl.textContent = hasSel
+      ? rowSum.toLocaleString('uk-UA')+' ₴'
+      : 'від '+(p2?Math.min(p2.p20,p2.p40):s?.price||0)+' ₴';
+    sumEl.className = 'prow-sum'+(hasSel?' active':' muted');
+  }
+}
+
+// ── SUMMARY ──────────────────────────────────────────────────────────
+function getTotals() {
+  let t=0,u=0,l=0;
+  Object.entries(order).forEach(([id,q])=>{if(q>0){t+=(PRICES[id]||0)*q;u+=q;l++;}});
+  return {t,u,l};
+}
+
+function updateSummary() {
+  const {t,u,l} = getTotals();
+  const bar = document.getElementById('summary');
+  const prog = document.getElementById('hdr-progress');
+
+  if (!l) {
+    bar.classList.remove('on');
+    prog.style.display = 'none';
+    return;
+  }
+
+  const disc = Math.round(t*DISCOUNT);
+  const off  = t - disc;
+  const pct  = Math.min(t / MIN_ORDER, 1);
+
+  // Progress bar
+  prog.style.display = '';
+  const fill = document.getElementById('prog-fill');
+  const progNum = document.getElementById('prog-num');
+  const progHint = document.getElementById('prog-hint');
+  fill.style.width = (pct*100)+'%';
+  const reached = t >= MIN_ORDER;
+  fill.style.background = reached ? 'var(--green)' : 'var(--amber)';
+  progNum.style.color = reached ? 'var(--green)' : 'var(--ink)';
+  progNum.textContent = disc.toLocaleString('uk-UA')+' / '+MIN_ORDER.toLocaleString('uk-UA')+' ₴';
+  if (reached) {
+    progHint.textContent = '✓ мінімум досягнуто';
+    progHint.style.color = 'var(--green)';
+  } else {
+    const need = Math.ceil((MIN_ORDER - t)/50)*50;
+    progHint.textContent = 'ще '+(MIN_ORDER-t).toLocaleString('uk-UA')+' ₴';
+    progHint.style.color = 'var(--amber)';
+  }
+
+  // Footer
+  bar.classList.add('on');
+  document.getElementById('smeta').innerHTML =
+    `<strong>${l}</strong> поз. · <strong>${u}</strong> шт`;
+  document.getElementById('sfull').textContent = t.toLocaleString('uk-UA');
+  document.getElementById('sdisc-lbl').textContent = '−'+off.toLocaleString('uk-UA')+'₴';
+
+  // Ticker animation
+  animateTicker(disc);
+
+  // CTA state
+  const cta = document.getElementById('scta');
+  cta.disabled = !reached;
+  cta.title = reached ? '' : `Ще ${(MIN_ORDER-t).toLocaleString('uk-UA')} ₴ до мінімуму`;
+}
+
+// ── TICKER ANIMATION ─────────────────────────────────────────────────
+function animateTicker(targetVal) {
+  const el = document.getElementById('sval');
+  const from = displayedDiscTotal;
+  const to   = targetVal;
+  displayedDiscTotal = to;
+  if (from === to) return;
+
+  const duration = 380;
+  const start = performance.now();
+
+  function tick(now) {
+    const progress = Math.min((now - start) / duration, 1);
+    const ease = 1 - Math.pow(1 - progress, 3);
+    const cur = Math.round(from + (to - from) * ease);
+    el.textContent = cur.toLocaleString('uk-UA');
+    if (progress < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+// ── NAVIGATION ───────────────────────────────────────────────────────
+function goPane(name, btn) {
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.hnav').forEach(b=>b.classList.remove('on'));
+  document.getElementById('pane-'+name)?.classList.add('on');
+  if (btn) btn.classList.add('on');
+  if (name==='contact') buildRecap();
+}
+function setColl(coll, btn) {
+  curColl = coll;
+  document.querySelectorAll('#coll-chips .chip').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  renderCatalog();
+}
+function goCont() {
+  const tabs = document.querySelectorAll('.hnav');
+  goPane('contact', tabs[1]);
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// ── RECAP ─────────────────────────────────────────────────────────────
+function buildRecap() {
+  const {t,l} = getTotals();
+  const disc = Math.round(t*DISCOUNT), off = t-disc;
+  const el = document.getElementById('order-recap');
+  if (!l) {
+    el.innerHTML = `<div style="font-size:13px;color:var(--ink3);font-style:italic">Товари не обрано — поверніться до каталогу</div>`;
+    return;
+  }
+  const all = [
+    ...PRODUCTS.flatMap(p=>[{id:p.id+'20',lb:p.en+' 20шт'},{id:p.id+'40',lb:p.en+' 40шт'}]),
+    ...STANDS.map(s=>({id:s.id,lb:s.en})),
+  ];
+  let rows = '';
+  all.forEach(({id,lb})=>{
+    const q=order[id]||0; if(!q)return;
+    rows+=`<div class="recap-item"><span class="ri-nm">${lb} × ${q}</span><span class="ri-pr">${(q*(PRICES[id]||0)).toLocaleString('uk-UA')} ₴</span></div>`;
+  });
+  el.innerHTML = `<div class="recap-ttl">Ваше замовлення</div>${rows}
+    <div class="recap-total">
+      <span style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)">Прайс</span>
+      <span style="font-size:14px;color:var(--ink3);text-decoration:line-through">${t.toLocaleString('uk-UA')} ₴</span>
+      <span style="font-size:11px;color:var(--green);font-weight:700">−30%</span>
+      <span style="font-size:22px;font-weight:700;color:var(--ink)">${disc.toLocaleString('uk-UA')} ₴</span>
+    </div>`;
+}
+
+// ── SHARE ──────────────────────────────────────────────────────────────
+function buildOrderText() {
+  const {t} = getTotals();
+  const disc = Math.round(t*DISCOUNT);
+  const all = [
+    ...PRODUCTS.flatMap(p=>[{id:p.id+'20',lb:p.en+' 20шт'},{id:p.id+'40',lb:p.en+' 40шт'}]),
+    ...STANDS.map(s=>({id:s.id,lb:s.en})),
+  ];
+  let lines = ['All Trees I Know — Замовлення', ''];
+  all.forEach(({id,lb})=>{
+    const q=order[id]||0; if(!q)return;
+    lines.push(`${lb} × ${q} = ${(q*(PRICES[id]||0)).toLocaleString('uk-UA')} ₴`);
+  });
+  lines.push('');
+  lines.push(`Прайс: ${t.toLocaleString('uk-UA')} ₴`);
+  lines.push(`До оплати (−30%): ${disc.toLocaleString('uk-UA')} ₴`);
+  return lines.join('\n');
+}
+function openShare()    { document.getElementById('share-panel').classList.add('on'); document.getElementById('share-overlay').classList.add('on'); }
+function closeShare()   { document.getElementById('share-panel').classList.remove('on'); document.getElementById('share-overlay').classList.remove('on'); }
+function shareWhatsApp(){ closeShare(); window.open('https://wa.me/?text='+encodeURIComponent(buildOrderText()),'_blank'); }
+function shareTelegram(){ closeShare(); window.open('https://t.me/share/url?url=&text='+encodeURIComponent(buildOrderText()),'_blank'); }
+function printOrder()   { closeShare(); window.print(); }
+async function copyOrderText() {
+  try {
+    await navigator.clipboard.writeText(buildOrderText());
+    const btn = document.getElementById('copy-btn-lbl');
+    btn.textContent = 'Скопійовано ✓';
+    setTimeout(()=>btn.textContent='Скопіювати текст', 2000);
+  } catch(e){ alert(buildOrderText()); }
+}
+
+// ── LAST ORDER ────────────────────────────────────────────────────────
+function saveLastOrder() {
+  const {t,l} = getTotals();
+  if (!l) return;
+  const disc = Math.round(t*DISCOUNT);
+  localStorage.setItem('atik_last_order', JSON.stringify({order, t, disc, l, date: new Date().toISOString()}));
+}
+
+function loadLastOrderBanner() {
+  try {
+    const raw = localStorage.getItem('atik_last_order');
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    const banner = document.getElementById('last-banner');
+    const text   = document.getElementById('last-banner-text');
+    const d = new Date(saved.date);
+    const dateStr = d.toLocaleDateString('uk-UA',{day:'numeric',month:'long'});
+    text.innerHTML = `<strong>Попереднє замовлення</strong> від ${dateStr} · ${saved.l} поз. · ${saved.disc.toLocaleString('uk-UA')} ₴`;
+    banner.style.display = '';
+  } catch(e){}
+}
+
+function restoreLastOrder() {
+  try {
+    const raw = localStorage.getItem('atik_last_order');
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    order = saved.order || {};
+    renderCatalog();
+    updateSummary();
+    dismissBanner();
+  } catch(e){}
+}
+
+function dismissBanner() {
+  document.getElementById('last-banner').style.display = 'none';
+}
+
+// ── SUBMIT ────────────────────────────────────────────────────────────
+function submitOrder() {
+  let ok = true;
+  ['f-co','f-ct','f-ph'].forEach(id=>{
+    const el = document.getElementById(id);
+    if (!el.value.trim()) { el.classList.add('err'); ok=false; }
+    else el.classList.remove('err');
+  });
+  const {t,l} = getTotals();
+  if (!l) { alert('Додайте товари до замовлення'); return; }
+  if (!ok) return;
+
+  const co=document.getElementById('f-co').value.trim();
+  const ct=document.getElementById('f-ct').value.trim();
+  const ph=document.getElementById('f-ph').value.trim();
+  const disc=Math.round(t*DISCOUNT);
+
+  const all=[
+    ...PRODUCTS.flatMap(p=>[{id:p.id+'20',lb:p.en+' 20шт'},{id:p.id+'40',lb:p.en+' 40шт'}]),
+    ...STANDS.map(s=>({id:s.id,lb:s.en})),
+  ];
+  let recap=`<strong>${co}</strong> · ${ct} · ${ph}<br><br>`;
+  all.forEach(({id,lb})=>{const q=order[id]||0;if(!q)return;
+    recap+=`${lb} × ${q} = ${(q*(PRICES[id]||0)).toLocaleString('uk-UA')} ₴<br>`;
+  });
+  recap+=`<br><strong>До оплати: ${disc.toLocaleString('uk-UA')} ₴</strong> (прайс ${t.toLocaleString('uk-UA')} − 30%)`;
+  document.getElementById('suc-recap').innerHTML = recap;
+
+  saveLastOrder();
+
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.hnav').forEach(b=>b.classList.remove('on'));
+  document.getElementById('summary').classList.remove('on');
+  document.getElementById('hdr-progress').style.display='none';
+  document.getElementById('pane-success').classList.add('on');
+  window.scrollTo({top:0,behavior:'smooth'});
+
+  // Firestore
+  const orderData={
+    status:'new',company:co,contact:ct,phone:ph,
+    email:document.getElementById('f-em').value.trim()||null,
+    address:document.getElementById('f-ad').value.trim()||null,
+    notes:document.getElementById('f-nt').value.trim()||null,
+    items:Object.entries(order).filter(([,q])=>q>0).map(([id,q])=>({id,qty:q,price:PRICES[id]||0,sum:q*(PRICES[id]||0)})),
+    total:t,totalDiscounted:disc,createdAt:new Date().toISOString(),source:'order-form-v2'
+  };
+  saveOrderToFirestore(orderData).then(r=>{ if(r.ok) console.log('Saved:',r.id); });
+}
+
+// ── RESET ─────────────────────────────────────────────────────────────
+function resetAll() {
+  order={}; curColl='all'; activeNotes.clear(); displayedDiscTotal=0;
+  ['f-co','f-ct','f-ph','f-em','f-ad','f-nt'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  document.getElementById('pane-success').classList.remove('on');
+  document.querySelectorAll('#coll-chips .chip').forEach((b,i)=>b.classList.toggle('on',i===0));
+  const tabs=document.querySelectorAll('.hnav');
+  goPane('cat',tabs[0]);
+  renderCatalog(); updateSummary();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// ── FIREBASE ──────────────────────────────────────────────────────────
+let db=null;
+function initFirebase(){
+  try{
+    if(window.ATIK_FIREBASE_CONFIG&&window.ATIK_FIREBASE_CONFIG.apiKey){
+      if(!firebase.apps.length) firebase.initializeApp(window.ATIK_FIREBASE_CONFIG);
+      else firebase.app();
+      db=firebase.firestore();
+    }
+  }catch(e){console.warn('Firebase не підключено:',e);}
+}
+async function saveOrderToFirestore(data){
+  if(!db) return{ok:false,reason:'offline'};
+  try{ const ref=await db.collection('orders').add(data); return{ok:true,id:ref.id}; }
+  catch(e){ return{ok:false,reason:e.message}; }
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded',()=>{
+  initFirebase();
+  renderCatalog();
+  loadLastOrderBanner();
+});
+</script>
+</body>
+</html>
