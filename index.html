@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>🌿 All trees I know — Облік</title>
+<!-- PWA -->
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#2d4a3e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ATIK">
+<link rel="apple-touch-icon" href="./icons/icon-180.png">
 <style>
 /* ── JAPANESE NATURE PALETTE ─────────────────────────────── */
 :root{
@@ -3797,6 +3804,13 @@ function createInvoiceFromOrder(orderId) {
 }
 
 // Load orders on dashboard tab to refresh KPI
+
+// PWA Service Worker
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('./service-worker.js');
+  });
+}
 </script>
 </body>
 </html>
