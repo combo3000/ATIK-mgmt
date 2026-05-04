@@ -225,7 +225,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 /* ── DASHBOARD ────────────────────────────────────────────── */
 .dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
 .kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);
-  padding:16px;text-align:center;position:relative;overflow:hidden}
+  padding:16px;text-align:center;position:relative;overflow:hidden;transition:all .18s}
+.kpi-card[onclick]:hover{transform:translateY(-2px);box-shadow:0 4px 16px rgba(45,74,62,.12);border-color:var(--moss3)}
 .kpi-card::before{content:'';position:absolute;bottom:0;left:0;right:0;height:3px;
   background:linear-gradient(90deg,var(--pine),var(--moss2))}
 .kpi-icon{font-size:24px;margin-bottom:6px}
@@ -358,6 +359,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   <button class="tab"          onclick="switchTab('warehouse')">📦 Склад</button>
   <button class="tab"          onclick="switchTab('sales')">🏪 Продажі</button>
   <button class="tab"          onclick="switchTab('orders')">📬 Замовлення</button>
+  <button class="tab"          onclick="switchTab('retail')">🏬 Точки</button>
   <button class="tab"          onclick="switchTab('catalog')">📋 Довідники</button>
   <button class="tab"          onclick="switchTab('settings')">⚙️</button>
 </div>
@@ -397,11 +399,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       <div class="field"><label>Покупець</label><select id="buyer-select" onchange="onBuyerChange()"></select></div>
     </div>
     <div id="buyer-info-box"></div>
-    <div class="price-row">
-      <strong style="font-size:12px;color:var(--ink3)">Тип цін:</strong>
-      <label class="radio-label"><input type="radio" name="pricetype" value="shelf" checked onchange="renderItems()"> Полиця (100%)</label>
-      <label class="radio-label"><input type="radio" name="pricetype" value="real"  onchange="renderItems()"> Реалізація (70%)</label>
-      <label class="radio-label"><input type="radio" name="pricetype" value="opt"   onchange="renderItems()"> Викуп (60%)</label>
+    <div class="price-row" id="price-type-row" style="flex-wrap:wrap;gap:6px">
+      <strong style="font-size:12px;color:var(--ink3);width:100%;margin-bottom:2px">Тип цін:</strong>
+      <label class="radio-label price-type-btn" style="flex:1;min-width:130px;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r2);padding:9px 12px;justify-content:center;transition:all .18s"><input type="radio" name="pricetype" value="shelf" checked onchange="renderItems();refreshPriceTypeBtns()"> Полиця (100%)</label>
+      <label class="radio-label price-type-btn" style="flex:1;min-width:130px;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r2);padding:9px 12px;justify-content:center;transition:all .18s"><input type="radio" name="pricetype" value="real"  onchange="renderItems();refreshPriceTypeBtns()"> Реалізація (70%)</label>
+      <label class="radio-label price-type-btn" style="flex:1;min-width:130px;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r2);padding:9px 12px;justify-content:center;transition:all .18s"><input type="radio" name="pricetype" value="opt"   onchange="renderItems();refreshPriceTypeBtns()"> Викуп (60%)</label>
     </div>
     <div style="font-weight:600;margin-bottom:8px;font-size:12.5px;color:var(--ink2)">
       Товари <span style="font-weight:normal;font-size:11px;color:var(--ink4);margin-left:8px">жовте поле — власна ціна</span>
@@ -461,11 +463,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
           <option value="stands">Підставки (шт)</option>
         </select>
       </div>
-      <div class="field" id="recv-supplier-wrap" style="display:none">
+      <div class="field" id="recv-supplier-wrap">
         <label>Постачальник</label>
         <select id="recv-supplier" onchange="onRecvSupplierChange()"></select>
       </div>
-      <div class="field" id="recv-aroma-wrap" style="display:none">
+      <div class="field" id="recv-aroma-wrap">
         <label>Аромат</label>
         <select id="recv-aroma"></select>
       </div>
@@ -482,17 +484,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       <div class="field"><label>Примітка (необов'язково)</label><input id="recv-note" placeholder="Партія №5..."></div>
     </div>
     <button class="btn btn-moss" onclick="receiveGoods()">📥 Прийняти на склад</button>
-  </div>
-
-  <!-- DEDUCTION CALCULATOR (recipe preview only, no WH write) -->
-  <div class="card">
-    <div class="card-title">🧮 Калькулятор списання (рецепт)</div>
-    <div class="hint">Перегляд скільки сировини буде списано при продажу. Фактичне списання відбувається автоматично при створенні накладної.</div>
-    <div class="row">
-      <div class="field"><label>Товар</label><select id="assemble-product"></select></div>
-      <div class="field" style="flex:0 0 120px"><label>Кількість пачок</label><input id="assemble-qty" type="number" min="1" value="50"></div>
-    </div>
-    <div id="assemble-preview" class="hint"></div>
   </div>
 
   <!-- STOCK TABLE -->
@@ -581,20 +572,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <div style="flex:1;min-width:260px"><div class="bar-wrap" id="stats-buyers-bar"></div></div>
     <div style="flex:1;min-width:260px"><div class="bar-wrap" id="stats-products-bar"></div></div>
   </div>
-  <div class="card" style="margin-top:14px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
-      <div class="card-title" style="margin:0">🏪 Залишки на точках роздрібу</div>
-      <button class="btn btn-moss btn-sm" onclick="openSalesReportModal()">✏️ Ввести продажі</button>
-    </div>
-    <div id="retail-store-grid"></div>
-  </div>
-  <div class="card">
-    <div class="card-title">📋 Історія звітів продажів</div>
-    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-      <select id="retail-history-filter" onchange="renderRetailHistory()" style="width:auto;padding:5px 8px;font-size:12px"><option value="">Всі точки</option></select>
-    </div>
-    <div id="retail-history-list"></div>
-  </div>
 </div>
 
 <!-- ═══ ORDERS ═══ -->
@@ -613,6 +590,24 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       </div>
     </div>
     <div id="orders-list"></div>
+  </div>
+</div>
+
+<!-- ═══ RETAIL POINTS (standalone tab) ═══ -->
+<div id="pane-retail" style="display:none">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <strong style="font-size:14px">🏬 Залишки на точках роздрібу</strong>
+      <button class="btn btn-moss btn-sm" onclick="openSalesReportModal()">✏️ Ввести продажі</button>
+    </div>
+    <div id="retail-store-grid"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">📋 Історія звітів продажів</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <select id="retail-history-filter" onchange="renderRetailHistory()" style="width:auto;padding:5px 8px;font-size:12px"><option value="">Всі точки</option></select>
+    </div>
+    <div id="retail-history-list"></div>
   </div>
 </div>
 
@@ -706,8 +701,10 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     </label>
     <div class="section-divider">Форма замовлень — Firestore Rules</div>
     <div style="margin-bottom:16px;font-size:12px;color:var(--ink3);line-height:1.7">
-      <div style="margin-bottom:6px">Вставте в <strong>Firebase Console → Firestore → Rules</strong> і натисніть Publish:</div>
-      <code style="display:block;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r2);padding:10px 12px;font-size:11px;color:var(--ink2);white-space:pre;overflow-x:auto;user-select:all">rules_version = '2';
+      <div style="margin-bottom:8px">Вставте в <strong>Firebase Console → Firestore → Rules</strong> і натисніть Publish.</div>
+      <button class="btn btn-gray btn-sm" onclick="var b=document.getElementById('fs-rules-block');b.style.display=b.style.display==='none'?'block':'none'">📋 Показати правила</button>
+      <div id="fs-rules-block" style="display:none;margin-top:10px">
+        <code style="display:block;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r2);padding:10px 12px;font-size:11px;color:var(--ink2);white-space:pre;overflow-x:auto;user-select:all">rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /shared/{doc} {
@@ -719,6 +716,7 @@ service cloud.firestore {
     }
   }
 }</code>
+      </div>
     </div>
     <div class="section-divider">Міграція</div>
     <div style="margin-bottom:16px">
@@ -1053,7 +1051,8 @@ function rerenderAfterStateChange(){
   renderRawMaterials();
   renderReceiveHistory();
   renderAssembleSelect();
-  renderRetailTab();
+  renderRetailStoreGrid();
+  renderRetailHistory();
   renderBuyersList();
   renderProductsList();
   renderCogs();
@@ -1295,7 +1294,7 @@ function getDaysOfStock(pid){
 // ============================================================
 // TAB SWITCHING
 // ============================================================
-var ALL_TABS=["dashboard","docs","warehouse","sales","orders","catalog","settings"];
+var ALL_TABS=["dashboard","docs","warehouse","sales","orders","retail","catalog","settings"];
 function switchTab(tab){
   ALL_TABS.forEach(function(t){
     var p=document.getElementById("pane-"+t); if(p)p.style.display=(t===tab?"":"none");
@@ -1306,6 +1305,7 @@ function switchTab(tab){
   if(tab==="warehouse")  {renderRawMaterials();renderReceiveHistory();renderAssembleSelect();renderCogs();}
   if(tab==="sales")      {renderStats();renderRetailTab();}
   if(tab==="orders")     {loadOrders();}
+  if(tab==="retail")     {renderRetailStoreGrid();renderRetailHistory();}
   if(tab==="catalog")    {renderBuyersList();renderProductsList();renderSuppliersList();}
   if(tab==="settings")   {loadSettings();}
 }
@@ -1351,6 +1351,22 @@ function onBuyerChange(){
       +(b.address?"<div>"+esc(b.address)+"</div>":"")+(b.contract?"<div>Договір: "+esc(b.contract)+"</div>":"")
       +"<div>Отримувач: "+esc(b.receiver||"—")+"</div></div>";
   }
+}
+function refreshPriceTypeBtns(){
+  document.querySelectorAll('.price-type-btn').forEach(function(lbl){
+    var inp=lbl.querySelector('input[type=radio]');
+    if(inp && inp.checked){
+      lbl.style.background='linear-gradient(135deg,var(--pine),var(--moss2))';
+      lbl.style.color='white';
+      lbl.style.borderColor='var(--moss)';
+      lbl.style.fontWeight='700';
+    } else {
+      lbl.style.background='var(--surface2)';
+      lbl.style.color='var(--ink)';
+      lbl.style.borderColor='var(--border)';
+      lbl.style.fontWeight='400';
+    }
+  });
 }
 function onDocTypeChange(){
   var dt=document.querySelector('input[name="doctype"]:checked').value;
@@ -2599,8 +2615,8 @@ function renderDashboard(){
     {icon:"🌿",val:fmt(revenue)+" ₴",label:"Виручка (місяць)",sub:revChange!=="—"?(revChange>0?"↑ +"+revChange+"% vs попередній":"↓ "+revChange+"% vs попередній"):""},
     {icon:"💰",val:fmt(profit)+" ₴",label:"Прибуток (місяць)",sub:profitChange!=="—"?(profitChange>0?"↑ +"+profitChange+"% vs попередній":"↓ "+profitChange+"% vs попередній"):""},
     {icon:"📦",val:unitsSold+" шт.",label:"Продано (місяць)",sub:unitsChange!=="—"?(unitsChange>0?"↑ +"+unitsChange+"% vs попередній":"↓ "+unitsChange+"% vs попередній"):""},
-    {icon:"💳",val:unpaidBills.length+" шт.",label:"Рахунки неоплачені",sub:unpaidBills.length>0?fmt(unpaidSum)+" ₴ очікується":"",alert:unpaidBills.length>0},
-    {icon:"🚚",val:unshippedInv.length+" шт.",label:"Накладні не відвантажені",sub:"",alert:unshippedInv.length>0},
+    {icon:"💳",val:unpaidBills.length+" шт.",label:"Рахунки неоплачені",sub:unpaidBills.length>0?fmt(unpaidSum)+" ₴ очікується":"",alert:unpaidBills.length>0,onclick:"switchTab(\'docs\');setTimeout(function(){switchDocsSub(\'journal\');document.getElementById(\'j-doctype\').value=\'bill\';renderJournal();},80)"},
+    {icon:"🚚",val:unshippedInv.length+" шт.",label:"Накладні не відвантажені",sub:"",alert:unshippedInv.length>0,onclick:"switchTab(\'docs\');setTimeout(function(){switchDocsSub(\'journal\');document.getElementById(\'j-doctype\').value=\'invoice\';renderJournal();},80)"},
     {icon:"📬",val:(typeof ordersData!=="undefined"?ordersData.filter(function(o){return o.status==="new";}).length:0)+" шт.",
      label:"Нові замовлення",
      sub:(typeof ordersData!=="undefined"&&ordersData.filter(function(o){return o.status==="new";}).length>0
@@ -2609,7 +2625,9 @@ function renderDashboard(){
      onclick:"switchTab('orders')"},
   ].map(function(k){
     var border=k.alert?"border-color:var(--cedar);":"";
-    return '<div class="kpi-card" style="'+border+'"><div class="kpi-icon">'+k.icon+'</div>'
+    var cursor=k.onclick?"cursor:pointer;":"";
+    var onclick=k.onclick?' onclick="'+k.onclick+'"':"";
+    return '<div class="kpi-card" style="'+border+cursor+'"'+onclick+'><div class="kpi-icon">'+k.icon+'</div>'
       +'<div class="kpi-val" style="'+(k.alert?"color:var(--cedar)":"")+'">'+esc(String(k.val))+'</div>'
       +'<div class="kpi-label">'+esc(k.label)+'</div>'
       +(k.sub?'<div style="font-size:11px;color:var(--ink4);margin-top:2px">'+esc(k.sub)+'</div>':"")
@@ -2901,7 +2919,7 @@ function renderStats(){
 function renderBuyersList(){
   document.getElementById("buyers-list").innerHTML=buyers.map(function(b){
     return '<div class="manage-item">'
-      +'<div class="manage-item-info"><div class="manage-item-name">'+esc(b.name)+(b.custom?'<span class="tag tag-custom">власний</span>':"")+(b.isRetail?'<span class="tag tag-ok">точка</span>':"")+'</div>'
+      +'<div class="manage-item-info"><div class="manage-item-name">'+esc(b.name)+(b.custom?'<span class="tag tag-custom">власний</span>':"")+'</div>'
       +'<div class="manage-item-sub">'+esc(b.fullName||"")+(b.edrpou?" · "+b.edrpou:"")+'</div></div>'
       +'<button class="btn btn-gray btn-sm" onclick="showBuyerForm(\''+b.id+'\')">✎</button>'
       +'<button class="btn btn-danger btn-sm" onclick="deleteBuyer(\''+b.id+'\')">×</button>'
@@ -3659,6 +3677,7 @@ window.addEventListener("DOMContentLoaded",function(){
   renderSupplierSelect();
   onRecvTypeChange();
   renderItems();
+  refreshPriceTypeBtns();
   if(settings.autoincrement){
     var maxNum=journal.reduce(function(m,j){return Math.max(m,parseInt(j.invoiceNum)||0);},0);
     if(maxNum>0)document.getElementById("inv-num").value=maxNum+1;
