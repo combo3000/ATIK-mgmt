@@ -556,13 +556,14 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
           <option value="year">Рік</option><option value="all">Весь час</option>
         </select>
       </div>
-      <div class="field" style="flex:0 0 150px">
-        <select id="stats-doctype" onchange="renderStats()">
-          <option value="invoice">Накладні</option><option value="all">Все</option>
-        </select>
-      </div>
+      
       <div class="field" style="flex:0 0 100%;margin-top:4px">
-        <div style="font-size:11px;font-weight:600;color:var(--ink3);margin-bottom:6px">OPEX за період (₴)</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap">
+          <div style="font-size:11px;font-weight:600;color:var(--ink3)">OPEX за місяць (₴)</div>
+          <input type="month" id="opex-month" onchange="loadOpexForMonth()"
+            style="padding:4px 8px;font-size:12px;border:1px solid var(--border2);border-radius:var(--r);width:140px">
+          <span style="font-size:11px;color:var(--ink4)">Дані зберігаються по місяцях</span>
+        </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px">
           <div><label style="font-size:10.5px;color:var(--ink4)">📣 Реклама</label><input type="number" id="opex-ads" value="0" min="0" oninput="updateOpexTotal()" style="padding:6px 8px;font-size:12px"></div>
           <div><label style="font-size:10.5px;color:var(--ink4)">🏠 Оренда</label><input type="number" id="opex-rent" value="0" min="0" oninput="updateOpexTotal()" style="padding:6px 8px;font-size:12px"></div>
@@ -578,6 +579,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       </div>
     </div>
   </div>
+  <div style="font-size:11px;color:var(--ink4);margin:-8px 0 8px;padding:0 4px">📦 Враховуються тільки відвантажені накладні</div>
 
   <!-- MONTHLY CHART -->
   <div class="card" id="stats-chart-wrap">
@@ -988,6 +990,7 @@ function aromaSupplier(aromaId){ return suppliers.find(function(s){return s.arom
 var generated=null, currentJournalItem=null;
 var chartMode='revenue';
 var reorderPoints={};
+var opexStore={};
 function setChartMode(m){
   chartMode=m;
   ['revenue','profit','units'].forEach(function(id){
@@ -1022,6 +1025,7 @@ function load(){
     var srp=localStorage.getItem("atik5_salesrep");if(srp) salesReports=JSON.parse(srp);
     var ssu=localStorage.getItem("atik5_suppliers");if(ssu) suppliers=JSON.parse(ssu);
     var srr=localStorage.getItem("atik5_reorder");if(srr) reorderPoints=JSON.parse(srr);
+    var sox=localStorage.getItem("atik5_opex");if(sox) opexStore=JSON.parse(sox);
     DEFAULT_BUYERS.forEach(function(d){if(!buyers.find(function(x){return x.id===d.id;})) buyers.push(Object.assign({},d));});
     DEFAULT_PRODUCTS.forEach(function(d){if(!products.find(function(x){return x.id===d.id;})) products.push(Object.assign({},d));});
     // Ensure all suppliers have aromas field
@@ -1073,6 +1077,7 @@ function save(){
   localStorage.setItem("atik5_salesrep",JSON.stringify(salesReports));
   localStorage.setItem("atik5_suppliers",JSON.stringify(suppliers));
   localStorage.setItem("atik5_reorder",JSON.stringify(reorderPoints));
+  localStorage.setItem("atik5_opex",JSON.stringify(opexStore));
   scheduleCloudPush();
 }
 
@@ -1081,7 +1086,8 @@ function collectAppState(){
     products:products, buyers:buyers, journal:journal, settings:settings,
     warehouseStock:warehouseStock, rawStock:rawStock, receiveHistory:receiveHistory,
     retailStock:retailStock, salesReports:salesReports, suppliers:suppliers,
-    reorderPoints:reorderPoints
+    reorderPoints:reorderPoints,
+    opexStore:opexStore
   };
 }
 
@@ -1098,6 +1104,7 @@ function applyAppState(data){
   salesReports=data.salesReports||[];
   if(data.suppliers)suppliers=data.suppliers;
   if(data.reorderPoints)reorderPoints=data.reorderPoints;
+  if(data.opexStore)opexStore=data.opexStore;
   // Ensure suppliers have aromas
   suppliers.forEach(function(s){if(!s.aromas)s.aromas=[];});
   var defSup={yasuhito:["osmanthus","cherry","sandalwood","camphor"],ryo:["hydrangea","blacksandal","musk","frankincense"],yoko:["temple","honeysandal"],hanna:["gardentree","agarwood"]};
@@ -1393,7 +1400,13 @@ function switchTab(tab){
   if(tab==="dashboard")  renderDashboard();
   if(tab==="docs")       {renderJournal();checkDraftBanner();}
   if(tab==="warehouse")  {renderRawMaterials();renderReceiveHistory();renderCogs();}
-  if(tab==="sales")      {renderStats();renderRetailTab();setTimeout(function(){setChartMode(chartMode);},50);}
+  if(tab==="sales")      {
+    var nm=new Date(),ym=nm.getFullYear()+'-'+String(nm.getMonth()+1).padStart(2,'0');
+    var om=document.getElementById('opex-month');
+    if(om&&!om.value)om.value=ym;
+    loadOpexForMonth();
+    renderStats();renderRetailTab();setTimeout(function(){setChartMode(chartMode);},50);
+  }
   if(tab==="orders")     {loadOrders();}
   if(tab==="retail")     {renderRetailStoreGrid();renderRetailHistory();}
   if(tab==="catalog")    {renderBuyersList();renderProductsList();renderSuppliersList();}
@@ -1508,10 +1521,31 @@ function getOpexBreakdown(){
   function v(id){return parseFloat((document.getElementById(id)||{}).value)||0;}
   return {ads:v('opex-ads'),rent:v('opex-rent'),salary:v('opex-salary'),delivery:v('opex-delivery'),other:v('opex-other')};
 }
+function getOpexMonth(){
+  var el=document.getElementById('opex-month');
+  if(el&&el.value)return el.value;
+  var n=new Date();
+  return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0');
+}
+function loadOpexForMonth(){
+  var m=getOpexMonth();
+  var data=(opexStore[m])||{ads:0,rent:0,salary:0,delivery:0,other:0};
+  ['ads','rent','salary','delivery','other'].forEach(function(k){
+    var el=document.getElementById('opex-'+k);
+    if(el)el.value=data[k]||0;
+  });
+  updateOpexTotal();
+}
+function saveOpexForMonth(){
+  var m=getOpexMonth();
+  opexStore[m]=getOpexBreakdown();
+  localStorage.setItem('atik5_opex',JSON.stringify(opexStore));
+}
 function updateOpexTotal(){
   var b=getOpexBreakdown(),total=b.ads+b.rent+b.salary+b.delivery+b.other;
   var h=document.getElementById('stats-opex'); if(h)h.value=total;
   var d=document.getElementById('opex-total-display'); if(d)d.textContent=total.toLocaleString('uk-UA')+' ₴';
+  saveOpexForMonth();
   renderStats();
 }
 function onDocTypeChange(){
@@ -2939,13 +2973,13 @@ function renderMonthlyChart(){
       revenue:0,cogs:0,units:0
     });
   }
-  journal.filter(function(j){return j.docType==='invoice';}).forEach(function(j){
+  journal.filter(function(j){return j.docType==='invoice'&&j.status==='shipped';}).forEach(function(j){
     var mk=j.invoiceDate&&j.invoiceDate.substring(0,7);
     var mo=months.find(function(m){return m.key===mk;});
     if(!mo)return;
     mo.revenue+=j.total;
     mo.units+=j.items.reduce(function(s,it){return s+it.qty;},0);
-    mo.cogs+=j.items.reduce(function(s,it){return s+(it.cogs||0)*it.qty;},0);
+    mo.cogs+=j.items.reduce(function(s,it){return s+getEstItemCogs(it)*it.qty;},0);
   });
   var values=months.map(function(m){
     if(chartMode==='profit')return m.revenue-m.cogs;
@@ -2955,12 +2989,17 @@ function renderMonthlyChart(){
   var maxVal=Math.max.apply(null,values.map(function(v){return Math.abs(v);}));
   if(!maxVal)maxVal=1;
   var curKey=(function(){var n=new Date();return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0');})();
-  var W=Math.max(el.clientWidth||320,300),H=200,PL=48,PR=8,PT=14,PB=44;
+  var W=Math.max(el.clientWidth||320,300);
+  var isMobile=W<520;
+  var H=200,PL=44,PR=8,PT=22,PB=32;
   var cW=W-PL-PR,cH=H-PT-PB;
   var bW=Math.floor(cW/months.length*0.62);
   var gap=(cW-bW*months.length)/(months.length+1);
+  var SHORT_MON=['Січ','Лют','Бер','Квіт','Трав','Черв','Лип','Серп','Вер','Жов','Лис','Гру'];
   function fmtY(v){return chartMode==='units'?(v>=1000?Math.round(v/1000)+'k':v):(v>=1000?(v/1000).toFixed(v>=10000?0:1)+'k':v);}
   var svg='';
+  var yearNow=new Date().getFullYear();
+  svg+='<text x="'+(W-PR)+'" y="14" text-anchor="end" font-size="11" fill="var(--ink4)" font-weight="600">'+yearNow+'</text>';
   for(var gi=0;gi<=4;gi++){
     var gv=Math.round(maxVal/4*gi),gy=PT+cH-Math.round(cH*gi/4);
     svg+='<line x1="'+PL+'" y1="'+gy+'" x2="'+(W-PR)+'" y2="'+gy+'" stroke="var(--border)" stroke-width="1" stroke-dasharray="3,3"/>';
@@ -2972,9 +3011,12 @@ function renderMonthlyChart(){
     var bx=PL+gap+(bW+gap)*i;
     var fill=isNeg?'var(--red)':isCur?'var(--pine)':'var(--moss3)';
     var by=isNeg?PT+cH:PT+cH-bh;
-    if(bh>0) svg+='<rect x="'+bx+'" y="'+by+'" width="'+bW+'" height="'+bh+'" rx="3" fill="'+fill+'" opacity="'+(isCur?1:0.72)+'"><title>'+mo.label+': '+v.toLocaleString('uk-UA')+(chartMode==='units'?' шт':' ₴')+'</title></rect>';
+    if(bh>0) svg+='<rect x="'+bx+'" y="'+by+'" width="'+bW+'" height="'+bh+'" rx="3" fill="'+fill+'" opacity="'+(isCur?1:0.72)+'">'+'<title>'+mo.label+': '+v.toLocaleString('uk-UA')+(chartMode==='units'?' шт':' ₴')+'</title></rect>';
     if(bh>20&&Math.abs(v)>0) svg+='<text x="'+(bx+bW/2)+'" y="'+(by-(isNeg?-12:4))+'" text-anchor="middle" font-size="9" fill="var(--ink3)" font-weight="600">'+fmtY(Math.abs(v))+'</text>';
-    svg+='<text x="'+(bx+bW/2)+'" y="'+(H-6)+'" text-anchor="middle" font-size="10" fill="'+(isCur?'var(--pine)':'var(--ink4)')+'" font-weight="'+(isCur?700:400)+'">'+mo.label+'</text>';
+    var moIdx=parseInt(mo.key.substring(5,7))-1;
+    var shortLbl=SHORT_MON[moIdx]||mo.label;
+    var fs=isMobile?8:10;
+    svg+='<text x="'+(bx+bW/2)+'" y="'+(H-4)+'" text-anchor="middle" font-size="'+fs+'" fill="'+(isCur?'var(--pine)':'var(--ink4)')+'" font-weight="'+(isCur?700:400)+'">'+ shortLbl+'</text>';
   });
   el.innerHTML='<svg width="100%" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'+svg+'</svg>';
 }
@@ -2985,10 +3027,29 @@ function renderMonthlyChart(){
 function renderStats(){
   renderMonthlyChart();
   var period  = document.getElementById("stats-period").value  || "month";
-  var dtype   = document.getElementById("stats-doctype").value || "invoice";
-  var opex    = parseFloat(document.getElementById("stats-opex").value) || 0;
-  var list    = filterByPeriod(journal, period);
-  if(dtype !== "all") list = list.filter(function(j){ return j.docType === dtype; });
+  // OPEX: sum across all months in selected period, or current opex-month value
+  var opex = (function(){
+    var sel=document.getElementById('stats-period');
+    var p=sel?sel.value:'month';
+    if(p==='month'){
+      // Use the opex-month selector value
+      return parseFloat((document.getElementById('stats-opex')||{}).value)||0;
+    }
+    // For quarter/year/all — sum all stored months that fall in the period
+    var total=0;
+    var now=new Date(),y=now.getFullYear(),mo=now.getMonth(),q=Math.floor(mo/3);
+    Object.keys(opexStore).forEach(function(mk){
+      var d=new Date(mk+'-01T12:00:00');
+      var ok=false;
+      if(p==='quarter') ok=d.getFullYear()===y&&Math.floor(d.getMonth()/3)===q;
+      else if(p==='year') ok=d.getFullYear()===y;
+      else if(p==='all') ok=true;
+      if(ok){var b=opexStore[mk];total+=b.ads+b.rent+b.salary+b.delivery+b.other;}
+    });
+    return total;
+  })();
+  var list    = filterByPeriod(journal, period)
+    .filter(function(j){ return j.docType==="invoice" && j.status==="shipped"; });
 
   // ── Base metrics ─────────────────────────────────────────────
   var revenue  = list.reduce(function(s,j){ return s + j.total; }, 0);
