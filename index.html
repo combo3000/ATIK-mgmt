@@ -7,6 +7,7 @@
 <!-- PWA -->
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#2d4a3e">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="ATIK">
@@ -1193,16 +1194,37 @@ function initCloud(){
   try{
     cloudApp=firebase.initializeApp(window.ATIK_FIREBASE_CONFIG);
     cloudAuth=firebase.auth();
-    cloudDb=firebase.firestore();
+    // NOTE: cloudDb is initialized lazily on first auth — this prevents
+    // Firestore from opening WebChannel connections before the user logs in,
+    // which caused 404 / transport errors in the DevTools console.
     cloudReady=true;
     updateCloudStatus("Firebase підключено. Увійдіть через Google.");
+
+    // Handle redirect result (from signInWithRedirect)
+    cloudAuth.getRedirectResult().then(function(result){
+      // result.user will be set if we just came back from a redirect sign-in
+      // onAuthStateChanged below will handle the rest
+    }).catch(function(err){
+      if(err.code !== 'auth/no-current-user'){
+        console.warn("Redirect result error:", err.message);
+      }
+    });
+
     cloudAuth.onAuthStateChanged(function(user){
       cloudUser=user||null;
       updateCloudUi();
       if(cloudUnsub){cloudUnsub(); cloudUnsub=null;}
       if(!user){
+        // Unset cloudDb to prevent any accidental Firestore calls while logged out
+        cloudDb=null;
         updateCloudStatus("Локальний режим. Увійдіть, щоб бачити спільні дані.");
         return;
+      }
+      // Initialize Firestore only after confirmed login
+      if(!cloudDb){
+        cloudDb=firebase.firestore();
+        // Optional: disable long-polling fallback to reduce console noise
+        // cloudDb.settings({ experimentalForceLongPolling: false });
       }
       subscribeToCloudState();
     });
@@ -1215,7 +1237,8 @@ function initCloud(){
 function cloudSignIn(){
   if(!cloudReady){alert("Спочатку заповніть firebase-config.js");return;}
   var provider=new firebase.auth.GoogleAuthProvider();
-  cloudAuth.signInWithPopup(provider).catch(function(err){
+  // Use redirect instead of popup to avoid Cross-Origin-Opener-Policy issues
+  cloudAuth.signInWithRedirect(provider).catch(function(err){
     alert("Не вдалося увійти: "+err.message);
   });
 }
@@ -1269,7 +1292,7 @@ function manualCloudSync(){
 }
 
 function pushCloudState(isManual){
-  if(!cloudReady||!cloudUser||cloudApplyingRemote)return;
+  if(!cloudReady||!cloudUser||!cloudDb||cloudApplyingRemote)return;
   var revision='rev_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
   lastPushedRevision=revision;
   updateCloudStatus(isManual?"Синхронізую...":"Зберігаю в хмару...");
