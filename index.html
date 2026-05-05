@@ -2153,7 +2153,7 @@ function doExportPDF(g){
     +"@media print{button{display:none}}"
     +"</style></head><body>"
     +"<div style=\"display:flex;justify-content:space-between;align-items:flex-start\"><h2>"+title+" №"+esc(g.invoiceNum)+" від "+dateStr+"</h2><img src=\""+LOGO_B64+"\" style=\"height:36px;opacity:0.85\"></div>"
-    +supplierBlock+buyerBlock+payBox+tableBlock+summaryBlock+sigsBlock+buildPdfPlBlock(g,isBill)
+    +supplierBlock+buyerBlock+payBox+tableBlock+summaryBlock+sigsBlock
     +"<script>window.addEventListener('load',function(){setTimeout(function(){window.print();},300);});<\/script>"
     +"</body></html>";
 
