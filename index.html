@@ -381,6 +381,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 
 <!-- ═══ DOCS (Form + Preview + Journal) ═══ -->
 <div id="pane-docs" style="display:none">
+  <div id="draft-banner" style="display:none;background:rgba(200,168,75,.12);border:1px solid var(--gold);border-radius:var(--r2);padding:10px 14px;margin-bottom:12px;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:13px;flex:1">📝 Є незбережена чернетка накладної</span>
+    <button class="btn btn-moss btn-sm" onclick="restoreDraft()">Відновити</button>
+    <button class="btn btn-gray btn-sm" onclick="discardDraft()">Викинути</button>
+  </div>
   <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:8px">
     <button class="btn btn-gray btn-sm" id="docs-sub-form" onclick="switchDocsSub('form')" style="font-weight:700;background:var(--moss2);color:var(--pine)">✏️ Нова</button>
     <button class="btn btn-gray btn-sm" id="docs-sub-preview" onclick="switchDocsSub('preview')">👁 Перегляд</button>
@@ -394,9 +399,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     </div>
     <div id="stock-note" class="hint" style="display:none">ℹ️ Рахунок не списує товар зі складу. Для списання використайте «Видаткова накладна».</div>
     <div class="row">
-      <div class="field" style="flex:0 0 130px"><label>№ документа</label><input id="inv-num" type="text" value="1"></div>
-      <div class="field" style="flex:0 0 160px"><label>Дата</label><input id="inv-date" type="date"></div>
-      <div class="field"><label>Покупець</label><select id="buyer-select" onchange="onBuyerChange()"></select></div>
+      <div class="field" style="flex:0 0 130px"><label>№ документа</label><input id="inv-num" type="text" value="1" oninput="onFormFieldChange()"></div>
+      <div class="field" style="flex:0 0 160px"><label>Дата</label><input id="inv-date" type="date" onchange="onFormFieldChange()"></div>
+      <div class="field"><label>Покупець</label><select id="buyer-select" onchange="onBuyerChange();onFormFieldChange()"></select></div>
     </div>
     <div id="buyer-info-box"></div>
     <div class="price-row" id="price-type-row" style="flex-wrap:wrap;gap:6px">
@@ -429,13 +434,27 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   </div>
   <div id="docs-journal" style="display:none">
   <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+      <strong style="font-size:13px;color:var(--pine)">📚 Журнал документів</strong>
+      <button class="btn btn-excel btn-sm" onclick="exportJournalExcel()">📊 Експорт в Excel</button>
+    </div>
     <div class="row" style="margin-bottom:10px">
       <div class="field"><input id="j-search" placeholder="Пошук за покупцем або №..." oninput="renderJournal()"></div>
       <div class="field" style="flex:0 0 130px">
-        <select id="j-period" onchange="renderJournal()">
-          <option value="all">Весь час</option><option value="month">Цей місяць</option>
-          <option value="quarter">Квартал</option><option value="year">Рік</option>
+        <select id="j-period" onchange="onJournalPeriodChange()">
+          <option value="all">Весь час</option>
+          <option value="month">Цей місяць</option>
+          <option value="quarter">Квартал</option>
+          <option value="year">Рік</option>
+          <option value="custom">Свій діапазон...</option>
         </select>
+      </div>
+      <div id="j-custom-range" style="display:none;flex:0 0 auto">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <input type="month" id="j-date-from" onchange="renderJournal()" style="width:135px;padding:6px 8px;font-size:12px">
+          <span style="color:var(--ink4)">—</span>
+          <input type="month" id="j-date-to" onchange="renderJournal()" style="width:135px;padding:6px 8px;font-size:12px">
+        </div>
       </div>
       <div class="field" style="flex:0 0 140px">
         <select id="j-doctype" onchange="renderJournal()">
@@ -542,11 +561,35 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
           <option value="invoice">Накладні</option><option value="all">Все</option>
         </select>
       </div>
-      <div class="field" style="flex:0 0 200px">
-        <label style="font-size:11px">OPEX за період (₴) <span style="color:var(--ink4);font-weight:normal">— реклама, оренда, зп, інше</span></label>
-        <input type="number" id="stats-opex" value="0" min="0" placeholder="0" oninput="renderStats()" style="padding:6px 10px">
+      <div class="field" style="flex:0 0 100%;margin-top:4px">
+        <div style="font-size:11px;font-weight:600;color:var(--ink3);margin-bottom:6px">OPEX за період (₴)</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px">
+          <div><label style="font-size:10.5px;color:var(--ink4)">📣 Реклама</label><input type="number" id="opex-ads" value="0" min="0" oninput="updateOpexTotal()" style="padding:6px 8px;font-size:12px"></div>
+          <div><label style="font-size:10.5px;color:var(--ink4)">🏠 Оренда</label><input type="number" id="opex-rent" value="0" min="0" oninput="updateOpexTotal()" style="padding:6px 8px;font-size:12px"></div>
+          <div><label style="font-size:10.5px;color:var(--ink4)">👤 Зарплата</label><input type="number" id="opex-salary" value="0" min="0" oninput="updateOpexTotal()" style="padding:6px 8px;font-size:12px"></div>
+          <div><label style="font-size:10.5px;color:var(--ink4)">📦 Доставка</label><input type="number" id="opex-delivery" value="0" min="0" oninput="updateOpexTotal()" style="padding:6px 8px;font-size:12px"></div>
+          <div><label style="font-size:10.5px;color:var(--ink4)">🔧 Інше</label><input type="number" id="opex-other" value="0" min="0" oninput="updateOpexTotal()" style="padding:6px 8px;font-size:12px"></div>
+          <div style="display:flex;flex-direction:column;justify-content:flex-end">
+            <div style="font-size:10.5px;color:var(--ink4);margin-bottom:3px">∑ Разом</div>
+            <div id="opex-total-display" style="font-size:18px;font-weight:700;color:var(--pine)">0 ₴</div>
+            <input type="hidden" id="stats-opex" value="0">
+          </div>
+        </div>
       </div>
     </div>
+  </div>
+
+  <!-- MONTHLY CHART -->
+  <div class="card" id="stats-chart-wrap">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div class="card-title" style="margin:0">📊 Виручка по місяцях</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-gray btn-sm" id="chart-mode-revenue" onclick="setChartMode('revenue')">Виручка</button>
+        <button class="btn btn-gray btn-sm" id="chart-mode-profit" onclick="setChartMode('profit')">Прибуток</button>
+        <button class="btn btn-gray btn-sm" id="chart-mode-units" onclick="setChartMode('units')">Штуки</button>
+      </div>
+    </div>
+    <div id="stats-chart-svg" style="width:100%;overflow-x:auto;min-height:80px"></div>
   </div>
 
   <!-- KPI ROW 1: revenue basics -->
@@ -733,6 +776,17 @@ service cloud.firestore {
       <button class="btn btn-danger btn-sm" onclick="clearJournal()">🗑 Очистити журнал</button>
       <button class="btn btn-danger btn-sm" onclick="resetAll()">⚠️ Скинути все</button>
     </div>
+  </div>
+</div>
+
+<!-- ═══ AROMA MODAL ═══ -->
+<div class="modal-overlay" id="modal-aroma">
+  <div class="modal" style="max-width:680px">
+    <div class="modal-header">
+      <h3 id="modal-aroma-title">Рух по аромату</h3>
+      <button class="modal-close" onclick="closeModal('modal-aroma')">×</button>
+    </div>
+    <div id="modal-aroma-content"></div>
   </div>
 </div>
 
@@ -932,6 +986,18 @@ function aromaName(id){ var a=AROMAS[id]; return a?(a.en+", "+a.uk):id; }
 function aromaSupplier(aromaId){ return suppliers.find(function(s){return s.aromas&&s.aromas.indexOf(aromaId)>=0;});}
 
 var generated=null, currentJournalItem=null;
+var chartMode='revenue';
+var reorderPoints={};
+function setChartMode(m){
+  chartMode=m;
+  ['revenue','profit','units'].forEach(function(id){
+    var b=document.getElementById('chart-mode-'+id);
+    if(!b)return;
+    b.style.background=id===m?'var(--pine)':'';
+    b.style.color=id===m?'white':'';
+  });
+  renderMonthlyChart();
+}
 var items=[{id:Date.now(),productId:"",qty:1,customPrice:""}];
 
 // CLOUD STATE
@@ -955,6 +1021,7 @@ function load(){
     var srt=localStorage.getItem("atik5_retail");  if(srt) retailStock=JSON.parse(srt);
     var srp=localStorage.getItem("atik5_salesrep");if(srp) salesReports=JSON.parse(srp);
     var ssu=localStorage.getItem("atik5_suppliers");if(ssu) suppliers=JSON.parse(ssu);
+    var srr=localStorage.getItem("atik5_reorder");if(srr) reorderPoints=JSON.parse(srr);
     DEFAULT_BUYERS.forEach(function(d){if(!buyers.find(function(x){return x.id===d.id;})) buyers.push(Object.assign({},d));});
     DEFAULT_PRODUCTS.forEach(function(d){if(!products.find(function(x){return x.id===d.id;})) products.push(Object.assign({},d));});
     // Ensure all suppliers have aromas field
@@ -1005,6 +1072,7 @@ function save(){
   localStorage.setItem("atik5_retail",JSON.stringify(retailStock));
   localStorage.setItem("atik5_salesrep",JSON.stringify(salesReports));
   localStorage.setItem("atik5_suppliers",JSON.stringify(suppliers));
+  localStorage.setItem("atik5_reorder",JSON.stringify(reorderPoints));
   scheduleCloudPush();
 }
 
@@ -1012,7 +1080,8 @@ function collectAppState(){
   return {
     products:products, buyers:buyers, journal:journal, settings:settings,
     warehouseStock:warehouseStock, rawStock:rawStock, receiveHistory:receiveHistory,
-    retailStock:retailStock, salesReports:salesReports, suppliers:suppliers
+    retailStock:retailStock, salesReports:salesReports, suppliers:suppliers,
+    reorderPoints:reorderPoints
   };
 }
 
@@ -1028,6 +1097,7 @@ function applyAppState(data){
   retailStock=data.retailStock||{};
   salesReports=data.salesReports||[];
   if(data.suppliers)suppliers=data.suppliers;
+  if(data.reorderPoints)reorderPoints=data.reorderPoints;
   // Ensure suppliers have aromas
   suppliers.forEach(function(s){if(!s.aromas)s.aromas=[];});
   var defSup={yasuhito:["osmanthus","cherry","sandalwood","camphor"],ryo:["hydrangea","blacksandal","musk","frankincense"],yoko:["temple","honeysandal"],hanna:["gardentree","agarwood"]};
@@ -1050,7 +1120,6 @@ function rerenderAfterStateChange(){
   renderWarehouse();
   renderRawMaterials();
   renderReceiveHistory();
-  renderAssembleSelect();
   renderRetailStoreGrid();
   renderRetailHistory();
   renderBuyersList();
@@ -1188,7 +1257,6 @@ function pushCloudState(isManual){
 function uid(){return "c_"+Math.random().toString(36).substr(2,9);}
 function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
 function fmt(n){return (n||0).toLocaleString("uk-UA",{minimumFractionDigits:0,maximumFractionDigits:0});}
-function fmt2(n){return (n||0).toLocaleString("uk-UA",{minimumFractionDigits:2,maximumFractionDigits:2});}
 function getPriceType(){return document.querySelector('input[name="pricetype"]:checked')&&document.querySelector('input[name="pricetype"]:checked').value||"shelf";}
 function calcPrice(p){
   var base=p.shelf||p.price||0, pt=getPriceType();
@@ -1203,7 +1271,6 @@ function getItemPrice(item){
   return calcPrice(p);
 }
 function getTotal(){return items.filter(function(i){return i.productId&&i.qty>0;}).reduce(function(s,i){return s+getItemPrice(i)*i.qty;},0);}
-function getWHQty(pid){return (warehouseStock[pid]&&warehouseStock[pid].qty)||0;}
 function getWHCogs(pid){return (warehouseStock[pid]&&warehouseStock[pid].avgCogs)||0;}
 function getEstItemCogs(it){
   // Returns COGS per unit for a journal item: use recorded cogs, then warehouse avg, then BOM estimate
@@ -1244,6 +1311,18 @@ function shortName(name){
 }
 function filterByPeriod(list,period){
   if(period==="all")return list;
+  if(period==="custom"){
+    var fromEl=document.getElementById("j-date-from");
+    var toEl=document.getElementById("j-date-to");
+    var from=fromEl&&fromEl.value?fromEl.value+"-01":null;
+    var to=toEl&&toEl.value?toEl.value+"-31":null;
+    return list.filter(function(e){
+      if(!e.invoiceDate)return false;
+      if(from&&e.invoiceDate<from)return false;
+      if(to&&e.invoiceDate>to)return false;
+      return true;
+    });
+  }
   var now=new Date(),y=now.getFullYear(),mo=now.getMonth(),q=Math.floor(mo/3);
   return list.filter(function(e){
     var d=new Date(e.invoiceDate+"T12:00:00");
@@ -1252,6 +1331,17 @@ function filterByPeriod(list,period){
     if(period==="year")   return d.getFullYear()===y;
     return true;
   });
+}
+function onJournalPeriodChange(){
+  var p=(document.getElementById("j-period")||{}).value||"all";
+  var r=document.getElementById("j-custom-range");
+  if(r)r.style.display=p==="custom"?"":"none";
+  if(p==="custom"){
+    var n=new Date(),ym=n.getFullYear()+"-"+String(n.getMonth()+1).padStart(2,"0");
+    var fe=document.getElementById("j-date-from"),te=document.getElementById("j-date-to");
+    if(fe&&!fe.value)fe.value=ym;
+    if(te&&!te.value)te.value=ym;
+  } else { renderJournal(); }
 }
 function docTitleStr(g){return(g.docType==="bill"?"Рахунок":"Видаткова накладна")+" №"+g.invoiceNum;}
 function getProductGroup(pid){var p=products.find(function(x){return x.id===pid;});return p&&p.group||"other";}
@@ -1301,9 +1391,9 @@ function switchTab(tab){
   });
   document.querySelectorAll(".tabs .tab").forEach(function(el,i){el.classList.toggle("active",ALL_TABS[i]===tab);});
   if(tab==="dashboard")  renderDashboard();
-  if(tab==="docs")       {renderJournal();}
-  if(tab==="warehouse")  {renderRawMaterials();renderReceiveHistory();renderAssembleSelect();renderCogs();}
-  if(tab==="sales")      {renderStats();renderRetailTab();}
+  if(tab==="docs")       {renderJournal();checkDraftBanner();}
+  if(tab==="warehouse")  {renderRawMaterials();renderReceiveHistory();renderCogs();}
+  if(tab==="sales")      {renderStats();renderRetailTab();setTimeout(function(){setChartMode(chartMode);},50);}
   if(tab==="orders")     {loadOrders();}
   if(tab==="retail")     {renderRetailStoreGrid();renderRetailHistory();}
   if(tab==="catalog")    {renderBuyersList();renderProductsList();renderSuppliersList();}
@@ -1367,6 +1457,62 @@ function refreshPriceTypeBtns(){
       lbl.style.fontWeight='400';
     }
   });
+}
+function saveDraft(){
+  try{
+    var bs=document.getElementById("buyer-select");
+    var ni=document.getElementById("inv-num");
+    var nd=document.getElementById("inv-date");
+    var pt=document.querySelector('input[name="pricetype"]:checked');
+    var dt=document.querySelector('input[name="doctype"]:checked');
+    localStorage.setItem("atik5_draft",JSON.stringify({
+      items:items,buyerId:bs&&bs.value,invNum:ni&&ni.value,
+      invDate:nd&&nd.value,priceType:pt&&pt.value,docType:dt&&dt.value,
+      savedAt:new Date().toISOString()
+    }));
+  }catch(e){}
+}
+function loadDraft(){
+  try{
+    var raw=localStorage.getItem("atik5_draft");
+    if(!raw)return false;
+    var d=JSON.parse(raw);
+    if(!d||!d.items||!d.items.length)return false;
+    if(d.savedAt&&(new Date()-new Date(d.savedAt))/3600000>24){localStorage.removeItem("atik5_draft");return false;}
+    items=d.items;
+    if(d.buyerId){var s=document.getElementById("buyer-select");if(s&&buyers.find(function(b){return b.id===d.buyerId;})){s.value=d.buyerId;onBuyerChange();}}
+    if(d.invNum){var e=document.getElementById("inv-num");if(e)e.value=d.invNum;}
+    if(d.invDate){var e=document.getElementById("inv-date");if(e)e.value=d.invDate;}
+    if(d.priceType){var e=document.querySelector('input[name="pricetype"][value="'+d.priceType+'"]');if(e){e.checked=true;refreshPriceTypeBtns();}}
+    if(d.docType){var e=document.querySelector('input[name="doctype"][value="'+d.docType+'"]');if(e){e.checked=true;onDocTypeChange();}}
+    renderItems();return true;
+  }catch(e){return false;}
+}
+function clearDraft(){localStorage.removeItem("atik5_draft");}
+function checkDraftBanner(){
+  var banner=document.getElementById("draft-banner");
+  if(!banner)return;
+  try{
+    var raw=localStorage.getItem("atik5_draft");
+    if(!raw){banner.style.display="none";return;}
+    var d=JSON.parse(raw);
+    var hasItems=d&&d.items&&d.items.some(function(i){return i.productId;});
+    var age=d.savedAt?(new Date()-new Date(d.savedAt))/3600000:999;
+    banner.style.display=(hasItems&&age<24)?"flex":"none";
+  }catch(e){banner.style.display="none";}
+}
+function restoreDraft(){if(loadDraft()){document.getElementById("draft-banner").style.display="none";switchDocsSub("form");}}
+function discardDraft(){clearDraft();document.getElementById("draft-banner").style.display="none";}
+function onFormFieldChange(){saveDraft();}
+function getOpexBreakdown(){
+  function v(id){return parseFloat((document.getElementById(id)||{}).value)||0;}
+  return {ads:v('opex-ads'),rent:v('opex-rent'),salary:v('opex-salary'),delivery:v('opex-delivery'),other:v('opex-other')};
+}
+function updateOpexTotal(){
+  var b=getOpexBreakdown(),total=b.ads+b.rent+b.salary+b.delivery+b.other;
+  var h=document.getElementById('stats-opex'); if(h)h.value=total;
+  var d=document.getElementById('opex-total-display'); if(d)d.textContent=total.toLocaleString('uk-UA')+' ₴';
+  renderStats();
 }
 function onDocTypeChange(){
   var dt=document.querySelector('input[name="doctype"]:checked').value;
@@ -1442,6 +1588,7 @@ document.addEventListener("change",function(e){
   if(role==="qty"){item.qty=parseInt(e.target.value)||1;}
   if(role==="price"){item.customPrice=e.target.value;}
   renderItems();
+  saveDraft();
 });
 function updateTotalBar(){
   var filled=items.filter(function(i){return i.productId&&i.qty>0;});
@@ -1579,6 +1726,7 @@ var priceLabel={
       document.getElementById("inv-num").value=num+1;
     }
     generated=g;
+    clearDraft();
     renderPreview();
     save();
     hideLoader();
@@ -1670,6 +1818,123 @@ function renderPreview(){
 // ============================================================
 // EXPORT EXCEL
 // ============================================================
+function exportJournalExcel(){
+  var period=(document.getElementById("j-period")||{}).value||"all";
+  var dtype=(document.getElementById("j-doctype")||{}).value||"all";
+  var q=((document.getElementById("j-search")||{}).value||"").toLowerCase();
+  var list=filterByPeriod(journal,period);
+  if(dtype!=="all")list=list.filter(function(j){return j.docType===dtype;});
+  if(q)list=list.filter(function(j){return(j.buyer&&j.buyer.name||"").toLowerCase().indexOf(q)>=0||(j.invoiceNum||"").indexOf(q)>=0;});
+  if(!list.length){alert("Немає документів для експорту");return;}
+  var rev=list.reduce(function(s,j){return s+j.total;},0);
+  var cogs=list.reduce(function(s,j){return s+j.items.reduce(function(ss,it){return ss+(it.cogs||0)*it.qty;},0);},0);
+  var gross=rev-cogs;
+  var margin=rev>0?(gross/rev*100).toFixed(1):"—";
+  var pmap={},bmap={};
+  list.forEach(function(j){
+    var bn=j.buyer&&j.buyer.name||"—";
+    if(!bmap[bn])bmap[bn]={n:0,t:0};
+    bmap[bn].n++;bmap[bn].t+=j.total;
+    j.items.forEach(function(it){
+      var k=shortName(it.name);
+      if(!pmap[k])pmap[k]={qty:0,rev:0,cogs:0};
+      pmap[k].qty+=it.qty;pmap[k].rev+=it.sum;pmap[k].cogs+=(it.cogs||0)*it.qty;
+    });
+  });
+  var H={h:"background:#2d4a3e;color:white;font-weight:700;border:1px solid #1a3328;padding:5px 8px",
+    th:"background:#f0f0f0;font-weight:700;border:1px solid #ccc;padding:4px 8px",
+    td:"border:1px solid #ddd;padding:4px 8px",R:"text-align:right",B:"font-weight:700"};
+  var xls='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">'
+    +'<head><meta charset="UTF-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets>'
+    +'<x:ExcelWorksheet><x:Name>Журнал</x:Name></x:ExcelWorksheet>'
+    +'<x:ExcelWorksheet><x:Name>По товарах</x:Name></x:ExcelWorksheet>'
+    +'<x:ExcelWorksheet><x:Name>По покупцях</x:Name></x:ExcelWorksheet>'
+    +'</x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->'
+    +'<style>body{font-family:Arial;font-size:10pt}table{border-collapse:collapse;width:100%}</style></head><body>'
+    // Лист 1
+    +'<table><tr><td colspan="8" style="'+H.h+'">🌿 All trees I know — Журнал | '+new Date().toLocaleDateString("uk-UA")+'</td></tr>'
+    +'<tr><td colspan="8" style="height:6px"></td></tr>'
+    +'<tr><td colspan="2" style="'+H.th+'">Документів: '+list.length+'</td>'
+    +'<td colspan="2" style="'+H.th+'">Виручка: '+rev.toFixed(2)+' ₴</td>'
+    +'<td colspan="2" style="'+H.th+'">COGS: '+cogs.toFixed(2)+' ₴</td>'
+    +'<td colspan="2" style="'+H.th+'">Вал. приб.: '+gross.toFixed(2)+' ₴ ('+margin+'%)</td></tr>'
+    +'<tr><td colspan="8" style="height:8px"></td></tr>'
+    +'<tr><td style="'+H.th+'">Дата</td><td style="'+H.th+'">№</td><td style="'+H.th+'">Тип</td>'
+    +'<td style="'+H.th+'">Покупець</td><td style="'+H.th+'">Ціни</td>'
+    +'<td style="'+H.th+';'+H.R+'">Сума ₴</td><td style="'+H.th+';'+H.R+'">COGS ₴</td>'
+    +'<td style="'+H.th+';'+H.R+'">Прибуток ₴</td></tr>'
+    +list.map(function(j){
+      var jc=j.items.reduce(function(s,it){return s+(it.cogs||0)*it.qty;},0),jp=j.total-jc;
+      return '<tr><td style="'+H.td+'">'+esc(j.invoiceDate||"")+'</td>'
+        +'<td style="'+H.td+'">'+esc(j.invoiceNum||"")+'</td>'
+        +'<td style="'+H.td+'">'+(j.docType==="bill"?"Рахунок":"Накладна")+'</td>'
+        +'<td style="'+H.td+'">'+esc(j.buyer&&j.buyer.name||"—")+'</td>'
+        +'<td style="'+H.td+'">'+esc(j.priceLabel||"")+'</td>'
+        +'<td style="'+H.td+';'+H.R+'">'+j.total.toFixed(2)+'</td>'
+        +'<td style="'+H.td+';'+H.R+'">'+jc.toFixed(2)+'</td>'
+        +'<td style="'+H.td+';'+H.R+';color:'+(jp>=0?"#2d4a3e":"#b04040")+';'+H.B+'">'+jp.toFixed(2)+'</td></tr>';
+    }).join("")
+    +'<tr style="border-top:2px solid #2d4a3e;background:#f0f7f4">'
+    +'<td colspan="5" style="'+H.td+';'+H.B+'">РАЗОМ</td>'
+    +'<td style="'+H.td+';'+H.R+';'+H.B+'">'+rev.toFixed(2)+'</td>'
+    +'<td style="'+H.td+';'+H.R+'">'+cogs.toFixed(2)+'</td>'
+    +'<td style="'+H.td+';'+H.R+';'+H.B+'">'+gross.toFixed(2)+'</td></tr></table>'
+    // Лист 2
+    +'<br><table><tr><td colspan="6" style="'+H.h+'">По товарах</td></tr>'
+    +'<tr><td style="'+H.th+'">Товар</td><td style="'+H.th+';'+H.R+'">К-сть</td>'
+    +'<td style="'+H.th+';'+H.R+'">Виручка ₴</td><td style="'+H.th+';'+H.R+'">COGS ₴</td>'
+    +'<td style="'+H.th+';'+H.R+'">Прибуток ₴</td><td style="'+H.th+';'+H.R+'">Маржа%</td></tr>'
+    +Object.entries(pmap).sort(function(a,b){return b[1].rev-a[1].rev;}).map(function(e){
+      var p=e[1].rev-e[1].cogs,m=e[1].rev>0?(p/e[1].rev*100).toFixed(1):"—";
+      return '<tr><td style="'+H.td+'">'+esc(e[0])+'</td>'
+        +'<td style="'+H.td+';'+H.R+'">'+e[1].qty+'</td>'
+        +'<td style="'+H.td+';'+H.R+'">'+e[1].rev.toFixed(2)+'</td>'
+        +'<td style="'+H.td+';'+H.R+'">'+e[1].cogs.toFixed(2)+'</td>'
+        +'<td style="'+H.td+';'+H.R+';color:'+(p>=0?"#2d4a3e":"#b04040")+';'+H.B+'">'+p.toFixed(2)+'</td>'
+        +'<td style="'+H.td+';'+H.R+'">'+m+'%</td></tr>';
+    }).join("")+'</table>'
+    // Лист 3
+    +'<br><table><tr><td colspan="3" style="'+H.h+'">По покупцях</td></tr>'
+    +'<tr><td style="'+H.th+'">Покупець</td><td style="'+H.th+';'+H.R+'">Докум.</td><td style="'+H.th+';'+H.R+'">Сума ₴</td></tr>'
+    +Object.entries(bmap).sort(function(a,b){return b[1].t-a[1].t;}).map(function(e){
+      return '<tr><td style="'+H.td+'">'+esc(e[0])+'</td>'
+        +'<td style="'+H.td+';'+H.R+'">'+e[1].n+'</td>'
+        +'<td style="'+H.td+';'+H.R+';'+H.B+'">'+e[1].t.toFixed(2)+'</td></tr>';
+    }).join("")+'</table></body></html>';
+  var blob=new Blob(["﻿",xls],{type:"application/vnd.ms-excel;charset=utf-8"});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement("a");a.href=url;
+  a.download="ATIK_Журнал_"+new Date().toISOString().slice(0,10)+".xls";
+  a.click();URL.revokeObjectURL(url);
+}
+function buildPdfPlBlock(g,isBill){
+  if(isBill)return "";
+  var docCogs=g.items.reduce(function(s,it){return s+(it.cogs&&it.cogs>0?it.cogs:getEstItemCogs(it))*it.qty;},0);
+  var gross=g.total-docCogs;
+  var margin=g.total>0?(gross/g.total*100).toFixed(1):"—";
+  var col=parseFloat(margin)>=40?"#2d4a3e":"#b04040";
+  var b=getOpexBreakdown();
+  var opex=b.ads+b.rent+b.salary+b.delivery+b.other;
+  var net=gross-opex;
+  var opexDetail=[b.ads>0?"реклама "+b.ads.toFixed(0):""
+    ,b.rent>0?"оренда "+b.rent.toFixed(0):""
+    ,b.salary>0?"зп "+b.salary.toFixed(0):""
+    ,b.delivery>0?"дост. "+b.delivery.toFixed(0):""
+    ,b.other>0?"інше "+b.other.toFixed(0):""].filter(Boolean).join(", ");
+  return "<div style='margin-top:14px;padding:10px 12px;background:#f0f7f4;border:1px solid #b7dfc9;border-radius:4px;font-size:8.5pt'>"
+    +"<div style='font-weight:700;margin-bottom:6px;color:#2d4a3e'>📊 Внутрішні показники</div>"
+    +"<table style='width:100%;border-collapse:collapse'>"
+    +"<tr><td style='padding:2px 6px;color:#636366'>Виручка</td><td style='padding:2px 6px;text-align:right;font-weight:700'>"+g.total.toFixed(2)+" ₴</td></tr>"
+    +"<tr><td style='padding:2px 6px;color:#636366'>COGS</td><td style='padding:2px 6px;text-align:right'>−"+docCogs.toFixed(2)+" ₴</td></tr>"
+    +"<tr style='border-top:1px solid #ccc'><td style='padding:3px 6px;font-weight:700'>Валовий прибуток</td>"
+    +"<td style='padding:3px 6px;text-align:right;font-weight:700;color:"+col+"'>"+gross.toFixed(2)+" ₴ · "+margin+"%</td></tr>"
+    +(opex>0
+      ?"<tr><td style='padding:2px 6px;color:#636366'>OPEX ("+opexDetail+")</td><td style='padding:2px 6px;text-align:right'>−"+opex.toFixed(2)+" ₴</td></tr>"
+       +"<tr style='border-top:1px solid #ccc'><td style='padding:3px 6px;font-weight:700'>Чистий прибуток</td>"
+       +"<td style='padding:3px 6px;text-align:right;font-weight:700;color:"+(net>=0?"#2d4a3e":"#b04040")+"'>"+net.toFixed(2)+" ₴</td></tr>"
+      :"")
+    +"</table></div>";
+}
 function doExportExcel(g){
   if(!g) return;
   var b=g.buyer, dateStr=formatDate(g.invoiceDate);
@@ -1864,7 +2129,7 @@ function doExportPDF(g){
     +"@media print{button{display:none}}"
     +"</style></head><body>"
     +"<div style=\"display:flex;justify-content:space-between;align-items:flex-start\"><h2>"+title+" №"+esc(g.invoiceNum)+" від "+dateStr+"</h2><img src=\""+LOGO_B64+"\" style=\"height:36px;opacity:0.85\"></div>"
-    +supplierBlock+buyerBlock+payBox+tableBlock+summaryBlock+sigsBlock
+    +supplierBlock+buyerBlock+payBox+tableBlock+summaryBlock+sigsBlock+buildPdfPlBlock(g,isBill)
     +"<script>window.addEventListener('load',function(){setTimeout(function(){window.print();},300);});<\/script>"
     +"</body></html>";
 
@@ -1874,9 +2139,11 @@ function doExportPDF(g){
 // ============================================================
 // COPY TEXT
 // ============================================================
-function doCopyText(){
-  if(!generated)return;
-  var g=generated,b=g.buyer;
+function copyInvoiceText(g){
+  // Note: legacy 'doCopyText' renamed; takes optional g param
+  if(!g)g=generated;
+  if(!g)return;
+  var b=g.buyer;
   var lines=[docTitleStr(g)+" від "+formatDate(g.invoiceDate),"","Покупець: "+(b.fullName||b.name)];
   g.items.forEach(function(it,i){lines.push((i+1)+". "+it.name+" — "+it.qty+" шт. × "+it.price.toFixed(2)+" = "+it.sum.toFixed(2)+" грн");});
   lines.push("","Всього: "+g.total.toFixed(2)+" грн",g.totalWords);
@@ -2091,130 +2358,9 @@ function receiveGoods(){
   alert("✅ Прийнято "+rawQty+" "+unit+(t==="sticks"?" "+aromaLabel+" (≈"+sticks+" паличок)":"")+" за "+priceUah+" ₴/"+unit);
 }
 
-function renderAssembleSelect(){
-  var sel=document.getElementById("assemble-product");
-  var opts=products.filter(function(p){return p.group==="tube20"||p.group==="tube40"||p.group==="refill";})
-    .map(function(p){return "<option value=\""+p.id+"\">"+shortName(p.name)+"</option>";}).join("");
-  sel.innerHTML="<option value=\"\">— Оберіть SKU —</option>"+opts;
-  updateAssemblePreview();
-}
-function updateAssemblePreview(){
-  var pid=document.getElementById("assemble-product").value;
-  var qty=parseInt(document.getElementById("assemble-qty").value)||0;
-  var prev=document.getElementById("assemble-preview");
-  if(!pid||!qty){prev.textContent="";return;}
-  var p=products.find(function(x){return x.id===pid;});
-  var bom=BOM[p&&p.group||"other"]||BOM.other;
-  var stikesNeeded=bom.sticks*qty;
-  var tubsNeeded=(bom.tubes||0)*qty;
-  var labsNeeded=(bom.labels||0)*qty;
-  // Check sticks for specific aroma
-  var aromaId=PRODUCT_AROMA[pid];
-  var aromaSticks=0, aromaLabel="";
-  if(aromaId){
-    var k="sticks_"+aromaId;
-    aromaSticks=(rawStock[k]&&rawStock[k].sticks)||Math.round(getRawQty(k)*2000);
-    aromaLabel=AROMAS[aromaId]?AROMAS[aromaId].en:"";
-  } else {
-    // tester — sum all aromas
-    Object.keys(AROMAS).forEach(function(a){
-      var k="sticks_"+a;
-      aromaSticks+=(rawStock[k]&&rawStock[k].sticks)||Math.round(getRawQty(k)*2000);
-    });
-    aromaLabel="будь-який";
-  }
-  var tubsAvail=getRawQty("tubes");
-  var labsAvail=getRawQty("labels");
-  var ok=aromaSticks>=stikesNeeded
-    &&(tubsNeeded===0||tubsAvail>=tubsNeeded)
-    &&labsAvail>=labsNeeded;
-  var parts=[];
-  if(stikesNeeded)parts.push(aromaLabel+" паличок: "+stikesNeeded+" (є: "+aromaSticks+")");
-  if(tubsNeeded)  parts.push("тубусів: "+tubsNeeded+" (є: "+tubsAvail+")");
-  if(labsNeeded)  parts.push("наліпок: "+labsNeeded+" (є: "+labsAvail+")");
-  prev.textContent="Потрібно: "+parts.join(" · ")+(ok?" ✅ Достатньо":" ⚠️ Нестача матеріалів");
-  prev.style.borderColor=ok?"var(--moss3)":"var(--gold)";
-}
-document.addEventListener("change",function(e){if(e.target.id==="assemble-product"||e.target.id==="assemble-qty")updateAssemblePreview();});
-document.addEventListener("input",function(e){if(e.target.id==="assemble-qty")updateAssemblePreview();});
 
-function assembleBatch(){
-  var pid=document.getElementById("assemble-product").value;
-  var qty=parseInt(document.getElementById("assemble-qty").value)||0;
-  if(!pid||qty<=0){alert("Вкажіть товар і кількість");return;}
-  var p=products.find(function(x){return x.id===pid;});
-  var group=p&&p.group||"other";
-  var bom=bomData[group]||DEFAULT_BOM[group]||{};
-  var stikesNeeded=bom.sticks*qty;
-  var tubsNeeded=(bom.tubes||0)*qty;
-  var labsNeeded=(bom.labels||0)*qty;
 
-  // Deduct sticks by AROMA (not by supplier)
-  var aromaId=PRODUCT_AROMA[pid];
-  if(stikesNeeded>0 && aromaId){
-    var k="sticks_"+aromaId;
-    if(!rawStock[k])rawStock[k]={qty:0,avgCostUah:0,sticks:0,unit:"кг"};
-    var sticksPerKg=2000;
-    var kgNeeded=stikesNeeded/sticksPerKg;
-    var kgDeduct=Math.min(rawStock[k].qty, kgNeeded);
-    var sticksDeducted=Math.round(kgDeduct*sticksPerKg);
-    rawStock[k].qty=Math.max(0,rawStock[k].qty-kgDeduct);
-    rawStock[k].sticks=Math.max(0,(rawStock[k].sticks||0)-sticksDeducted);
-    var remaining=stikesNeeded-sticksDeducted;
-    // If not enough from this aroma, try legacy supplier keys as fallback
-    if(remaining>0){
-      ["yasuhito","ryo","hanna","yoko"].forEach(function(s){
-        var lk="sticks_"+s;
-        if(!rawStock[lk]||rawStock[lk].qty<=0||remaining<=0)return;
-        var kgN=remaining/sticksPerKg;
-        var kgD=Math.min(rawStock[lk].qty,kgN);
-        var sD=Math.round(kgD*sticksPerKg);
-        rawStock[lk].qty-=kgD;
-        rawStock[lk].sticks=Math.max(0,(rawStock[lk].sticks||0)-sD);
-        remaining-=sD;
-      });
-    }
-  } else if(stikesNeeded>0 && !aromaId){
-    // Tester or unknown — deduct from any available aroma
-    var remaining=stikesNeeded;
-    Object.keys(AROMAS).forEach(function(a){
-      var k="sticks_"+a;
-      if(!rawStock[k]||rawStock[k].qty<=0||remaining<=0)return;
-      var kgN=remaining/2000; var kgD=Math.min(rawStock[k].qty,kgN);
-      var sD=Math.round(kgD*2000);
-      rawStock[k].qty-=kgD; rawStock[k].sticks=Math.max(0,(rawStock[k].sticks||0)-sD);
-      remaining-=sD;
-    });
-  }
-  if(rawStock.tubes)  rawStock.tubes.qty  =Math.max(0,(rawStock.tubes.qty||0)-tubsNeeded);
-  if(rawStock.labels) rawStock.labels.qty =Math.max(0,(rawStock.labels.qty||0)-labsNeeded);
 
-  // COGS from rawStock avg prices (updated on each receiving)
-  var mp=matPrices; var mp0=DEFAULT_MAT_PRICES;
-  var sticksPerKg=2000;
-  var aromaKey=aromaId?"aroma_"+aromaId:"aroma_osmanthus";
-  var aromaRawKey=aromaId?"sticks_"+aromaId:null;
-  var pricePerKg=aromaRawKey&&rawStock[aromaRawKey]&&rawStock[aromaRawKey].avgCostUah>0?rawStock[aromaRawKey].avgCostUah:(mp[aromaKey]||mp0[aromaKey]||0);
-  var stickCost=(bom.sticks||0)*(pricePerKg/sticksPerKg);
-  var tubePrice=(rawStock.tubes&&rawStock.tubes.avgCostUah>0)?rawStock.tubes.avgCostUah:(mp.tube_uah||mp0.tube_uah||0);
-  var labelPrice=(rawStock.labels&&rawStock.labels.avgCostUah>0)?rawStock.labels.avgCostUah:(mp.label_uah||mp0.label_uah||0);
-  var tubeCost =(bom.tubes||0)*tubePrice;
-  var labelCost=(bom.labels||0)*labelPrice;
-  var overhead=(mp.labor_uah||mp0.labor_uah)+(mp.delivery_per_pack_uah||mp0.delivery_per_pack_uah)+(mp.promo_per_pack_uah||mp0.promo_per_pack_uah);
-  var subtotal=stickCost+tubeCost+labelCost+overhead;
-  var miscCost=subtotal*((mp.misc_pct||mp0.misc_pct||3)/100);
-  var cogsPerPack=subtotal+miscCost;
-
-  // Add to warehouse
-  if(!warehouseStock[pid])warehouseStock[pid]={qty:0,avgCogs:0,name:p.name};
-  var old=warehouseStock[pid];
-  var newAvg=old.qty>0?(old.avgCogs*old.qty+cogsPerPack*qty)/(old.qty+qty):cogsPerPack;
-  old.qty+=qty; old.avgCogs=newAvg; old.name=p.name;
-
-  receiveHistory.unshift({id:uid(),date:new Date().toISOString().split("T")[0],type:"assembly",
-    productId:pid,name:p.name,qty:qty,cogs:cogsPerPack,aroma:aromaId||null,note:"Збірка "+qty+" шт.",savedAt:new Date().toISOString()});
-  save();renderRawMaterials();renderReceiveHistory();updateAssemblePreview();
-}
 
 // ============================================================
 // DEDUCT RAW MATERIALS FOR INVOICE ITEMS (replaces assembly step)
@@ -2257,9 +2403,6 @@ function deductRawForItems(invoiceItems){
   });
 }
 
-// warehouseStock kept for COGS avgCogs only; no stock-table UI
-function renderWarehouse(){ /* no-op: finished goods table removed */ }
-
 
 function renderRawMaterials(){
   // Build aroma cards dynamically from AROMAS map
@@ -2277,7 +2420,7 @@ function renderRawMaterials(){
     else if(qty<2){ status="Мало!"; statusClass="raw-status-low"; barClass="raw-card-bar-low"; barPct=Math.round((qty/5)*100); }
     else { status="В нормі"; statusClass="raw-status-ok"; barClass="raw-card-bar-ok"; barPct=Math.min(100,Math.round((qty/5)*100)); }
     var stickCount=r.sticks||Math.round(qty*2000);
-    html+='<div class="raw-card">'
+    html+='<div class="raw-card" onclick="openAromaModal(\''+aId+'\')" style="cursor:pointer">'
       +'<span class="raw-card-status '+statusClass+'">'+status+'</span>'
       +'<div class="raw-card-icon">🌿</div>'
       +'<div class="raw-card-name">'+esc(AROMAS[aId].en)+'</div>'
@@ -2344,6 +2487,65 @@ function renderRawMaterials(){
   if(el)el.innerHTML=html;
 }
 
+function openAromaModal(aromaId){
+  var aroma=AROMAS[aromaId]; if(!aroma)return;
+  var rawKey="sticks_"+aromaId;
+  var r=rawStock[rawKey]||{qty:0,avgCostUah:0,sticks:0};
+  var reorderKg=reorderPoints[aromaId]||2;
+  var incoming=receiveHistory.filter(function(h){return h.type==="sticks"&&h.aroma===aromaId;});
+  var outgoing=[];
+  journal.filter(function(j){return j.docType==="invoice";}).forEach(function(j){
+    j.items.forEach(function(it){
+      if(PRODUCT_AROMA[it.id]!==aromaId)return;
+      var pg=products.find(function(x){return x.id===it.id;});
+      var grp=pg&&pg.group||"other";
+      var bom=(bomData[grp]||DEFAULT_BOM[grp]||{});
+      var su=(bom.sticks||0)*it.qty;
+      if(su>0)outgoing.push({date:j.invoiceDate,doc:"Накладна №"+j.invoiceNum,buyer:j.buyer&&j.buyer.name||"",product:it.name,qty:it.qty,sticks:su});
+    });
+  });
+  var allEv=[];
+  incoming.forEach(function(h){allEv.push({date:h.date,type:"in",qty:h.qty,note:h.note||"",supplier:h.supplier||""});});
+  outgoing.forEach(function(o){allEv.push({date:o.date,type:"out",sticks:o.sticks,doc:o.doc,buyer:o.buyer,product:o.product,qty:o.qty});});
+  allEv.sort(function(a,b){return a.date>b.date?-1:1;});
+  var totalIn=incoming.reduce(function(s,h){return s+h.qty;},0);
+  var totalOutSt=outgoing.reduce(function(s,o){return s+o.sticks;},0);
+  var curQty=r.qty||0, isLow=curQty<=reorderKg;
+  var rows=allEv.slice(0,60).map(function(e){
+    if(e.type==="in")return '<tr style="background:#f0f7f4">'
+      +'<td style="border:1px solid var(--border);padding:5px 8px;font-size:11px;white-space:nowrap">'+esc(e.date)+'</td>'
+      +'<td style="border:1px solid var(--border);padding:5px 8px"><span style="color:var(--moss);font-weight:700">▲ Надходження</span>'+(e.supplier?'<br><span style="font-size:10px;color:var(--ink4)">'+esc(e.supplier)+'</span>':'')+'</td>'
+      +'<td style="border:1px solid var(--border);padding:5px 8px;font-size:11px">'+esc(e.qty.toFixed(2))+' кг ≈ '+Math.round(e.qty*2000).toLocaleString("uk-UA")+' пал.'+(e.note?' · '+esc(e.note):'')+'</td></tr>';
+    return '<tr>'
+      +'<td style="border:1px solid var(--border);padding:5px 8px;font-size:11px;white-space:nowrap">'+esc(e.date)+'</td>'
+      +'<td style="border:1px solid var(--border);padding:5px 8px"><span style="color:var(--cedar)">▼ Списання</span><br><span style="font-size:10px;color:var(--ink4)">'+esc(e.doc)+' · '+esc(e.buyer)+'</span></td>'
+      +'<td style="border:1px solid var(--border);padding:5px 8px;font-size:11px">'+e.sticks.toLocaleString("uk-UA")+' пал. · '+e.qty+' пачок<br><span style="font-size:10px;color:var(--ink4)">'+esc(shortName(e.product))+'</span></td></tr>';
+  }).join("");
+  document.getElementById("modal-aroma-title").textContent="🌿 "+aroma.en+" — "+aroma.uk;
+  document.getElementById("modal-aroma-content").innerHTML=
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:14px">'
+    +'<div style="background:var(--surface2);border-radius:var(--r2);padding:10px 12px"><div style="font-size:11px;color:var(--ink4)">Залишок</div>'
+    +'<div style="font-size:22px;font-weight:700;color:'+(isLow?'var(--red)':'var(--pine)')+'">'+curQty.toFixed(2)+' кг</div>'
+    +'<div style="font-size:11px;color:var(--moss)">≈ '+(r.sticks||Math.round(curQty*2000)).toLocaleString("uk-UA")+' пал.</div></div>'
+    +'<div style="background:var(--surface2);border-radius:var(--r2);padding:10px 12px"><div style="font-size:11px;color:var(--ink4)">Отримано</div>'
+    +'<div style="font-size:22px;font-weight:700;color:var(--moss)">'+totalIn.toFixed(2)+' кг</div>'
+    +'<div style="font-size:11px;color:var(--ink3)">'+incoming.length+' надходж.</div></div>'
+    +'<div style="background:var(--surface2);border-radius:var(--r2);padding:10px 12px"><div style="font-size:11px;color:var(--ink4)">Списано</div>'
+    +'<div style="font-size:22px;font-weight:700;color:var(--cedar)">'+totalOutSt.toLocaleString("uk-UA")+' пал.</div>'
+    +'<div style="font-size:11px;color:var(--ink3)">'+outgoing.length+' операцій</div></div>'
+    +'<div style="background:'+(isLow?'var(--red2)':'var(--surface2)')+';border-radius:var(--r2);padding:10px 12px;border:1px solid '+(isLow?'var(--red)':'var(--border)')+'"><div style="font-size:11px;color:var(--ink4)">Reorder</div>'
+    +'<div style="font-size:22px;font-weight:700;color:'+(isLow?'var(--red)':'var(--ink2)')+'">'+reorderKg+' кг</div>'
+    +'<div style="font-size:11px;color:var(--ink3)">'+( r.avgCostUah||0).toFixed(2)+' ₴/кг</div></div></div>'
+    +(allEv.length
+      ?'<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--surface3)">'
+       +'<th style="border:1px solid var(--border);padding:5px 8px">Дата</th>'
+       +'<th style="border:1px solid var(--border);padding:5px 8px">Операція</th>'
+       +'<th style="border:1px solid var(--border);padding:5px 8px">Деталі</th>'
+       +'</tr></thead><tbody>'+rows+'</tbody></table>'
+       +(allEv.length>60?'<div style="font-size:11px;color:var(--ink4);margin-top:6px">Показано 60 з '+allEv.length+'</div>':"")
+      :'<div style="color:var(--ink4);font-size:12px;padding:12px 0">Рухів ще немає</div>');
+  document.getElementById("modal-aroma").classList.add("open");
+}
 function toggleRawEdit(){
   var panel=document.getElementById("raw-edit-panel");
   if(panel.style.display==="none"){
@@ -2368,6 +2570,8 @@ function renderRawEditFields(){
       +'<input type="number" step="0.01" min="0" value="'+r.qty.toFixed(2)+'" id="redit_qty_'+k+'" style="font-size:13px;padding:5px"></div>'
       +'<div style="flex:1"><label style="font-size:11px">Ціна (₴/кг)</label>'
       +'<input type="number" step="0.01" min="0" value="'+(r.avgCostUah||0).toFixed(2)+'" id="redit_price_'+k+'" style="font-size:13px;padding:5px"></div>'
+      +'<div style="flex:0 0 88px"><label style="font-size:11px">⚠️ Мін.кг</label>'
+      +'<input type="number" step="0.5" min="0" value="'+(reorderPoints[aId]||2)+'" id="redit_reorder_'+aId+'" style="font-size:13px;padding:5px;border-color:var(--gold)"></div>'
       +'</div></div>';
   });
   html+='</div>';
@@ -2402,6 +2606,8 @@ function saveRawEdits(){
     rawStock[k].avgCostUah=newPrice;
     rawStock[k].sticks=Math.round(newQty*2000);
     if(newPrice>0) matPrices["aroma_"+aId]=newPrice;
+    var rpe=document.getElementById("redit_reorder_"+aId);
+    if(rpe){var rv=parseFloat(rpe.value)||0;if(rv>0)reorderPoints[aId]=rv;else delete reorderPoints[aId];}
   });
   // Save tubes, labels
   ["tubes","labels"].forEach(function(k){
@@ -2508,16 +2714,6 @@ function deleteRetailReport(id){
   if(!confirm("Видалити звіт?"))return;
   salesReports=salesReports.filter(function(r){return r.id!==id;});
   save();renderRetailHistory();
-}
-function openAddRetailModal(){
-  var name=prompt("Назва точки роздрібу (як буде на картці):");
-  if(!name)return;
-  var fullName=prompt("Повна назва (ФОП або ТОВ):")||name;
-  var receiver=prompt("ПІБ отримувача:")||name;
-  buyers.push({id:uid(),name:name,fullName:fullName,receiver:receiver,
-    iban:null,edrpou:null,bank:null,address:null,contract:null,
-    isRetail:true,retailName:name,custom:true});
-  save();renderRetailTab();renderBuyerSelect();
 }
 function deleteRetailPoint(buyerId){
   if(!confirm("Видалити цю точку роздрібу?"))return;
@@ -2729,9 +2925,65 @@ function renderDashboard(){
 }
 
 // ============================================================
+// MONTHLY CHART
+// ============================================================
+function renderMonthlyChart(){
+  var el=document.getElementById('stats-chart-svg');
+  if(!el)return;
+  var now=new Date(), months=[];
+  for(var i=11;i>=0;i--){
+    var d=new Date(now.getFullYear(),now.getMonth()-i,1);
+    months.push({
+      key:d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'),
+      label:['Січ','Лют','Бер','Квіт','Трав','Черв','Лип','Серп','Вер','Жовт','Лист','Груд'][d.getMonth()]+"'"+String(d.getFullYear()).slice(2),
+      revenue:0,cogs:0,units:0
+    });
+  }
+  journal.filter(function(j){return j.docType==='invoice';}).forEach(function(j){
+    var mk=j.invoiceDate&&j.invoiceDate.substring(0,7);
+    var mo=months.find(function(m){return m.key===mk;});
+    if(!mo)return;
+    mo.revenue+=j.total;
+    mo.units+=j.items.reduce(function(s,it){return s+it.qty;},0);
+    mo.cogs+=j.items.reduce(function(s,it){return s+(it.cogs||0)*it.qty;},0);
+  });
+  var values=months.map(function(m){
+    if(chartMode==='profit')return m.revenue-m.cogs;
+    if(chartMode==='units')return m.units;
+    return m.revenue;
+  });
+  var maxVal=Math.max.apply(null,values.map(function(v){return Math.abs(v);}));
+  if(!maxVal)maxVal=1;
+  var curKey=(function(){var n=new Date();return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0');})();
+  var W=Math.max(el.clientWidth||320,300),H=200,PL=48,PR=8,PT=14,PB=44;
+  var cW=W-PL-PR,cH=H-PT-PB;
+  var bW=Math.floor(cW/months.length*0.62);
+  var gap=(cW-bW*months.length)/(months.length+1);
+  function fmtY(v){return chartMode==='units'?(v>=1000?Math.round(v/1000)+'k':v):(v>=1000?(v/1000).toFixed(v>=10000?0:1)+'k':v);}
+  var svg='';
+  for(var gi=0;gi<=4;gi++){
+    var gv=Math.round(maxVal/4*gi),gy=PT+cH-Math.round(cH*gi/4);
+    svg+='<line x1="'+PL+'" y1="'+gy+'" x2="'+(W-PR)+'" y2="'+gy+'" stroke="var(--border)" stroke-width="1" stroke-dasharray="3,3"/>';
+    svg+='<text x="'+(PL-4)+'" y="'+(gy+4)+'" text-anchor="end" font-size="10" fill="var(--ink4)">'+fmtY(gv)+'</text>';
+  }
+  months.forEach(function(mo,i){
+    var v=values[i],isNeg=v<0,isCur=mo.key===curKey;
+    var bh=Math.round(cH*Math.abs(v)/maxVal);
+    var bx=PL+gap+(bW+gap)*i;
+    var fill=isNeg?'var(--red)':isCur?'var(--pine)':'var(--moss3)';
+    var by=isNeg?PT+cH:PT+cH-bh;
+    if(bh>0) svg+='<rect x="'+bx+'" y="'+by+'" width="'+bW+'" height="'+bh+'" rx="3" fill="'+fill+'" opacity="'+(isCur?1:0.72)+'"><title>'+mo.label+': '+v.toLocaleString('uk-UA')+(chartMode==='units'?' шт':' ₴')+'</title></rect>';
+    if(bh>20&&Math.abs(v)>0) svg+='<text x="'+(bx+bW/2)+'" y="'+(by-(isNeg?-12:4))+'" text-anchor="middle" font-size="9" fill="var(--ink3)" font-weight="600">'+fmtY(Math.abs(v))+'</text>';
+    svg+='<text x="'+(bx+bW/2)+'" y="'+(H-6)+'" text-anchor="middle" font-size="10" fill="'+(isCur?'var(--pine)':'var(--ink4)')+'" font-weight="'+(isCur?700:400)+'">'+mo.label+'</text>';
+  });
+  el.innerHTML='<svg width="100%" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'+svg+'</svg>';
+}
+
+// ============================================================
 // STATS
 // ============================================================
 function renderStats(){
+  renderMonthlyChart();
   var period  = document.getElementById("stats-period").value  || "month";
   var dtype   = document.getElementById("stats-doctype").value || "invoice";
   var opex    = parseFloat(document.getElementById("stats-opex").value) || 0;
@@ -3683,7 +3935,7 @@ window.addEventListener("DOMContentLoaded",function(){
     if(maxNum>0)document.getElementById("inv-num").value=maxNum+1;
   }
   renderDashboard();
-  renderAssembleSelect();
+
 });
 
 // ============================================================
@@ -3788,38 +4040,68 @@ function declineOrder(orderId) {
     .catch(function(e){alert("Помилка: "+e.message);});
 }
 
-function createInvoiceFromOrder(orderId) {
+function createInvoiceFromOrder(orderId){
   var o=ordersData.find(function(x){return x._id===orderId;});
   if(!o)return;
-
-  // Find buyer or create temp
-  var buyer=buyers.find(function(b){
-    return b.name&&o.company&&b.name.toLowerCase().indexOf(o.company.toLowerCase())>=0;
+  var cl=(o.company||"").toLowerCase();
+  var similar=buyers.filter(function(b){
+    if(!b.name)return false;
+    var bn=b.name.toLowerCase();
+    return bn.indexOf(cl)>=0||cl.indexOf(bn)>=0||(b.fullName&&b.fullName.toLowerCase().indexOf(cl)>=0);
   });
+  if(similar.length===0){
+    _doInvoiceFromOrder(orderId,null);
+  } else if(similar.length===1&&similar[0].name.toLowerCase()===cl){
+    _doInvoiceFromOrder(orderId,similar[0].id);
+  } else {
+    _showOrderBuyerModal(orderId,o,similar);
+  }
+}
+function _showOrderBuyerModal(orderId,o,similar){
+  var ex=document.getElementById("modal-order-buyer");if(ex)ex.remove();
+  var opts=similar.map(function(b){
+    var bid=b.id;
+    return "<button class=\"btn btn-gray\" style=\"width:100%;text-align:left;margin-bottom:6px;padding:10px 14px\" "
+      +"onclick=\"_doInvoiceFromOrder(&apos;"+orderId+"&apos;,&apos;"+bid+"&apos;);closeOrderBuyerModal()\">"
+      +"<div style=\"font-weight:700\">"+esc(b.name)+"</div>"
+      +(b.edrpou?"<div style=\"font-size:11px;color:var(--ink4)\">ЄДРПОУ: "+esc(b.edrpou)+"</div>":"")
+      +"</button>";
+  }).join("");
+  var newBtnOnclick="_doInvoiceFromOrder(\'"+orderId+"\',null);closeOrderBuyerModal()";
+  var m=document.createElement("div");
+  m.id="modal-order-buyer";m.className="modal-overlay open";
+  var content="<div class=\"modal\" style=\"max-width:480px\">"
+    +"<div class=\"modal-header\"><h3>&#128101; Прив’язати до покупця?</h3>"
+    +"<button class=\"modal-close\" onclick=\"closeOrderBuyerModal()\">&#215;</button></div>"
+    +"<div style=\"font-size:13px;margin-bottom:14px\">&#1047;амовлення від <strong>"+esc(o.company||"")+"</strong>. Знайдено схожих покупців:</div>"
+    +opts
+    +"<div style=\"border-top:1px solid var(--border);padding-top:12px;margin-top:4px\">"
+    +"<button class=\"btn btn-moss\" style=\"width:100%\" onclick=\""+newBtnOnclick+"\">"
+    +"+ Створити нового «"+esc(o.company||"")+"»</button></div></div>";
+  m.innerHTML=content;
+  document.body.appendChild(m);
+}
+function closeOrderBuyerModal(){var m=document.getElementById("modal-order-buyer");if(m)m.remove();}
+function _doInvoiceFromOrder(orderId,buyerId){
+  var o=ordersData.find(function(x){return x._id===orderId;});
+  if(!o)return;
+  var buyer=buyerId?buyers.find(function(b){return b.id===buyerId;}):null;
   if(!buyer){
     buyer={id:"order_"+orderId,name:o.company||"Замовлення з форми",
       fullName:o.company||"Замовлення з форми",receiver:o.contact||"",
-      phone:o.phone||"",iban:null,edrpou:null,bank:null,
-      address:o.address||null,contract:null};
-    if(!buyers.find(function(b){return b.id===buyer.id;})) buyers.push(buyer);
+      iban:null,edrpou:null,bank:null,address:o.address||null,contract:null,isRetail:false};
+    if(!buyers.find(function(b){return b.id===buyer.id;})){buyers.push(buyer);save();}
   }
-
-  switchTab("docs"); switchDocsSub("form");
-
+  switchTab("docs");switchDocsSub("form");
+  renderBuyerSelect();
   var sel=document.getElementById("buyer-select");
-  if(sel){
-    renderBuyerSelect();
-    sel.value=buyer.id;
-    onBuyerChange();
-  }
-
+  if(sel){sel.value=buyer.id;onBuyerChange();}
   items=[];
   (o.items||[]).forEach(function(it){
     var p=products.find(function(x){return x.id===it.id;});
-    if(p) items.push({id:Date.now()+Math.random(),productId:it.id,qty:it.qty,customPrice:""});
+    if(p)items.push({id:Date.now()+Math.random(),productId:it.id,qty:it.qty,customPrice:""});
   });
   renderItems();
-  alert("✅ Форму накладної заповнено. Перевірте та натисніть «Згенерувати».");
 }
 
 // Load orders on dashboard tab to refresh KPI
