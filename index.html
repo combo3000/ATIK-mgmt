@@ -1168,6 +1168,16 @@ function initCloud(){
     cloudDb=firebase.firestore();
     cloudReady=true;
     updateCloudStatus("Firebase підключено. Увійдіть через Google.");
+    // Handle redirect result after Google Sign-In on mobile
+    cloudAuth.getRedirectResult().then(function(result){
+      if(result&&result.user){
+        console.log("[Auth] Redirect sign-in success:", result.user.email);
+      }
+    }).catch(function(err){
+      if(err.code!=="auth/no-current-user")
+        updateCloudStatus("Помилка входу: "+err.message, true);
+    });
+
     cloudAuth.onAuthStateChanged(function(user){
       cloudUser=user||null;
       updateCloudUi();
@@ -1187,7 +1197,8 @@ function initCloud(){
 function cloudSignIn(){
   if(!cloudReady){alert("Спочатку заповніть firebase-config.js");return;}
   var provider=new firebase.auth.GoogleAuthProvider();
-  cloudAuth.signInWithPopup(provider).catch(function(err){
+  // signInWithRedirect works on mobile/PWA where popups are blocked
+  cloudAuth.signInWithRedirect(provider).catch(function(err){
     alert("Не вдалося увійти: "+err.message);
   });
 }
