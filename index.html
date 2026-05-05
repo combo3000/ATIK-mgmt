@@ -892,7 +892,7 @@ const DEFAULT_PRODUCTS=[
   {id:"sofika_green",   name:'Підставка "ATIK&Sofika" Sofika зелена, All trees I know',                  shelf:650, price:650,unit:"шт.",pack:null,group:"stand"},
   {id:"sofika_spotted", name:'Підставка "ATIK&Sofika" Sofika плямиста, All trees I know',                shelf:650, price:650,unit:"шт.",pack:null,group:"stand"},
   {id:"sofika_brown",   name:'Підставка "ATIK&Sofika" Sofika коричнева, All trees I know',               shelf:650, price:650,unit:"шт.",pack:null,group:"stand"},
-  {id:"tester20",       name:"Палички ароматичні тестер 20шт, All trees I know",                         shelf:0,   price:0,  unit:"шт.",pack:20,group:"other"},
+  {id:"tester20",       name:"Палички ароматичні тестер 20шт, All trees I know",                         shelf:0,   price:0,  unit:"шт.",pack:20,group:"tester"},
   {id:"ref20_cherry",      name:"Палички ароматичні Cherry Bloom, Цвіт Вишні 20шт, Папір",     shelf:400,price:280,unit:"шт.",pack:20,group:"refill"},
   {id:"ref20_osmanthus",   name:"Палички ароматичні Osmanthus, Османтус 20шт, Папір",           shelf:400,price:280,unit:"шт.",pack:20,group:"refill"},
   {id:"ref20_camphor",     name:"Палички ароматичні Camphor Tree, Камфорне дерево 20шт, Папір", shelf:400,price:280,unit:"шт.",pack:20,group:"refill"},
@@ -917,7 +917,7 @@ const DEFAULT_PRODUCTS=[
   {id:"ref10_agarwood",    name:"Палички ароматичні Agarwood, Агарове дерево 10шт, Папір",      shelf:300,price:210,unit:"шт.",pack:10,group:"refill"},
   {id:"ref10_frankincense",name:"Палички ароматичні Frankincense, Ладан 10шт, Папір",           shelf:350,price:245,unit:"шт.",pack:10,group:"refill"},
   {id:"ref10_gardentree",  name:"Палички ароматичні Garden Tree, Садове дерево 10шт, Папір",    shelf:300,price:210,unit:"шт.",pack:10,group:"refill"},
-  {id:"tester_paper10",    name:"Палички ароматичні тестер 10шт, Папір",                        shelf:0,  price:0,  unit:"шт.",pack:10,group:"other"},
+  {id:"tester_paper10",    name:"Палички ароматичні тестер 10шт, Папір",                        shelf:0,  price:0,  unit:"шт.",pack:10,group:"tester"},
 ];
 
 const DEFAULT_BUYERS=[
@@ -1083,6 +1083,12 @@ function load(){
         var m=b.name.match(/\(([^)]+)\)/);
         b.retailName=m?m[1]:b.name;
       }
+    });
+    // Prune zero-qty entries from retailStock (cleanup legacy accumulated zeros)
+    Object.keys(retailStock).forEach(function(bid){
+      Object.keys(retailStock[bid]).forEach(function(pid){
+        if((retailStock[bid][pid].qty||0)<=0) delete retailStock[bid][pid];
+      });
     });
   }catch(e){
     products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
@@ -1803,8 +1809,15 @@ var priceLabel={
       if(buyer.isRetail){
         if(!retailStock[buyer.id])retailStock[buyer.id]={};
         g.items.forEach(function(it){
-          if(!retailStock[buyer.id][it.id])retailStock[buyer.id][it.id]={qty:0,name:it.name};
-          retailStock[buyer.id][it.id].qty+=it.qty;
+          // Consolidate by productId to prevent duplicates
+          var pid=it.productId||it.id;
+          if(!retailStock[buyer.id][pid])retailStock[buyer.id][pid]={qty:0,name:it.name};
+          retailStock[buyer.id][pid].qty+=it.qty;
+          retailStock[buyer.id][pid].name=it.name;
+        });
+        // Purge zero-qty entries to keep storage lean
+        Object.keys(retailStock[buyer.id]).forEach(function(k){
+          if((retailStock[buyer.id][k].qty||0)<=0)delete retailStock[buyer.id][k];
         });
       }
     }
@@ -2713,24 +2726,104 @@ function renderRetailStoreGrid(){
     var storeData=retailStock[b.id]||{};
     var entries=Object.keys(storeData).filter(function(k){return storeData[k].qty>0;});
     var totalQty=entries.reduce(function(s,k){return s+(storeData[k].qty||0);},0);
-    // Last shipment date
     var lastJ=null;
     journal.filter(function(j){return j.docType==="invoice"&&j.buyer&&j.buyer.id===b.id;}).forEach(function(j){if(!lastJ||j.invoiceDate>lastJ)lastJ=j.invoiceDate;});
-    return '<div class="store-card">'
-      +'<div class="store-card-header"><div style="display:flex;justify-content:space-between;align-items:center"><div class="store-card-name">'+esc(b.retailName||b.name)+'</div>'
-      +(b.custom?'<button class="btn btn-danger btn-sm" style="padding:1px 6px;font-size:10px" onclick="event.stopPropagation();deleteRetailPoint(\''+b.id+'\')">×</button>':'')+'</div>'
-      +'<div style="font-size:11px;opacity:.85">'+totalQty+' шт. на залишку</div></div>'
+    // Count sales reports for this store
+    var reportsCount=salesReports.filter(function(r){return r.buyerId===b.id;}).length;
+    return '<div class="store-card" style="cursor:pointer" onclick="openRetailDetailModal(\''+b.id+'\')">'
+      +'<div class="store-card-header">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center">'
+      +'<div class="store-card-name">'+esc(b.retailName||b.name)+'</div>'
+      +'<span style="font-size:18px;opacity:.6">›</span>'
+      +'</div>'
+      +'<div style="font-size:11px;opacity:.85">'+totalQty+' шт. на залишку'+(reportsCount?' · '+reportsCount+' звітів':'')+'</div>'
+      +'</div>'
       +'<div class="store-card-body">'
-      +(entries.length?entries.slice(0,8).map(function(k){
+      +(entries.length?entries.slice(0,6).map(function(k){
         var row=storeData[k];
         var cls=row.qty<3?"pill-low":"pill-ok";
         return '<div class="store-product-row"><span style="color:var(--ink2)">'+esc(shortName(row.name))+'</span>'
           +'<span class="stock-pill '+cls+'">'+row.qty+' шт.</span></div>';
-      }).join("")+(entries.length>8?'<div style="font-size:11px;color:var(--ink4);padding:4px 0">...ще '+(entries.length-8)+'</div>':"")
+      }).join("")+(entries.length>6?'<div style="font-size:11px;color:var(--ink4);padding:4px 0">...ще '+(entries.length-6)+'</div>':"")
       :'<div style="color:var(--ink4);font-size:12px;padding:4px 0">Немає товарів на залишку</div>')
       +(lastJ?'<div style="font-size:11px;color:var(--ink4);margin-top:8px;border-top:1px solid var(--border);padding-top:6px">Остання поставка: '+lastJ+'</div>':"")
       +'</div></div>';
   }).join("")+'</div>';
+}
+
+function openRetailDetailModal(buyerId){
+  var b=buyers.find(function(x){return x.id===buyerId;});
+  if(!b) return;
+  var storeData=retailStock[buyerId]||{};
+  var entries=Object.keys(storeData).filter(function(k){return storeData[k].qty>0;}).sort(function(a,b){return (storeData[b].qty||0)-(storeData[a].qty||0);});
+  var totalQty=entries.reduce(function(s,k){return s+(storeData[k].qty||0);},0);
+
+  // Sales history for this store
+  var reports=salesReports.filter(function(r){return r.buyerId===buyerId;}).slice(0,12);
+
+  // Build stock table
+  var stockHtml=entries.length
+    ? '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:4px">'
+      +'<thead><tr style="background:var(--surface3)"><th style="border:1px solid var(--border);padding:5px 8px;text-align:left">Товар</th><th style="border:1px solid var(--border);padding:5px 8px;text-align:center;width:80px">Залишок</th></tr></thead><tbody>'
+      +entries.map(function(k){
+        var row=storeData[k];
+        var cls=row.qty<3?"pill-low":"pill-ok";
+        return '<tr><td style="border:1px solid var(--border);padding:5px 8px">'+esc(shortName(row.name))+'</td>'
+          +'<td style="border:1px solid var(--border);padding:5px 8px;text-align:center"><span class="stock-pill '+cls+'">'+row.qty+' шт.</span></td></tr>';
+      }).join("")
+      +'</tbody></table>'
+    : '<div style="color:var(--ink4);font-size:12px;padding:8px 0">Немає товарів на залишку</div>';
+
+  // Build sales history
+  var histHtml=reports.length
+    ? reports.map(function(r){
+        var total=r.items.reduce(function(s,i){return s+i.sold;},0);
+        return '<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">'
+          +'<div style="display:flex;justify-content:space-between;margin-bottom:4px">'
+          +'<strong>'+esc(r.month)+'</strong>'
+          +'<span style="color:var(--ink3)">'+total+' шт. продано</span></div>'
+          +'<div style="display:flex;flex-wrap:wrap;gap:4px">'
+          +r.items.map(function(i){return '<span style="background:var(--moss4);color:var(--pine);border-radius:20px;padding:1px 8px;font-size:11px"><strong>'+i.sold+'</strong> '+esc(shortName(i.name))+'</span>';}).join("")
+          +'</div></div>';
+      }).join("")
+    : '<div style="color:var(--ink4);font-size:12px;padding:8px 0">Звітів ще немає</div>';
+
+  var ex=document.getElementById("modal-retail-detail");if(ex)ex.remove();
+  var m=document.createElement("div");
+  m.id="modal-retail-detail";m.className="modal-overlay open";
+  m.innerHTML='<div class="modal" style="max-width:560px">'
+    +'<div class="modal-header">'
+    +'<h3>🏪 '+esc(b.retailName||b.name)+'</h3>'
+    +'<button class="modal-close" onclick="document.getElementById(\'modal-retail-detail\').remove()">×</button>'
+    +'</div>'
+    +'<div style="font-size:12px;color:var(--ink3);margin-bottom:14px">'+(b.fullName||b.name)+(b.address?' · '+esc(b.address):'')+'</div>'
+
+    +'<div style="font-weight:700;font-size:13px;color:var(--pine);margin-bottom:8px">📦 Залишок ('+totalQty+' шт.)</div>'
+    +stockHtml
+
+    +'<div style="font-weight:700;font-size:13px;color:var(--pine);margin:14px 0 8px">📊 Історія продажів</div>'
+    +histHtml
+
+    +'<div style="border-top:1px solid var(--border);margin-top:16px;padding-top:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">'
+    +(b.custom
+      ? '<button class="btn btn-danger btn-sm" onclick="confirmDeleteRetailPoint(\''+buyerId+'\')">🗑 Видалити точку</button>'
+      : '<div></div>')
+    +'<button class="btn btn-gray btn-sm" onclick="document.getElementById(\'modal-retail-detail\').remove()">Закрити</button>'
+    +'</div>'
+    +'</div>';
+  document.body.appendChild(m);
+}
+
+function confirmDeleteRetailPoint(buyerId){
+  var b=buyers.find(function(x){return x.id===buyerId;});
+  if(!b) return;
+  if(!confirm("Видалити точку «"+b.name+"»?\nВсі залишки та дані точки буде втрачено.")) return;
+  if(!confirm("Підтвердіть ще раз: видалити «"+b.name+"» назавжди?")) return;
+  buyers=buyers.filter(function(x){return x.id!==buyerId;});
+  if(retailStock[buyerId]) delete retailStock[buyerId];
+  save();
+  var m=document.getElementById("modal-retail-detail");if(m)m.remove();
+  renderRetailTab();renderBuyerSelect();
 }
 
 function renderRetailHistory(){
@@ -2808,20 +2901,37 @@ function saveSalesReport(){
   var bid=document.getElementById("sales-buyer-id").value;
   var month=document.getElementById("sales-month").value;
   if(!bid||!month){alert("Оберіть точку та місяць");return;}
-  var reportItems=[],hasData=false;
+
+  // Aggregate by productId — multiple rows with same pid get summed
+  var soldMap={};
   document.querySelectorAll("#sales-items-list input[data-pid]").forEach(function(inp){
     var sold=parseInt(inp.value)||0;
-    reportItems.push({productId:inp.dataset.pid,name:inp.dataset.pname,sold:sold});
-    if(sold>0){
-      hasData=true;
-      if(retailStock[bid]&&retailStock[bid][inp.dataset.pid])
-        retailStock[bid][inp.dataset.pid].qty=Math.max(0,retailStock[bid][inp.dataset.pid].qty-sold);
+    if(sold<=0) return;
+    var pid=inp.dataset.pid;
+    if(!soldMap[pid]) soldMap[pid]={productId:pid,name:inp.dataset.pname,sold:0};
+    soldMap[pid].sold+=sold;
+  });
+
+  var reportItems=Object.keys(soldMap).map(function(k){return soldMap[k];});
+  if(!reportItems.length){alert("Введіть хоча б одну продану позицію");return;}
+
+  // Deduct from retail stock
+  reportItems.forEach(function(item){
+    if(retailStock[bid]&&retailStock[bid][item.productId]){
+      retailStock[bid][item.productId].qty=Math.max(0,retailStock[bid][item.productId].qty-item.sold);
     }
   });
-  if(!hasData){alert("Введіть хоча б одну продану позицію");return;}
+
+  // Clean up zero-qty entries to keep storage lean
+  if(retailStock[bid]){
+    Object.keys(retailStock[bid]).forEach(function(k){
+      if((retailStock[bid][k].qty||0)<=0) delete retailStock[bid][k];
+    });
+  }
+
   var buyerObj=buyers.find(function(b){return b.id===bid;});
   salesReports.unshift({id:uid(),buyerId:bid,buyerName:buyerObj&&buyerObj.name||bid,
-    month:month,items:reportItems.filter(function(i){return i.sold>0;}),savedAt:new Date().toISOString()});
+    month:month,items:reportItems,savedAt:new Date().toISOString()});
   save();closeModal("modal-sales");renderRetailTab();alert("✅ Звіт збережено!");
 }
 
@@ -3703,6 +3813,7 @@ var DEFAULT_BOM = {
   tube20:  { sticks:20, tubes:1, labels:1 },
   tube40:  { sticks:40, tubes:1, labels:1 },
   refill:  { sticks:20, tubes:0, labels:1 },
+  tester:  { sticks:5,  tubes:0, labels:0 },
   stand:   { sticks:0,  tubes:0, labels:0 },
   other:   { sticks:0,  tubes:0, labels:0 },
 };
@@ -3753,10 +3864,11 @@ var MAT_FIELDS = [
 
 // BOM group display
 var BOM_GROUPS = [
-  { key:"tube20", label:"Тубус 20шт" },
-  { key:"tube40", label:"Тубус 40шт" },
-  { key:"refill", label:"Рефіл 20шт (папір)" },
-  { key:"stand",  label:"Підставка" },
+  { key:"tube20",  label:"Тубус 20шт" },
+  { key:"tube40",  label:"Тубус 40шт" },
+  { key:"refill",  label:"Рефіл 20шт (папір)" },
+  { key:"tester",  label:"Тестер 5шт" },
+  { key:"stand",   label:"Підставка" },
 ];
 var BOM_ROWS = [
   { key:"sticks", label:"Палички",   unit:"шт/пачку" },
@@ -4011,6 +4123,27 @@ function renderCogsResult() {
       + mkBreakItem("Накладні", ce.overheadFixed + ce.miscCost, ce.totalCost)
       + '</div></div>';
   }
+
+  // Expandable: Тестер 5шт — only sticks cost (no tube, no label)
+  rhtml += '<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700;font-size:13px;color:var(--pine);padding:8px 0">🧪 Тестер 5шт — собівартість по ароматах</summary>';
+  rhtml += '<div style="overflow-x:auto;margin-top:8px"><table class="inv-table" style="min-width:500px"><thead><tr>'
+    + '<th>Аромат</th>'
+    + '<th style="text-align:right">₴/кг</th>'
+    + '<th style="text-align:right;font-weight:700">COGS (₴)</th>'
+    + '<th style="font-size:11px;color:var(--ink4);text-align:center">Склад: 5 паличок, без тубусу і наліпки</th>'
+    + '</tr></thead><tbody>';
+  aromaKeys.forEach(function(aId, ai) {
+    var aromaKey = "aroma_" + aId;
+    var pricePerKg = matPrices[aromaKey] || DEFAULT_MAT_PRICES[aromaKey] || 0;
+    var c = calcCogsForGroup("tester", aromaKey);
+    rhtml += '<tr style="' + (ai%2?"background:var(--washi)":"") + '">'
+      + '<td style="font-weight:600">' + esc(AROMAS[aId].en) + '</td>'
+      + '<td style="text-align:right;color:var(--ink3)">' + pricePerKg.toLocaleString("uk-UA") + '</td>'
+      + '<td style="text-align:right;font-weight:700;color:var(--pine)">' + c.totalCost.toFixed(2) + '</td>'
+      + '<td style="text-align:center;font-size:11px;color:var(--ink4)">палички: ' + c.stickCost.toFixed(2) + ' + накладні: ' + (c.overheadFixed+c.miscCost).toFixed(2) + '</td>'
+      + '</tr>';
+  });
+  rhtml += '</tbody></table></div></details>';
 
   document.getElementById("cogs-result-table").innerHTML = rhtml;
 }
