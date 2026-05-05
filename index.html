@@ -1203,7 +1203,30 @@ function getCloudDocRef(){
 function subscribeToCloudState(){
   if(!cloudDb||!cloudUser)return;
   updateCloudStatus("Підключення до спільної бази...");
+
+  // Timeout — якщо за 10 сек немає відповіді, пробуємо get() замість onSnapshot
+  var connectTimeout=setTimeout(function(){
+    updateCloudStatus("Повільне з'єднання, пробую разовий запит...");
+    getCloudDocRef().get().then(function(snap){
+      if(!snap.exists){
+        pushCloudState(true);
+      } else {
+        var data=snap.data()||{};
+        if(data.revision!==lastPushedRevision){
+          cloudApplyingRemote=true;
+          applyAppState(data.state||{});
+          save(); rerenderAfterStateChange();
+          cloudApplyingRemote=false;
+        }
+        updateCloudStatus("Синхронізовано (офлайн режим) ✔");
+      }
+    }).catch(function(err){
+      updateCloudStatus("Помилка: "+err.message, true);
+    });
+  }, 10000);
+
   cloudUnsub=getCloudDocRef().onSnapshot(function(snap){
+    clearTimeout(connectTimeout); // скасовуємо timeout якщо з'єднання є
     if(!snap.exists){
       updateCloudStatus("Спільна база порожня. Завантажую ваші поточні дані...");
       pushCloudState(true);
@@ -1212,7 +1235,7 @@ function subscribeToCloudState(){
     var data=snap.data()||{};
     if(data.revision && data.revision===lastPushedRevision){
       lastSeenRemoteRevision=data.revision;
-      updateCloudStatus("Синхронізовано ✔");
+      updateCloudStatus("Синхронізовано ✔ · "+new Date().toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit'}));
       return;
     }
     cloudApplyingRemote=true;
@@ -1224,8 +1247,9 @@ function subscribeToCloudState(){
     var when=data.updatedAt&&data.updatedAt.toDate?data.updatedAt.toDate().toLocaleString('uk-UA'):"щойно";
     updateCloudStatus("Оновлено зі спільної бази: "+when);
   }, function(err){
+    clearTimeout(connectTimeout);
     console.error(err);
-    updateCloudStatus("Помилка читання Firestore: "+err.message, true);
+    updateCloudStatus("Помилка читання Firestore: "+err.message+" (код: "+err.code+")", true);
   });
 }
 
