@@ -1206,16 +1206,6 @@ function initCloud(){
     cloudReady=true;
     updateCloudStatus("Firebase підключено. Увійдіть через Google.");
 
-    // Handle redirect result (from signInWithRedirect)
-    cloudAuth.getRedirectResult().then(function(result){
-      // result.user will be set if we just came back from a redirect sign-in
-      // onAuthStateChanged below will handle the rest
-    }).catch(function(err){
-      if(err.code !== 'auth/no-current-user'){
-        console.warn("Redirect result error:", err.message);
-      }
-    });
-
     cloudAuth.onAuthStateChanged(function(user){
       cloudUser=user||null;
       updateCloudUi();
@@ -1243,8 +1233,9 @@ function initCloud(){
 function cloudSignIn(){
   if(!cloudReady){alert("Спочатку заповніть firebase-config.js");return;}
   var provider=new firebase.auth.GoogleAuthProvider();
-  // Use redirect instead of popup to avoid Cross-Origin-Opener-Policy issues
-  cloudAuth.signInWithRedirect(provider).catch(function(err){
+  // signInWithPopup — COOP warning in console is harmless, redirect breaks in Chrome
+  cloudAuth.signInWithPopup(provider).catch(function(err){
+    if(err.code === 'auth/cancelled-by-user' || err.code === 'auth/popup-closed-by-user') return;
     alert("Не вдалося увійти: "+err.message);
   });
 }
