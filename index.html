@@ -1135,6 +1135,12 @@ function applyAppState(data){
   rawStock=data.rawStock||{};
   receiveHistory=data.receiveHistory||[];
   retailStock=data.retailStock||{};
+  // Prune zero-qty entries coming from cloud to keep data clean
+  Object.keys(retailStock).forEach(function(bid){
+    Object.keys(retailStock[bid]).forEach(function(pid){
+      if((retailStock[bid][pid].qty||0)<=0) delete retailStock[bid][pid];
+    });
+  });
   salesReports=data.salesReports||[];
   if(data.suppliers)suppliers=data.suppliers;
   if(data.reorderPoints)reorderPoints=data.reorderPoints;
