@@ -1153,7 +1153,6 @@ function rerenderAfterStateChange(){
   loadSettings();
   renderDashboard();
   renderJournal();
-  renderWarehouse();
   renderRawMaterials();
   renderReceiveHistory();
   renderRetailStoreGrid();
@@ -2382,130 +2381,8 @@ function receiveGoods(){
   alert("✅ Прийнято "+rawQty+" "+unit+(t==="sticks"?" "+aromaLabel+" (≈"+sticks+" паличок)":"")+" за "+priceUah+" ₴/"+unit);
 }
 
-function renderAssembleSelect(){
-  var sel=document.getElementById("assemble-product");
-  var opts=products.filter(function(p){return p.group==="tube20"||p.group==="tube40"||p.group==="refill";})
-    .map(function(p){return "<option value=\""+p.id+"\">"+shortName(p.name)+"</option>";}).join("");
-  sel.innerHTML="<option value=\"\">— Оберіть SKU —</option>"+opts;
-  updateAssemblePreview();
-}
-function updateAssemblePreview(){
-  var pid=document.getElementById("assemble-product").value;
-  var qty=parseInt(document.getElementById("assemble-qty").value)||0;
-  var prev=document.getElementById("assemble-preview");
-  if(!pid||!qty){prev.textContent="";return;}
-  var p=products.find(function(x){return x.id===pid;});
-  var bom=BOM[p&&p.group||"other"]||BOM.other;
-  var stikesNeeded=bom.sticks*qty;
-  var tubsNeeded=(bom.tubes||0)*qty;
-  var labsNeeded=(bom.labels||0)*qty;
-  // Check sticks for specific aroma
-  var aromaId=PRODUCT_AROMA[pid];
-  var aromaSticks=0, aromaLabel="";
-  if(aromaId){
-    var k="sticks_"+aromaId;
-    aromaSticks=(rawStock[k]&&rawStock[k].sticks)||Math.round(getRawQty(k)*2000);
-    aromaLabel=AROMAS[aromaId]?AROMAS[aromaId].en:"";
-  } else {
-    // tester — sum all aromas
-    Object.keys(AROMAS).forEach(function(a){
-      var k="sticks_"+a;
-      aromaSticks+=(rawStock[k]&&rawStock[k].sticks)||Math.round(getRawQty(k)*2000);
-    });
-    aromaLabel="будь-який";
-  }
-  var tubsAvail=getRawQty("tubes");
-  var labsAvail=getRawQty("labels");
-  var ok=aromaSticks>=stikesNeeded
-    &&(tubsNeeded===0||tubsAvail>=tubsNeeded)
-    &&labsAvail>=labsNeeded;
-  var parts=[];
-  if(stikesNeeded)parts.push(aromaLabel+" паличок: "+stikesNeeded+" (є: "+aromaSticks+")");
-  if(tubsNeeded)  parts.push("тубусів: "+tubsNeeded+" (є: "+tubsAvail+")");
-  if(labsNeeded)  parts.push("наліпок: "+labsNeeded+" (є: "+labsAvail+")");
-  prev.textContent="Потрібно: "+parts.join(" · ")+(ok?" ✅ Достатньо":" ⚠️ Нестача матеріалів");
-  prev.style.borderColor=ok?"var(--moss3)":"var(--gold)";
-}
-document.addEventListener("change",function(e){if(e.target.id==="assemble-product"||e.target.id==="assemble-qty")updateAssemblePreview();});
-document.addEventListener("input",function(e){if(e.target.id==="assemble-qty")updateAssemblePreview();});
 
-function assembleBatch(){
-  var pid=document.getElementById("assemble-product").value;
-  var qty=parseInt(document.getElementById("assemble-qty").value)||0;
-  if(!pid||qty<=0){alert("Вкажіть товар і кількість");return;}
-  var p=products.find(function(x){return x.id===pid;});
-  var group=p&&p.group||"other";
-  var bom=bomData[group]||DEFAULT_BOM[group]||{};
-  var stikesNeeded=bom.sticks*qty;
-  var tubsNeeded=(bom.tubes||0)*qty;
-  var labsNeeded=(bom.labels||0)*qty;
 
-  // Deduct sticks by AROMA (not by supplier)
-  var aromaId=PRODUCT_AROMA[pid];
-  if(stikesNeeded>0 && aromaId){
-    var k="sticks_"+aromaId;
-    if(!rawStock[k])rawStock[k]={qty:0,avgCostUah:0,sticks:0,unit:"кг"};
-    var sticksPerKg=2000;
-    var kgNeeded=stikesNeeded/sticksPerKg;
-    var kgDeduct=Math.min(rawStock[k].qty, kgNeeded);
-    var sticksDeducted=Math.round(kgDeduct*sticksPerKg);
-    rawStock[k].qty=Math.max(0,rawStock[k].qty-kgDeduct);
-    rawStock[k].sticks=Math.max(0,(rawStock[k].sticks||0)-sticksDeducted);
-    var remaining=stikesNeeded-sticksDeducted;
-    // If not enough from this aroma, try legacy supplier keys as fallback
-    if(remaining>0){
-      ["yasuhito","ryo","hanna","yoko"].forEach(function(s){
-        var lk="sticks_"+s;
-        if(!rawStock[lk]||rawStock[lk].qty<=0||remaining<=0)return;
-        var kgN=remaining/sticksPerKg;
-        var kgD=Math.min(rawStock[lk].qty,kgN);
-        var sD=Math.round(kgD*sticksPerKg);
-        rawStock[lk].qty-=kgD;
-        rawStock[lk].sticks=Math.max(0,(rawStock[lk].sticks||0)-sD);
-        remaining-=sD;
-      });
-    }
-  } else if(stikesNeeded>0 && !aromaId){
-    // Tester or unknown — deduct from any available aroma
-    var remaining=stikesNeeded;
-    Object.keys(AROMAS).forEach(function(a){
-      var k="sticks_"+a;
-      if(!rawStock[k]||rawStock[k].qty<=0||remaining<=0)return;
-      var kgN=remaining/2000; var kgD=Math.min(rawStock[k].qty,kgN);
-      var sD=Math.round(kgD*2000);
-      rawStock[k].qty-=kgD; rawStock[k].sticks=Math.max(0,(rawStock[k].sticks||0)-sD);
-      remaining-=sD;
-    });
-  }
-  if(rawStock.tubes)  rawStock.tubes.qty  =Math.max(0,(rawStock.tubes.qty||0)-tubsNeeded);
-  if(rawStock.labels) rawStock.labels.qty =Math.max(0,(rawStock.labels.qty||0)-labsNeeded);
-
-  // COGS from rawStock avg prices (updated on each receiving)
-  var mp=matPrices; var mp0=DEFAULT_MAT_PRICES;
-  var sticksPerKg=2000;
-  var aromaKey=aromaId?"aroma_"+aromaId:"aroma_osmanthus";
-  var aromaRawKey=aromaId?"sticks_"+aromaId:null;
-  var pricePerKg=aromaRawKey&&rawStock[aromaRawKey]&&rawStock[aromaRawKey].avgCostUah>0?rawStock[aromaRawKey].avgCostUah:(mp[aromaKey]||mp0[aromaKey]||0);
-  var stickCost=(bom.sticks||0)*(pricePerKg/sticksPerKg);
-  var tubePrice=(rawStock.tubes&&rawStock.tubes.avgCostUah>0)?rawStock.tubes.avgCostUah:(mp.tube_uah||mp0.tube_uah||0);
-  var labelPrice=(rawStock.labels&&rawStock.labels.avgCostUah>0)?rawStock.labels.avgCostUah:(mp.label_uah||mp0.label_uah||0);
-  var tubeCost =(bom.tubes||0)*tubePrice;
-  var labelCost=(bom.labels||0)*labelPrice;
-  var overhead=(mp.labor_uah||mp0.labor_uah)+(mp.delivery_per_pack_uah||mp0.delivery_per_pack_uah)+(mp.promo_per_pack_uah||mp0.promo_per_pack_uah);
-  var subtotal=stickCost+tubeCost+labelCost+overhead;
-  var miscCost=subtotal*((mp.misc_pct||mp0.misc_pct||3)/100);
-  var cogsPerPack=subtotal+miscCost;
-
-  // Add to warehouse
-  if(!warehouseStock[pid])warehouseStock[pid]={qty:0,avgCogs:0,name:p.name};
-  var old=warehouseStock[pid];
-  var newAvg=old.qty>0?(old.avgCogs*old.qty+cogsPerPack*qty)/(old.qty+qty):cogsPerPack;
-  old.qty+=qty; old.avgCogs=newAvg; old.name=p.name;
-
-  receiveHistory.unshift({id:uid(),date:new Date().toISOString().split("T")[0],type:"assembly",
-    productId:pid,name:p.name,qty:qty,cogs:cogsPerPack,aroma:aromaId||null,note:"Збірка "+qty+" шт.",savedAt:new Date().toISOString()});
-  save();renderRawMaterials();renderReceiveHistory();updateAssemblePreview();
-}
 
 // ============================================================
 // DEDUCT RAW MATERIALS FOR INVOICE ITEMS (replaces assembly step)
@@ -4141,7 +4018,6 @@ window.addEventListener("DOMContentLoaded",function(){
     if(maxNum>0)document.getElementById("inv-num").value=maxNum+1;
   }
   renderDashboard();
-  renderAssembleSelect();
 });
 
 // ============================================================
