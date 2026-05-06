@@ -2748,30 +2748,53 @@ function renderRetailStoreGrid(){
   }).join("")+'</div>';
 }
 
-function openRetailDetailModal(buyerId){
+function openRetailDetailModal(buyerId, editMode){
   var b=buyers.find(function(x){return x.id===buyerId;});
   if(!b) return;
-  var storeData=retailStock[buyerId]||{};
-  var entries=Object.keys(storeData).filter(function(k){return storeData[k].qty>0;}).sort(function(a,b){return (storeData[b].qty||0)-(storeData[a].qty||0);});
-  var totalQty=entries.reduce(function(s,k){return s+(storeData[k].qty||0);},0);
 
-  // Sales history for this store
+  // Always prune zeros before showing
+  if(!retailStock[buyerId]) retailStock[buyerId]={};
+  Object.keys(retailStock[buyerId]).forEach(function(pid){
+    if((retailStock[buyerId][pid].qty||0)<=0) delete retailStock[buyerId][pid];
+  });
+
+  var storeData=retailStock[buyerId];
+  var entries=Object.keys(storeData).sort(function(a,b2){return (storeData[b2].qty||0)-(storeData[a].qty||0);});
+  var totalQty=entries.reduce(function(s,k){return s+(storeData[k].qty||0);},0);
   var reports=salesReports.filter(function(r){return r.buyerId===buyerId;}).slice(0,12);
 
-  // Build stock table
-  var stockHtml=entries.length
-    ? '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:4px">'
-      +'<thead><tr style="background:var(--surface3)"><th style="border:1px solid var(--border);padding:5px 8px;text-align:left">Товар</th><th style="border:1px solid var(--border);padding:5px 8px;text-align:center;width:80px">Залишок</th></tr></thead><tbody>'
-      +entries.map(function(k){
-        var row=storeData[k];
-        var cls=row.qty<3?"pill-low":"pill-ok";
-        return '<tr><td style="border:1px solid var(--border);padding:5px 8px">'+esc(shortName(row.name))+'</td>'
-          +'<td style="border:1px solid var(--border);padding:5px 8px;text-align:center"><span class="stock-pill '+cls+'">'+row.qty+' шт.</span></td></tr>';
-      }).join("")
-      +'</tbody></table>'
-    : '<div style="color:var(--ink4);font-size:12px;padding:8px 0">Немає товарів на залишку</div>';
+  // Stock section — view or edit mode
+  var stockHtml;
+  if(editMode){
+    stockHtml='<div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Встановіть точні залишки. Порожнє поле або 0 — видалить позицію.</div>';
+    stockHtml+='<div id="retail-edit-rows">';
+    entries.forEach(function(k){
+      var row=storeData[k];
+      stockHtml+='<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">'
+        +'<span style="flex:1;font-size:12px">'+esc(shortName(row.name))+'</span>'
+        +'<input type="number" min="0" max="999" value="'+row.qty+'" data-pid="'+k+'" data-pname="'+esc(row.name)+'"'
+        +' style="width:70px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:13px;text-align:center">'
+        +'</div>';
+    });
+    stockHtml+='</div>';
+  } else {
+    stockHtml=entries.length
+      ? '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:4px">'
+        +'<thead><tr style="background:var(--surface3)">'
+        +'<th style="border:1px solid var(--border);padding:5px 8px;text-align:left">Товар</th>'
+        +'<th style="border:1px solid var(--border);padding:5px 8px;text-align:center;width:80px">Залишок</th>'
+        +'</tr></thead><tbody>'
+        +entries.map(function(k){
+          var row=storeData[k];
+          var cls=row.qty<3?"pill-low":"pill-ok";
+          return '<tr><td style="border:1px solid var(--border);padding:5px 8px">'+esc(shortName(row.name))+'</td>'
+            +'<td style="border:1px solid var(--border);padding:5px 8px;text-align:center">'
+            +'<span class="stock-pill '+cls+'">'+row.qty+' шт.</span></td></tr>';
+        }).join("")
+        +'</tbody></table>'
+      : '<div style="color:var(--ink4);font-size:12px;padding:8px 0">Немає товарів на залишку</div>';
+  }
 
-  // Build sales history
   var histHtml=reports.length
     ? reports.map(function(r){
         var total=r.items.reduce(function(s,i){return s+i.sold;},0);
@@ -2780,8 +2803,10 @@ function openRetailDetailModal(buyerId){
           +'<strong>'+esc(r.month)+'</strong>'
           +'<span style="color:var(--ink3)">'+total+' шт. продано</span></div>'
           +'<div style="display:flex;flex-wrap:wrap;gap:4px">'
-          +r.items.map(function(i){return '<span style="background:var(--moss4);color:var(--pine);border-radius:20px;padding:1px 8px;font-size:11px"><strong>'+i.sold+'</strong> '+esc(shortName(i.name))+'</span>';}).join("")
-          +'</div></div>';
+          +r.items.map(function(i){
+            return '<span style="background:var(--moss4);color:var(--pine);border-radius:20px;padding:1px 8px;font-size:11px">'
+              +'<strong>'+i.sold+'</strong> '+esc(shortName(i.name))+'</span>';
+          }).join("")+'</div></div>';
       }).join("")
     : '<div style="color:var(--ink4);font-size:12px;padding:8px 0">Звітів ще немає</div>';
 
@@ -2795,8 +2820,17 @@ function openRetailDetailModal(buyerId){
     +'</div>'
     +'<div style="font-size:12px;color:var(--ink3);margin-bottom:14px">'+(b.fullName||b.name)+(b.address?' · '+esc(b.address):'')+'</div>'
 
-    +'<div style="font-weight:700;font-size:13px;color:var(--pine);margin-bottom:8px">📦 Залишок ('+totalQty+' шт.)</div>'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+    +'<div style="font-weight:700;font-size:13px;color:var(--pine)">📦 Залишок ('+totalQty+' шт.)</div>'
+    +(editMode
+      ? '<button class="btn btn-gray btn-sm" onclick="openRetailDetailModal(\''+buyerId+'\')">✕ Скасувати</button>'
+      : '<button class="btn btn-sm" style="background:var(--moss3);color:var(--pine)" onclick="openRetailDetailModal(\''+buyerId+'\',true)">✏️ Коригувати</button>')
+    +'</div>'
     +stockHtml
+
+    +(editMode
+      ? '<div style="margin-top:12px"><button class="btn btn-primary" onclick="saveRetailStockEdit(\''+buyerId+'\')">💾 Зберегти залишки</button></div>'
+      : '')
 
     +'<div style="font-weight:700;font-size:13px;color:var(--pine);margin:14px 0 8px">📊 Історія продажів</div>'
     +histHtml
@@ -2809,6 +2843,22 @@ function openRetailDetailModal(buyerId){
     +'</div>'
     +'</div>';
   document.body.appendChild(m);
+}
+
+function saveRetailStockEdit(buyerId){
+  if(!retailStock[buyerId]) retailStock[buyerId]={};
+  // Remove all existing entries first
+  Object.keys(retailStock[buyerId]).forEach(function(k){ delete retailStock[buyerId][k]; });
+  // Apply edited values
+  document.querySelectorAll("#retail-edit-rows input[data-pid]").forEach(function(inp){
+    var qty=parseInt(inp.value)||0;
+    if(qty>0){
+      retailStock[buyerId][inp.dataset.pid]={qty:qty, name:inp.dataset.pname};
+    }
+  });
+  save();
+  scheduleCloudPush();
+  openRetailDetailModal(buyerId); // back to view mode
 }
 
 function confirmDeleteRetailPoint(buyerId){
