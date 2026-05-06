@@ -1366,8 +1366,12 @@ function formatDate(s){
   return d.getDate()+" "+months[d.getMonth()]+" "+d.getFullYear()+" р.";
 }
 function shortName(name){
-  var m=name.match(/Палички ароматичні (.+?) (\d+шт)(.*?),/);
-  if(m){var a=m[1],q=m[2],s=m[3].trim();return s?a+" ("+q+" "+s.replace(/^,?\s*/,"")+")" : a+" ("+q+")";}
+  var m=name.match(/Палички ароматичні (.+?),? (\d+шт),?\s*(.+)/);
+  if(m){
+    var aroma=m[1].trim(),qty=m[2],rest=m[3].trim();
+    var pack=rest.indexOf("Папір")>=0?" 📄":"";
+    return aroma+" ("+qty+")"+pack;
+  }
   var m2=name.match(/Підставка (.+?), All/); if(m2)return m2[1];
   var m3=name.match(/Палички ароматичні (тестер .+?), /); if(m3)return m3[1];
   return name.substring(0,50);
