@@ -627,6 +627,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 .atik-toast-close:hover{color:var(--ink);}
 @keyframes atikToastIn{from{opacity:0;transform:translateX(20px);}to{opacity:1;transform:translateX(0);}}
 @keyframes atikToastOut{to{opacity:0;transform:translateX(20px);}}
+
+.store-card-item{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:14px;box-shadow:var(--shadow);cursor:pointer;transition:border-color .18s,box-shadow .18s;}
+.store-card-item:hover{border-color:var(--moss2);box-shadow:0 4px 16px rgba(61,107,74,.12);}
 </style>
 </head>
 <body>
@@ -1074,16 +1077,16 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
               style="padding:4px 10px;border:none;background:none;color:var(--ink3);font-size:11px;cursor:pointer;font-family:inherit;">12м</button>
           </div>
           <div style="display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;">
-            <button onclick="setChartMode('revenue')" id="chart-mode-revenue"
+            <button onclick="setChartMode('revenue')" id="chart-mode-revenue-sales"
               style="padding:4px 9px;border:none;background:var(--pine);color:#fff;font-size:11px;cursor:pointer;font-family:inherit;">₴</button>
-            <button onclick="setChartMode('profit')" id="chart-mode-profit"
+            <button onclick="setChartMode('profit')" id="chart-mode-profit-sales"
               style="padding:4px 9px;border:none;background:none;color:var(--ink3);font-size:11px;cursor:pointer;font-family:inherit;">%</button>
-            <button onclick="setChartMode('units')" id="chart-mode-units"
+            <button onclick="setChartMode('units')" id="chart-mode-units-sales"
               style="padding:4px 9px;border:none;background:none;color:var(--ink3);font-size:11px;cursor:pointer;font-family:inherit;">шт</button>
           </div>
         </div>
       </div>
-      <div id="stats-chart-svg" style="width:100%;min-height:80px;"></div>
+      <div id="stats-chart-svg-sales" style="width:100%;min-height:80px;"></div>
     </div>
 
     <!-- P&L -->
@@ -1687,10 +1690,12 @@ function setChartPeriod(p){
 function setChartMode(m){
   chartMode=m;
   ['revenue','profit','units'].forEach(function(id){
-    var b=document.getElementById('chart-mode-'+id);
-    if(!b)return;
-    b.style.background = id===m ? 'var(--pine)' : '';
-    b.style.color      = id===m ? '#fff' : 'var(--ink3)';
+    ['chart-mode-'+id,'chart-mode-'+id+'-sales'].forEach(function(bid){
+      var b=document.getElementById(bid);
+      if(!b)return;
+      b.style.background = id===m ? 'var(--pine)' : '';
+      b.style.color      = id===m ? '#fff' : 'var(--ink3)';
+    });
   });
   renderMonthlyChart();
 }
@@ -2203,7 +2208,7 @@ function switchTab(tab){
     var nm=new Date(),ym=nm.getFullYear()+"-"+String(nm.getMonth()+1).padStart(2,"0");
     var om=document.getElementById("opex-month");if(om&&!om.value)om.value=ym;
     loadOpexForMonth(); renderStats();
-    setTimeout(function(){setChartPeriod(chartPeriod||6);},50);
+    setTimeout(function(){setChartPeriod(chartPeriod||6); renderMonthlyChart();},50);
   }
   if(tab==="orders")     { loadOrders(); }
   if(tab==="retail")     { renderRetailStoreGrid(); renderRetailHistory(); }
@@ -3594,7 +3599,8 @@ function renderRetailStoreGrid(){
           (r.items||[]).forEach(function(it){monthRevenue+=(it.qty||0)*(it.price||0);});
         });
       var city=b.address?(b.address.match(/м\.?\s*([^\s,]+)/)||[])[1]||"":"";
-      return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:14px;box-shadow:var(--shadow);">'
+      return '<div class="store-card-item" onclick="openRetailDetailModal(\''+b.id+'\')">'
+
         +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
           +'<div style="width:28px;height:28px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;">'
             +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><polyline points="16 21 16 7"/><path d="M6 7V5a2 2 0 014 0v2M14 7V5a2 2 0 00-4 0v2"/></svg>'
@@ -4032,7 +4038,8 @@ function renderDashboard(){
 // ============================================================
 function renderMonthlyChart(){
   var el=document.getElementById('stats-chart-svg');
-  if(!el)return;
+  var el2=document.getElementById('stats-chart-svg-sales');
+  if(!el&&!el2)return;
   var now=new Date(), months=[];
   var period=chartPeriod||6;
   for(var i=period-1;i>=0;i--){
@@ -4075,7 +4082,9 @@ function renderMonthlyChart(){
     if(bh>20&&Math.abs(v)>0)svg+='<text x="'+(bx+bW/2)+'" y="'+(by-(isNeg?-12:4))+'" text-anchor="middle" font-size="9" fill="var(--ink3)" font-weight="600">'+fmtY(Math.abs(v))+'</text>';
     svg+='<text x="'+(bx+bW/2)+'" y="'+(H-4)+'" text-anchor="middle" font-size="'+(isMobile?8:10)+'" fill="'+(isCur?'var(--pine)':'var(--ink4)')+'" font-weight="'+(isCur?700:400)+'">'+mo.label+'</text>';
   });
-  el.innerHTML='<svg width="100%" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'+svg+'</svg>';
+  var svgHtml='<svg width="100%" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'+svg+'</svg>';
+  if(el) el.innerHTML=svgHtml;
+  if(el2) el2.innerHTML=svgHtml;
 }
 
 // ============================================================
@@ -4336,6 +4345,14 @@ function showBuyerForm(editId){
       if(rn) rn.value=b.retailName||"";
     }
   }
+  // Make sure the buyers section is visible (it may be hidden by sub-tab logic)
+  var section=document.getElementById("catalog-buyers-section");
+  if(section) section.style.display="";
+  // If catalog tab is active, switch sub-tab to buyers
+  if(document.getElementById("pane-catalog")&&document.getElementById("pane-catalog").style.display!=="none"){
+    currentSubTab["catalog"]="buyers";
+    renderSubNav("catalog");
+  }
   var form=document.getElementById("buyer-form");
   form.style.display="";
   setTimeout(function(){form.scrollIntoView({behavior:"smooth",block:"start"});},50);
@@ -4493,6 +4510,13 @@ function showProductForm(editId){
   if(editId){var p=products.find(function(x){return x.id===editId;});
     if(p){document.getElementById("np-name").value=p.name||"";document.getElementById("np-shelf").value=p.shelf||"";document.getElementById("np-pack").value=p.pack||"";
       if(document.getElementById("np-group"))document.getElementById("np-group").value=p.group||"tube20";}}
+  // Make sure the products section is visible
+  var psection=document.getElementById("catalog-products-section");
+  if(psection) psection.style.display="";
+  if(document.getElementById("pane-catalog")&&document.getElementById("pane-catalog").style.display!=="none"){
+    currentSubTab["catalog"]="products";
+    renderSubNav("catalog");
+  }
   document.getElementById("product-form").style.display="";
   document.getElementById("product-form").scrollIntoView({behavior:"smooth"});
 }
@@ -4821,11 +4845,22 @@ function qoRenderGrid(){
 
 
 function qoShortName(name) {
-  // "Cherry Bloom, Цвіт Вишні (20шт)" → "Cherry Bloom (20шт)"
-  // "Підставка ATIK&Anumo · кругла" → "Anumo Round"
-  var m = name.match(/^([^,]+)/);
-  var q = name.match(/\((\d+шт)\)/);
-  if (m) return m[1].trim() + (q ? ' ' + q[1] : '');
+  // Strip "Палички ароматичні " prefix, show EN aroma + pack + type
+  // "Палички ароматичні Cherry Bloom, Цвіт Вишні 20шт, All trees I know" → "Cherry Bloom 20шт"
+  // "Палички ароматичні Cherry Bloom, Цвіт Вишні 20шт, Папір" → "Cherry Bloom 20шт Папір"
+  // "Підставка..." → kept as is via shortName
+  var m = name.match(/Палички ароматичні (.+?),\s*.+?\s*(\d+шт),?\s*(Папір|тестер)?/i);
+  if (m) {
+    var en = m[1].trim();
+    var pack = m[2];
+    var type = m[3] ? (' · ' + m[3]) : '';
+    return en + ' ' + pack + type;
+  }
+  // Підставки — keep shortName format
+  var m2 = name.match(/Підставка (.+?), All/);
+  if (m2) return m2[1];
+  var m3 = name.match(/тестер (\d+шт)/i);
+  if (m3) return 'Тестер ' + m3[1];
   return name.substring(0, 30);
 }
 
