@@ -1863,13 +1863,17 @@ function initCloud(){
     return;
   }
   try{
-    cloudApp=firebase.initializeApp(window.ATIK_FIREBASE_CONFIG);
+    cloudApp = firebase.apps.length
+      ? firebase.app()
+      : firebase.initializeApp(window.ATIK_FIREBASE_CONFIG);
     cloudAuth=firebase.auth();
     // NOTE: cloudDb is initialized lazily on first auth — this prevents
     // Firestore from opening WebChannel connections before the user logs in,
     // which caused 404 / transport errors in the DevTools console.
     cloudReady=true;
     updateCloudStatus("Firebase підключено. Увійдіть через Google.");
+    // Initialize Firestore immediately (safe to do before auth)
+    if(!cloudDb){ try{ cloudDb=firebase.firestore(); }catch(e){} }
 
     cloudAuth.onAuthStateChanged(function(user){
       cloudUser=user||null;
@@ -5472,6 +5476,8 @@ function renderOrders() {
         btns+='<button onclick="confirmOrder(\'+o._id+\')" style="flex:2;padding:8px 10px;border-radius:8px;border:none;background:var(--pine);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;">✓ Підтвердити → НН</button>';
       }
       if(isConf){ btns+='<span style="font-size:11px;color:var(--ink3);">Накладна створена</span>'; }
+      // Delete button — always visible
+      btns+='<button onclick="deleteOrder(\''+o._id+'\')" style="padding:6px 10px;border-radius:8px;border:1px solid var(--red2);background:var(--red2);color:var(--red);font-size:11px;cursor:pointer;font-family:inherit;flex-shrink:0;" title="Видалити">🗑</button>';
       return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:14px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:0;">'
         +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
           +'<div style="display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;">'+sourceIcon(src)+' '+esc(src.toUpperCase())+'</div>'
@@ -5499,6 +5505,19 @@ function confirmOrder(orderId) {
       createInvoiceFromOrder(orderId);
     })
     .catch(function(e){alert("Помилка: "+e.message);});
+}
+
+function deleteOrder(orderId) {
+  if(!confirm("Видалити замовлення? Цю дію не можна скасувати.")) return;
+  // Remove from local array
+  ordersData = ordersData.filter(function(x){ return x._id !== orderId; });
+  renderOrders();
+  renderDashboard();
+  // Remove from Firestore if connected
+  if(cloudDb) {
+    cloudDb.collection("orders").doc(orderId).delete()
+      .catch(function(e){ console.error("Delete error:", e.message); });
+  }
 }
 
 function declineOrder(orderId) {
