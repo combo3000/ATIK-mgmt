@@ -1061,33 +1061,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <div id="stats-cards" class="stats-grid" style="margin-bottom:14px;"></div>
     <div id="stats-margin-cards" class="stats-grid" style="margin-bottom:20px;"></div>
 
-    <!-- Chart card -->
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);
-      padding:16px;margin-bottom:14px;box-shadow:var(--shadow);" id="stats-chart-wrap">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px;">
-        <div>
-          <div style="font-size:13px;font-weight:700;color:var(--ink);">Виручка по місяцях</div>
-          <div id="dash-chart-subtitle" style="font-size:11px;color:var(--ink3);margin-top:2px;"></div>
-        </div>
-        <div style="display:flex;gap:5px;">
-          <div style="display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;">
-            <button onclick="setChartPeriod(6)" id="chart-period-6"
-              style="padding:4px 10px;border:none;background:var(--pine);color:#fff;font-size:11px;cursor:pointer;font-family:inherit;">6м</button>
-            <button onclick="setChartPeriod(12)" id="chart-period-12"
-              style="padding:4px 10px;border:none;background:none;color:var(--ink3);font-size:11px;cursor:pointer;font-family:inherit;">12м</button>
-          </div>
-          <div style="display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;">
-            <button onclick="setChartMode('revenue')" id="chart-mode-revenue-sales"
-              style="padding:4px 9px;border:none;background:var(--pine);color:#fff;font-size:11px;cursor:pointer;font-family:inherit;">₴</button>
-            <button onclick="setChartMode('profit')" id="chart-mode-profit-sales"
-              style="padding:4px 9px;border:none;background:none;color:var(--ink3);font-size:11px;cursor:pointer;font-family:inherit;">%</button>
-            <button onclick="setChartMode('units')" id="chart-mode-units-sales"
-              style="padding:4px 9px;border:none;background:none;color:var(--ink3);font-size:11px;cursor:pointer;font-family:inherit;">шт</button>
-          </div>
-        </div>
-      </div>
-      <div id="stats-chart-svg-sales" style="width:100%;min-height:80px;"></div>
-    </div>
+
 
     <!-- P&L -->
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);
