@@ -75,7 +75,7 @@ body{font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   border-bottom:2px solid transparent;
   border-top:2px solid transparent;
   font-size:12.5px;white-space:nowrap;transition:all .18s;
-  display:inline-flex;align-items:center;
+  display:inline-flex;align-items:center;gap:5px;
   font-family:inherit;}
 .tab.active{font-weight:600;color:var(--nav-text-active);
   border-bottom-color:var(--nav-active);}
@@ -691,7 +691,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 </div>
 
 <!-- ═══ DASHBOARD ═══ -->
-<div id="pane-dashboard" style="padding:24px 28px 32px;display:flex;flex-direction:column;gap:20px;max-width:1280px;margin:0 auto;width:100%;">
+<div id="pane-dashboard" style="padding:24px 28px 32px;display:flex;flex-direction:column;gap:20px;max-width:1280px;margin:0 auto;width:100%;min-height:0;">
 
   <!-- Quick Order CTA -->
   <div id="dash-quick-cta" style="
@@ -1208,7 +1208,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 <!-- ═══ CATALOG (Buyers + Products + Suppliers) ═══ -->
 <div id="pane-catalog" style="display:none;padding:18px;">
   <!-- BUYERS -->
-  <div class="card" id="catalog-buyers-section">
+  <div class="card" id="catalog-buyers-section" style="scroll-margin-top:100px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <div>
         <div style="font-size:18px;font-weight:700;color:var(--ink);">Покупці</div>
@@ -1248,7 +1248,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   </div>
 
   <!-- PRODUCTS -->
-  <div class="card" id="catalog-products-section">
+  <div class="card" id="catalog-products-section" style="scroll-margin-top:100px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <div>
         <div style="font-size:18px;font-weight:700;color:var(--ink);">Товари</div>
@@ -1280,7 +1280,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   </div>
 
   <!-- SUPPLIERS -->
-  <div class="card" id="catalog-suppliers-section">
+  <div class="card" id="catalog-suppliers-section" style="scroll-margin-top:100px">
     <div style="font-size:18px;font-weight:700;color:var(--ink);margin-bottom:14px;">Постачальники</div>
     <div class="manage-list" id="suppliers-list" style="margin-bottom:10px"></div>
     <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">
@@ -1694,9 +1694,6 @@ function setChartMode(m){
   });
   renderMonthlyChart();
 }
-var chartMode='revenue';
-var reorderPoints={};
-var opexStore={};
 var items=[{id:Date.now(),productId:"",qty:1,customPrice:""}];
 
 // CLOUD STATE
@@ -2037,7 +2034,7 @@ function shortName(name){
   if(m){
     var aroma=m[1].trim(),qty=m[2],rest=m[3].trim();
     var pack=rest.indexOf("Папір")>=0?" 📄":"";
-    return aroma+" ("+qty+")"+pack;
+    return aroma+" "+qty+pack;
   }
   var m2=name.match(/Підставка (.+?), All/); if(m2)return m2[1];
   var m3=name.match(/Палички ароматичні (тестер .+?), /); if(m3)return m3[1];
@@ -2139,9 +2136,20 @@ function switchSubTab(tab, sub) {
     renderStats();
   }
   if (tab==="catalog") {
+    // Show/hide catalog sections based on active sub-tab
+    var catSections = {buyers:"catalog-buyers-section", products:"catalog-products-section", suppliers:"catalog-suppliers-section"};
+    Object.keys(catSections).forEach(function(k){
+      var el=document.getElementById(catSections[k]);
+      if(el) el.style.display = k===sub ? "" : "none";
+    });
     if (sub==="buyers")    { renderBuyersList(); }
     if (sub==="products")  { renderProductsList(); }
     if (sub==="suppliers") { renderSuppliersList(); }
+    // Scroll section into view
+    setTimeout(function(){
+      var activeEl=document.getElementById(catSections[sub]);
+      if(activeEl) activeEl.scrollIntoView({behavior:"smooth",block:"start"});
+    },50);
   }
   if (tab==="orders") { renderOrders(); }
 }
@@ -2171,7 +2179,7 @@ function updateNavBadges() {
 
 function switchTab(tab){
   ALL_TABS.forEach(function(t){
-    var p=document.getElementById("pane-"+t); if(p)p.style.display=(t===tab?"":"none");
+    var p=document.getElementById("pane-"+t); if(p)p.style.display=(t===tab?(t==="dashboard"?"flex":""):"none");
   });
   document.querySelectorAll(".tabs .tab").forEach(function(el){
     el.classList.toggle("active", el.dataset.tab===tab);
@@ -2199,7 +2207,16 @@ function switchTab(tab){
   }
   if(tab==="orders")     { loadOrders(); }
   if(tab==="retail")     { renderRetailStoreGrid(); renderRetailHistory(); }
-  if(tab==="catalog")    { renderBuyersList(); renderProductsList(); renderSuppliersList(); }
+  if(tab==="catalog")    {
+    // Show only active sub-tab section (default: buyers)
+    var catSub = currentSubTab["catalog"] || "buyers";
+    var catSections2 = {buyers:"catalog-buyers-section", products:"catalog-products-section", suppliers:"catalog-suppliers-section"};
+    Object.keys(catSections2).forEach(function(k){
+      var el=document.getElementById(catSections2[k]);
+      if(el) el.style.display = k===catSub ? "" : "none";
+    });
+    renderBuyersList(); renderProductsList(); renderSuppliersList();
+  }
   if(tab==="settings")   { loadSettings(); }
 }
 function switchDocsSub(sub){
@@ -3564,6 +3581,12 @@ function renderRetailStoreGrid(){
       var lastDate=lastReport?(lastReport.date||"").replace(/^(\d{4})-(\d{2})-(\d{2})$/,"$3.$2.$1"):"—";
       var onShelf=0;
       (lastReport&&lastReport.stockAfter||[]).forEach(function(s){onShelf+=s.qty||0;});
+      // Fallback: also count retailStock (from invoice deliveries)
+      if(onShelf===0&&retailStock[b.id]){
+        Object.keys(retailStock[b.id]).forEach(function(k){
+          onShelf+=(parseInt(retailStock[b.id][k].qty)||0);
+        });
+      }
       var monthRevenue=0;
       var now=new Date(),thisMonth=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
       salesForStore.filter(function(r){return (r.date||"").startsWith(thisMonth);})
@@ -4017,7 +4040,7 @@ function renderMonthlyChart(){
     var MN=['Сiч','Лют','Бер','Кви','Тра','Чер','Лип','Сер','Вер','Жов','Лис','Гру'];
     months.push({key:d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'),label:MN[d.getMonth()],revenue:0,cogs:0,units:0});
   }
-  journal.filter(function(j){return j.docType==='invoice'&&j.status==='shipped';}).forEach(function(j){
+  journal.filter(function(j){return j.docType==='invoice';}).forEach(function(j){
     var mk=j.invoiceDate&&j.invoiceDate.substring(0,7);
     var mo=months.find(function(m){return m.key===mk;});
     if(!mo)return;
@@ -4296,17 +4319,26 @@ document.addEventListener("change",function(e){});
 function showBuyerForm(editId){
   document.getElementById("buyer-form-title").textContent=editId?"Редагувати покупця":"Новий покупець";
   document.getElementById("edit-buyer-id").value=editId||"";
+  // Clear all fields first
   ["name","fullName","edrpou","iban","bank","address","contract","receiver","retailname"].forEach(function(f){
     var el=document.getElementById("nb-"+f);if(el)el.value="";
   });
+  // Pre-fill if editing
   if(editId){
     var b=buyers.find(function(x){return x.id===editId;});
-    if(b){["name","fullName","edrpou","iban","bank","address","contract","receiver"].forEach(function(f){var el=document.getElementById("nb-"+f);if(el)el.value=b[f]||"";});
-      document.getElementById("nb-retailname").value=b.retailName||"";
+    if(b){
+      var map=["name","fullName","edrpou","iban","bank","address","contract","receiver"];
+      map.forEach(function(f){
+        var el=document.getElementById("nb-"+f);
+        if(el) el.value=(b[f]!=null?b[f]:"");
+      });
+      var rn=document.getElementById("nb-retailname");
+      if(rn) rn.value=b.retailName||"";
     }
   }
-  document.getElementById("buyer-form").style.display="";
-  document.getElementById("buyer-form").scrollIntoView({behavior:"smooth"});
+  var form=document.getElementById("buyer-form");
+  form.style.display="";
+  setTimeout(function(){form.scrollIntoView({behavior:"smooth",block:"start"});},50);
 }
 function hideBuyerForm(){document.getElementById("buyer-form").style.display="none";}
 function saveBuyer(){
