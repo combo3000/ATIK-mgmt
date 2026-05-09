@@ -1894,17 +1894,37 @@ function initCloud(){
       subscribeToCloudState();
     });
   }catch(err){
-    console.error(err);
+    console.error('initCloud error:', err);
     updateCloudStatus("Помилка Firebase: "+err.message, true);
+    // Try to recover - maybe app already initialized
+    try{
+      cloudApp = firebase.app();
+      cloudAuth = firebase.auth();
+      cloudDb = firebase.firestore();
+      cloudReady = true;
+      updateCloudStatus("Firebase відновлено.");
+      cloudAuth.onAuthStateChanged(function(user){
+        cloudUser=user||null;
+        updateCloudUi();
+        if(user){ subscribeToCloudState(); }
+      });
+    }catch(e2){ console.error('Recovery failed:', e2); }
   }
 }
 
 function cloudSignIn(){
-  if(!cloudReady){alert("Спочатку заповніть firebase-config.js");return;}
+  // Try to init if not ready yet
+  if(!cloudReady){ initCloud(); }
+  if(!cloudReady){alert("Firebase не підключено. Перевірте firebase-config.js");return;}
+  if(!cloudAuth){alert("Firebase Auth не ініціалізовано");return;}
   var provider=new firebase.auth.GoogleAuthProvider();
-  // signInWithPopup — COOP warning in console is harmless, redirect breaks in Chrome
   cloudAuth.signInWithPopup(provider).catch(function(err){
     if(err.code === 'auth/cancelled-by-user' || err.code === 'auth/popup-closed-by-user') return;
+    // If popup blocked, try redirect
+    if(err.code === 'auth/popup-blocked'){
+      cloudAuth.signInWithRedirect(provider);
+      return;
+    }
     alert("Не вдалося увійти: "+err.message);
   });
 }
