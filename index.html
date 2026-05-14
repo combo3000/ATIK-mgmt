@@ -3173,11 +3173,14 @@ function doExportPDF(g){
   iframe.contentWindow.document.write(pdfHtml);
   iframe.contentWindow.document.close();
   iframe.contentWindow.focus();
+  // Set page title so iOS uses it as PDF filename
+  var prevTitle = document.title;
+  document.title = title + " №" + g.invoiceNum;
   // Small delay for iOS to fully render before print dialog
   setTimeout(function(){
     iframe.contentWindow.print();
-    // Clean up after dialog closes (best-effort)
-    setTimeout(function(){ iframe.remove(); }, 3000);
+    // Restore title and clean up after dialog closes
+    setTimeout(function(){ document.title = prevTitle; iframe.remove(); }, 3000);
   }, 500);
 }
   
