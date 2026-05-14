@@ -989,12 +989,16 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
             <option value="sticks">Палички — сировина (кг)</option>
             <option value="tubes">Тубуси (шт)</option>
             <option value="labels">Наліпки / Етикетки (шт)</option>
-            <option value="stands">Підставки (шт)</option>
+            <option value="stands">Підставки / Товари (шт)</option>
           </select>
         </div>
         <div class="field" id="recv-supplier-wrap">
           <label>Постачальник</label>
           <select id="recv-supplier" onchange="onRecvSupplierChange()"></select>
+        </div>
+        <div class="field" id="recv-sku-wrap" style="display:none">
+          <label>Товар (SKU)</label>
+          <select id="recv-sku"></select>
         </div>
         <div class="field" id="recv-aroma-wrap">
           <label>Аромат</label>
@@ -1125,10 +1129,36 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 
   <!-- COGS sub-panel -->
   <div id="sales-cogs" style="display:none;padding:18px;">
-    <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0 0 16px;">Собівартість (BOM)</h2>
-    <div id="cogs-materials-form-sales"></div>
-    <div id="cogs-bom-table-sales"></div>
+    <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0 0 20px;">Собівартість (BOM)</h2>
+
+    <!-- Ціни матеріалів -->
+    <div id="cogs-materials-form-sales" style="margin-bottom:20px;"></div>
+
+    <!-- BOM таблиця -->
+    <div style="margin-bottom:24px;" id="cogs-bom-table-sales"></div>
+
+    <!-- Результати по ароматах -->
     <div id="cogs-result-table-sales"></div>
+
+    <!-- Фіксована собівартість -->
+    <div style="margin-top:24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:18px;box-shadow:var(--shadow);">
+      <div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px;">Фіксована собівартість</div>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:14px;">Для підставок та інших товарів без рецепту. Використовується ретроспективно якщо не задана ціна прийомки.</div>
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
+        <div style="flex:2;min-width:200px;">
+          <label style="font-size:11px;font-weight:600;color:var(--ink3);display:block;margin-bottom:4px;">Товар</label>
+          <select id="fixed-cogs-product" style="width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--r);font-size:13px;background:var(--surface);">
+          </select>
+        </div>
+        <div style="flex:0 0 140px;">
+          <label style="font-size:11px;font-weight:600;color:var(--ink3);display:block;margin-bottom:4px;">Собівартість (₴/шт)</label>
+          <input type="number" id="fixed-cogs-value" min="0" step="0.01" placeholder="0.00"
+            style="width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--r);font-size:13px;">
+        </div>
+        <button class="btn btn-moss btn-sm" onclick="saveFixedCogs()" style="margin-bottom:1px;">💾 Зберегти</button>
+      </div>
+      <div id="fixed-cogs-table"></div>
+    </div>
   </div>
 
   <!-- OPEX sub-panel -->
@@ -1613,7 +1643,6 @@ const BOM={
   tube20:  {sticks:20, tubes:1, labels:1},
   tube40:  {sticks:40, tubes:1, labels:1},
   refill:  {sticks:20, tubes:1, labels:1},
-  refill40:{sticks:40, tubes:1, labels:1},
   stand:   {sticks:0,  tubes:0, labels:0},
   other:   {sticks:0,  tubes:0, labels:0},
 };
@@ -1678,6 +1707,8 @@ var chartMode='revenue';
 var chartPeriod=6;
 var reorderPoints={};
 var opexStore={};
+// fixedCogsMap: {productId: costUah} — фіксована собівартість для товарів без BOM
+var fixedCogsMap={};
 function setChartPeriod(p){
   chartPeriod=p;
   [6,12].forEach(function(n){
@@ -1792,8 +1823,10 @@ function save(){
   localStorage.setItem("atik5_salesrep",JSON.stringify(salesReports));
   localStorage.setItem("atik5_suppliers",JSON.stringify(suppliers));
   localStorage.setItem("atik5_opex",JSON.stringify(opexStore));
+  localStorage.setItem("atik5_fixedcogs",JSON.stringify(fixedCogsMap));
   localStorage.setItem("atik5_reorder",JSON.stringify(reorderPoints));
   localStorage.setItem("atik5_opex",JSON.stringify(opexStore));
+  localStorage.setItem("atik5_fixedcogs",JSON.stringify(fixedCogsMap));
   localStorage.setItem("atik5_reorder",JSON.stringify(reorderPoints));
   scheduleCloudPush();
 }
@@ -2361,6 +2394,36 @@ function checkDraftBanner(){
 function restoreDraft(){if(loadDraft()){document.getElementById("draft-banner").style.display="none";switchDocsSub("form");}}
 function discardDraft(){clearDraft();document.getElementById("draft-banner").style.display="none";}
 function onFormFieldChange(){saveDraft();}
+function getOpexForPeriod(period){
+  // Sum opexStore entries that fall within the period
+  var now = new Date();
+  var total = 0;
+  Object.keys(opexStore).forEach(function(monthKey){
+    var d = new Date(monthKey+"-01");
+    var include = false;
+    if(period==="month"){
+      include = d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth();
+    } else if(period==="quarter"){
+      var qStart = new Date(now.getFullYear(), Math.floor(now.getMonth()/3)*3, 1);
+      include = d >= qStart && d <= now;
+    } else if(period==="year"){
+      include = d.getFullYear()===now.getFullYear();
+    } else { // all
+      include = true;
+    }
+    if(include){
+      var o = opexStore[monthKey]||{};
+      total += (o.ads||0)+(o.rent||0)+(o.salary||0)+(o.delivery||0)+(o.other||0);
+    }
+  });
+  // Fallback: use current form values if nothing in store
+  if(total===0 && period==="month"){
+    var o=getOpexBreakdown();
+    total=(o.ads||0)+(o.rent||0)+(o.salary||0)+(o.delivery||0)+(o.other||0);
+  }
+  return total;
+}
+
 function getOpexBreakdown(){
   function v(id){return parseFloat((document.getElementById(id)||{}).value)||0;}
   return {ads:v('opex-ads'),rent:v('opex-rent'),salary:v('opex-salary'),delivery:v('opex-delivery'),other:v('opex-other')};
@@ -2380,6 +2443,85 @@ function saveOpexForMonth(){
   localStorage.setItem('atik5_opex',JSON.stringify(opexStore));
 }
 
+
+
+// ── Фіксована собівартість (підставки та інші) ───────────────
+function renderFixedCogsSection() {
+  // Populate product selector — stand + other groups
+  var sel = document.getElementById("fixed-cogs-product");
+  if(!sel) return;
+  var fixedProducts = products.filter(function(p){
+    return p.group==="stand" || p.group==="other";
+  });
+  sel.innerHTML = fixedProducts.map(function(p){
+    var cur = fixedCogsMap[p.id] != null ? " ("+fixedCogsMap[p.id]+" ₴)" : "";
+    return "<option value='"+p.id+"'>"+esc(p.name.split(",")[0])+cur+"</option>";
+  }).join("");
+  // Pre-fill value for selected product
+  if(fixedProducts.length) {
+    var v = fixedCogsMap[fixedProducts[0].id];
+    var valEl = document.getElementById("fixed-cogs-value");
+    if(valEl) valEl.value = v != null ? v : "";
+  }
+  renderFixedCogsTable();
+}
+
+function onFixedCogsProductChange() {
+  var sel = document.getElementById("fixed-cogs-product");
+  var valEl = document.getElementById("fixed-cogs-value");
+  if(!sel||!valEl) return;
+  var v = fixedCogsMap[sel.value];
+  valEl.value = v != null ? v : "";
+}
+
+function saveFixedCogs() {
+  var sel = document.getElementById("fixed-cogs-product");
+  var valEl = document.getElementById("fixed-cogs-value");
+  if(!sel||!valEl) return;
+  var pid = sel.value;
+  var cost = parseFloat(valEl.value);
+  if(!pid){alert("Оберіть товар");return;}
+  if(isNaN(cost)||cost<0){alert("Вкажіть коректну собівартість");return;}
+  fixedCogsMap[pid] = cost;
+  save();
+  renderFixedCogsSection();
+  showToast("✓ Збережено: "+cost+" ₴");
+}
+
+function renderFixedCogsTable() {
+  var el = document.getElementById("fixed-cogs-table");
+  if(!el) return;
+  var entries = Object.keys(fixedCogsMap).filter(function(pid){
+    return fixedCogsMap[pid] != null;
+  });
+  if(!entries.length){
+    el.innerHTML = '<div style="color:var(--ink4);font-size:12px;padding:8px 0">Немає збережених значень</div>';
+    return;
+  }
+  var trash = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>';
+  var html = '<table class="inv-table" style="width:100%"><thead><tr>' +
+    '<th>Товар</th><th style="text-align:right">COGS (₴/шт)</th><th style="width:50px"></th>' +
+    '</tr></thead><tbody>';
+  entries.forEach(function(pid, i) {
+    var p = products.find(function(x){ return x.id === pid; });
+    var name = p ? p.name.split(",")[0] : pid;
+    html += '<tr style="' + (i%2 ? "background:var(--washi)" : "") + '">' +
+      '<td style="font-weight:600">' + esc(name) + '</td>' +
+      '<td style="text-align:right;font-weight:700;color:var(--pine)">' + fixedCogsMap[pid] + ' ₴</td>' +
+      '<td><button class="jact" onclick="deleteFixedCogs(\'' + pid + '\')" title="Видалити">' + trash + '</button></td>' +
+      '</tr>';
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+
+function deleteFixedCogs(pid) {
+  if(!confirm("Видалити фіксовану собівартість для цього товару?")) return;
+  delete fixedCogsMap[pid];
+  save();
+  renderFixedCogsSection();
+}
 
 // ── COGS у вкладці Продажі ────────────────────────────────────
 function renderCogsSales() {
@@ -2408,6 +2550,11 @@ function renderCogsSales() {
   if(origMat) origMat.id = "cogs-materials-form";
   if(origBom) origBom.id = "cogs-bom-table";
   if(origRes) origRes.id = "cogs-result-table";
+  // Render fixed COGS section
+  renderFixedCogsSection();
+  // Add onchange to product selector
+  var fixedSel = document.getElementById("fixed-cogs-product");
+  if(fixedSel) fixedSel.onchange = onFixedCogsProductChange;
 }
 
 // ── Історія OPEX по місяцях ───────────────────────────────────
@@ -2439,60 +2586,56 @@ function renderOpexHistory() {
 }
 
 function renderMarginKpi(){
-  var el=document.getElementById("stats-margin-kpi");
-  if(!el) return;
-  var list=filterByPeriod(journal,document.getElementById("stats-period").value||"month");
-  var revenue=list.reduce(function(s,j){return s+j.total;},0);
-  var cogs=list.reduce(function(s,j){
-    return s+(j.cogsTotal||j.items.reduce(function(si,it){return si+(it.cogs||0)*it.qty;},0));
-  },0);
-  var gross=revenue-cogs;
-  var margin=revenue>0?((gross/revenue)*100).toFixed(1):0;
-  var cogsP=revenue>0?((cogs/revenue)*100).toFixed(0):0;
+  var period = (document.getElementById("income-period")||document.getElementById("stats-period")||{value:"quarter"}).value;
+  var list = filterByPeriod(journal, period)
+    .filter(function(j){ return j.docType==="invoice" && j.status==="shipped"; });
+  var revenue = list.reduce(function(s,j){ return s+j.total; }, 0);
+  // COGS — той самий метод що і в renderStats (з BOM fallback)
+  var cogsTotal = 0;
+  list.forEach(function(j){
+    j.items.forEach(function(it){
+      var itemCogs = (it.cogs && it.cogs>0) ? it.cogs : calcCogsForProduct(it.id||"").totalCost;
+      cogsTotal += itemCogs*(it.qty||0);
+    });
+  });
+  var gross = revenue - cogsTotal;
+  var opex = getOpexForPeriod(period);
+  var net = gross - opex;
 
-  // KPI tiles
-  el.innerHTML=[
-    {label:"Виручка",val:fmt(revenue)+" ₴",border:"var(--border)"},
-    {label:"Собівартість ("+cogsP+"%)",val:fmt(cogs)+" ₴",border:"var(--gold)"},
-    {label:"Валовий прибуток",val:fmt(gross)+" ₴",sub:"Маржа "+margin+"%",border:"var(--accent)"},
-  ].map(function(k){
-    return '<div style="background:var(--surface);border:1px solid '+k.border+';border-radius:var(--r2);padding:14px;box-shadow:var(--shadow);">'
-      +'<div style="font-size:11px;color:var(--ink3);margin-bottom:4px;">'+k.label+'</div>'
-      +'<div style="font-size:20px;font-weight:700;color:var(--pine);font-family:ui-monospace,monospace;">'+k.val+'</div>'
-      +(k.sub?'<div style="font-size:11px;color:var(--ink3);margin-top:2px;">'+k.sub+'</div>':"")
-    +'</div>';
-  }).join("");
+  var kpiEl = document.getElementById("stats-margin-kpi");
+  if(!kpiEl) return;
+  function kpi(label, val, sub, border){
+    return "<div style='background:var(--surface);border:1px solid "+(border||"var(--border)")+";border-radius:var(--r2);padding:14px 16px;'>"+
+      "<div style='font-size:11px;color:var(--ink4);margin-bottom:4px;font-weight:600'>"+label+"</div>"+
+      "<div style='font-size:20px;font-weight:700;color:var(--pine);font-family:ui-monospace,monospace'>"+fmt(val)+" ₴</div>"+
+      (sub?"<div style='font-size:11px;color:var(--ink3);margin-top:2px'>"+sub+"</div>":"")+
+      "</div>";
+  }
+  kpiEl.innerHTML =
+    kpi("Виручка", revenue) +
+    kpi("Собівартість ("+(revenue>0?(cogsTotal/revenue*100).toFixed(1):0)+"%)", cogsTotal, null, "var(--gold)") +
+    kpi("Валовий прибуток", gross, "Маржа "+(revenue>0?(gross/revenue*100).toFixed(1):0)+"%", "var(--moss3)");
 
-  // Stacked waterfall bar
-  var opex=parseInt(document.getElementById("stats-opex").value)||0;
-  // Estimate breakdown: raw ~60% of cogs, labour (opex salary), other
-  var rawCost=Math.round(cogs*0.65);
-  var labour=parseInt(document.getElementById("opex-salary").value)||0;
-  var other=opex-labour;
-  var total=revenue||1;
-  var segments=[
-    {label:"Прибуток",val:Math.max(0,gross-opex),color:"var(--accent)"},
-    {label:"Сировина",val:rawCost,color:"var(--gold)"},
-    {label:"Прац.",val:labour,color:"#8b7cc8"},
-    {label:"Інше",val:Math.max(0,other+cogs-rawCost),color:"#b0a89a"},
-  ].filter(function(s){return s.val>0;});
-  var totalSeg=segments.reduce(function(s,x){return s+x.val;},0)||1;
-  var barEl=document.getElementById("stats-margin-bar");
-  var legEl=document.getElementById("stats-margin-legend");
-  if(barEl) barEl.innerHTML=segments.map(function(s){
-    var pct=((s.val/totalSeg)*100).toFixed(1);
-    return '<div style="flex:'+pct+';background:'+s.color+';display:flex;align-items:center;justify-content:center;'
-      +'font-size:11px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;padding:0 4px;">'
-      +(parseFloat(pct)>8?pct+'%':'')+'</div>';
-  }).join("");
-  if(legEl) legEl.innerHTML=segments.map(function(s){
-    var pct=((s.val/totalSeg)*100).toFixed(0);
-    return '<div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink3);">'
-      +'<div style="width:10px;height:10px;border-radius:2px;background:'+s.color+';flex-shrink:0;"></div>'
-      +esc(s.label)+' '+pct+'%'
-    +'</div>';
-  }).join("");
+  // Структура виручки — stacked bar
+  var barEl = document.getElementById("stats-margin-bar");
+  var legEl = document.getElementById("stats-margin-legend");
+  if(!barEl||!revenue) return;
+  var cogsP = Math.min((cogsTotal/revenue*100),100);
+  var opexP = Math.min((opex/revenue*100), 100-cogsP);
+  var profP = Math.max(0, 100-cogsP-opexP);
+  barEl.innerHTML =
+    "<div style='flex:"+profP+";background:var(--pine);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700'>"+
+    (profP>5?profP.toFixed(1)+"%":"")+"</div>"+
+    "<div style='flex:"+cogsP+";background:var(--gold);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700'>"+
+    (cogsP>3?cogsP.toFixed(1)+"%":"")+"</div>"+
+    "<div style='flex:"+opexP+";background:var(--ash);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700'>"+
+    (opexP>3?opexP.toFixed(1)+"%":"")+"</div>";
+  legEl.innerHTML =
+    "<span style='display:flex;align-items:center;gap:5px;font-size:12px'><span style='width:12px;height:12px;border-radius:2px;background:var(--pine);display:inline-block'></span>Прибуток "+profP.toFixed(0)+"%</span>"+
+    "<span style='display:flex;align-items:center;gap:5px;font-size:12px'><span style='width:12px;height:12px;border-radius:2px;background:var(--gold);display:inline-block'></span>COGS "+cogsP.toFixed(0)+"%</span>"+
+    "<span style='display:flex;align-items:center;gap:5px;font-size:12px'><span style='width:12px;height:12px;border-radius:2px;background:var(--ash);display:inline-block'></span>OPEX "+opexP.toFixed(0)+"%</span>";
 }
+
 
 function updateOpexTotal(){
   var b=getOpexBreakdown(),total=b.ads+b.rent+b.salary+b.delivery+b.other;
@@ -3241,13 +3384,30 @@ function onRecvTypeChange(){
   var ql=document.getElementById("recv-qty-label");
   var pl=document.getElementById("recv-price-label");
   rf.style.display=""; sw.style.display="";
+  var skuWrap=document.getElementById("recv-sku-wrap");
   if(t==="sticks"){
     ql.textContent="Кількість (кг)"; pl.textContent="Ціна (₴/кг)";
     si.style.display="block"; aw.style.display="";
+    if(skuWrap) skuWrap.style.display="none";
     si.textContent="💡 1 кг ≈ 2000 паличок. Вводьте кг та ціну в грн за кг.";
     onRecvSupplierChange();
+  } else if(t==="stands"){
+    aw.style.display="none"; si.style.display="none";
+    sw.style.display="none";
+    ql.textContent="Кількість (шт)"; pl.textContent="Ціна (₴/шт)";
+    if(skuWrap){
+      skuWrap.style.display="";
+      var skuSel=document.getElementById("recv-sku");
+      if(skuSel){
+        var standProducts=products.filter(function(p){return p.group==="stand"||p.group==="other";});
+        skuSel.innerHTML=standProducts.map(function(p){
+          return "<option value='"+p.id+"'>"+esc(p.name.split(",")[0])+"</option>";
+        }).join("");
+      }
+    }
   } else {
     aw.style.display="none"; si.style.display="none";
+    if(skuWrap) skuWrap.style.display="none";
     ql.textContent="Кількість (шт)"; pl.textContent="Ціна (₴/шт)";
   }
 }
@@ -3271,7 +3431,16 @@ function receiveGoods(){
     sticks=Math.round(rawQty*2000);
   } else if(t==="tubes")  {rawKey="tubes";  unit="шт";}
   else if(t==="labels")   {rawKey="labels"; unit="шт";}
-  else if(t==="stands")   {rawKey="stands"; unit="шт";}
+  else if(t==="stands"){
+    var skuEl=document.getElementById("recv-sku");
+    var skuId=skuEl?skuEl.value:"";
+    rawKey=skuId?"stand_"+skuId:"stands"; unit="шт";
+    // Оновити fixedCogsMap для цього SKU по ціні прийомки
+    if(skuId){
+      fixedCogsMap[skuId]=priceUah;
+      save();
+    }
+  }
 
   if(!rawStock[rawKey])rawStock[rawKey]={qty:0,avgCostUah:0,unit:unit,sticks:0};
   var ro=rawStock[rawKey];
@@ -4256,7 +4425,7 @@ function renderStats(){
   document.getElementById("stats-margin-cards").innerHTML = [
     {icon:"📦", v: fmt(cogsTotal)+" ₴",
       l:"COGS (собівартість)",
-      sub: cogsEst ? "~ розрахункова (вкажіть COGS при збірці)" : "фактична з накладних",
+      sub: cogsEst ? "~ розрахункова з BOM" : "фактична з накладних",
       col:"var(--ink)"},
     {icon:"📈", v: fmt(grossProfit)+" ₴",
       l:"Валовий прибуток",
@@ -5165,10 +5334,6 @@ var DEFAULT_MAT_PRICES = {
   // non-stick materials
   tube_uah: 29,              // per piece
   label_uah: 2.5,            // per piece
-  labor_uah: 10,             // assembly labor per pack
-  delivery_per_pack_uah: 4,  // delivery avg per pack
-  promo_per_pack_uah: 16,    // marketing amortized per pack
-  misc_pct: 3,               // miscellaneous overhead %
 };
 
 // Default BOM — units of material per 1 finished pack
@@ -5177,7 +5342,6 @@ var DEFAULT_BOM = {
   tube20:  { sticks:20, tubes:1, labels:1 },
   tube40:  { sticks:40, tubes:1, labels:1 },
   refill:  { sticks:20, tubes:1, labels:1 },
-  refill40:{ sticks:40, tubes:1, labels:1 },
   stand:   { sticks:0,  tubes:0, labels:0 },
   other:   { sticks:0,  tubes:0, labels:0 },
 };
@@ -5220,10 +5384,8 @@ function saveCogsPrices() {
 
 // ── Material fields definition ───────────────────────────────
 var MAT_FIELDS = [
-  { key:"labor_uah",              label:"Робота (збірка)",              unit:"₴/пачку", hint:"фікс за 1 тубус", cat:"Витрати"},
-  { key:"delivery_per_pack_uah",  label:"Доставка",                    unit:"₴/пачку", hint:"середня на 1 пачку", cat:"Витрати"},
-  { key:"promo_per_pack_uah",     label:"Промо / Реклама",             unit:"₴/пачку", hint:"бюджет ÷ обсяг", cat:"Витрати"},
-  { key:"misc_pct",               label:"Інше (накладні витрати)",      unit:"%",       hint:"% від суми всього вище", cat:"Витрати"},
+  { key:"tube_uah",   label:"Тубус",    unit:"₴/шт", hint:"середня ціна закупки тубусу", cat:"Матеріали"},
+  { key:"label_uah",  label:"Наліпка",  unit:"₴/шт", hint:"середня ціна наліпки",        cat:"Матеріали"},
 ];
 
 // BOM group display
@@ -5261,13 +5423,9 @@ function calcCogsForGroup(group, supplierKey) {
   var tubeCost    = (bom.tubes   || 0) * tubePrice;
   var labelCost   = (bom.labels  || 0) * labelPrice;
   var materialCost = stickCost + tubeCost + labelCost;
-  var overheadFixed = (mp.labor_uah || 0) + (mp.delivery_per_pack_uah || 0) + (mp.promo_per_pack_uah || 0);
-  var subtotal = materialCost + overheadFixed;
-  var miscPct  = (mp.misc_pct || 0) / 100;
-  var miscCost = subtotal * miscPct;
-  var totalCost = subtotal + miscCost;
+  var totalCost = materialCost;
   return { stickCost:stickCost, tubeCost:tubeCost, labelCost:labelCost,
-    materialCost:materialCost, overheadFixed:overheadFixed, miscCost:miscCost, totalCost:totalCost, pricePerKg:pricePerKg };
+    materialCost:materialCost, overheadFixed:0, miscCost:0, totalCost:totalCost, pricePerKg:pricePerKg };
 }
 
 // Calculate COGS for a specific product (using its aroma price)
@@ -5275,10 +5433,13 @@ function calcCogsForProduct(productId) {
   var p = products.find(function(x){return x.id===productId;});
   if(!p) return {totalCost:0, stickCost:0, tubeCost:0, labelCost:0, materialCost:0, overheadFixed:0, miscCost:0};
   var group = p.group || "other";
-  // Підставки — собівартість = підставка + коробка (вводиться вручну)
-  if(group === "stand") {
-    var total = (p.costStand||0) + (p.costBox||0);
-    return {totalCost:total, stickCost:0, tubeCost:p.costStand||0, labelCost:p.costBox||0, materialCost:total, overheadFixed:0, miscCost:0, isStand:true};
+  // Товари з фіксованою собівартістю (підставки, інші)
+  if(group === "stand" || group === "other") {
+    var fixed = fixedCogsMap[productId];
+    // Fallback: старе поле costStand+costBox для підставок
+    if(fixed == null && group==="stand") fixed = (p.costStand||0)+(p.costBox||0);
+    var total = fixed || 0;
+    return {totalCost:total, stickCost:0, tubeCost:0, labelCost:0, materialCost:total, overheadFixed:0, miscCost:0, isFixed:true};
   }
   var aromaId = PRODUCT_AROMA[productId];
   var aromaKey = aromaId ? "aroma_"+aromaId : "aroma_osmanthus";
@@ -5313,11 +5474,8 @@ function calcCogsForCustomBom(bom, supplierKey) {
   var tubeCost    = (bom.tubes||0)*tubePrice;
   var labelCost   = (bom.labels||0)*labelPrice;
   var materialCost = stickCost+tubeCost+labelCost;
-  var overheadFixed = (mp.labor_uah||0)+(mp.delivery_per_pack_uah||0)+(mp.promo_per_pack_uah||0);
-  var subtotal = materialCost+overheadFixed;
-  var miscCost = subtotal*((mp.misc_pct||0)/100);
-  var totalCost = subtotal+miscCost;
-  return {stickCost:stickCost,tubeCost:tubeCost,labelCost:labelCost,materialCost:materialCost,overheadFixed:overheadFixed,miscCost:miscCost,totalCost:totalCost,pricePerKg:pricePerKg};
+  var totalCost = materialCost;
+  return {stickCost:stickCost,tubeCost:tubeCost,labelCost:labelCost,materialCost:materialCost,overheadFixed:0,miscCost:0,totalCost:totalCost,pricePerKg:pricePerKg};
 }
 
 function renderCogs() {
@@ -5411,7 +5569,6 @@ function renderCogsResult() {
     { key:"tube40",   label:"🌿 Тубус 40шт",   pidFn: function(aId){ return aId+"40"; },          shelf_fallback:700 },
     { key:"refill",   label:"📄 Папір 20шт",   pidFn: function(aId){ return "ref20_"+aId; },      shelf_fallback:400 },
     { key:"refill",   label:"📄 Папір 10шт",   pidFn: function(aId){ return "ref10_"+aId; },      shelf_fallback:250, bom10:true },
-    { key:"refill40", label:"📄 Папір 40шт",   pidFn: function(aId){ return "ref40_"+aId; },      shelf_fallback:600 },
   ];
 
   var rhtml = "";
