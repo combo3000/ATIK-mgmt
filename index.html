@@ -1129,29 +1129,20 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 
   <!-- COGS sub-panel -->
   <div id="sales-cogs" style="display:none;padding:18px;">
-    <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0 0 20px;">Собівартість (BOM)</h2>
+    <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0 0 16px;">Собівартість</h2>
 
-    <!-- Ціни матеріалів -->
-    <div id="cogs-materials-form-sales" style="margin-bottom:20px;"></div>
-
-    <!-- BOM таблиця -->
-    <div style="margin-bottom:24px;" id="cogs-bom-table-sales"></div>
-
-    <!-- Результати по ароматах -->
-    <div id="cogs-result-table-sales"></div>
-
-    <!-- Фіксована собівартість -->
-    <div style="margin-top:24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:18px;box-shadow:var(--shadow);">
-      <div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px;">Фіксована собівартість</div>
-      <div style="font-size:12px;color:var(--ink3);margin-bottom:14px;">Для підставок та інших товарів без рецепту. Використовується ретроспективно якщо не задана ціна прийомки.</div>
+    <!-- Фіксована собівартість — ВГОРІ -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:18px;box-shadow:var(--shadow);margin-bottom:24px;">
+      <div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px;">Ціни матеріалів і товарів</div>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:14px;">Тубус, наліпка, підставки та інші — вводьте фіксовану ціну. Використовується в розрахунку COGS.</div>
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
         <div style="flex:2;min-width:200px;">
-          <label style="font-size:11px;font-weight:600;color:var(--ink3);display:block;margin-bottom:4px;">Товар</label>
+          <label style="font-size:11px;font-weight:600;color:var(--ink3);display:block;margin-bottom:4px;">Позиція</label>
           <select id="fixed-cogs-product" style="width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--r);font-size:13px;background:var(--surface);">
           </select>
         </div>
-        <div style="flex:0 0 140px;">
-          <label style="font-size:11px;font-weight:600;color:var(--ink3);display:block;margin-bottom:4px;">Собівартість (₴/шт)</label>
+        <div style="flex:0 0 150px;">
+          <label style="font-size:11px;font-weight:600;color:var(--ink3);display:block;margin-bottom:4px;">Ціна (₴/шт)</label>
           <input type="number" id="fixed-cogs-value" min="0" step="0.01" placeholder="0.00"
             style="width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--r);font-size:13px;">
         </div>
@@ -1159,6 +1150,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       </div>
       <div id="fixed-cogs-table"></div>
     </div>
+
+    <!-- Прихований area для сумісності з renderCogsSales -->
+    <div id="cogs-materials-form-sales" style="display:none;"></div>
+    <div id="cogs-bom-table-sales" style="display:none;"></div>
+
+    <!-- Результати по ароматах -->
+    <div id="cogs-result-table-sales"></div>
   </div>
 
   <!-- OPEX sub-panel -->
@@ -2448,22 +2446,27 @@ function saveOpexForMonth(){
 
 // ── Фіксована собівартість (підставки та інші) ───────────────
 function renderFixedCogsSection() {
-  // Populate product selector — stand + other groups
   var sel = document.getElementById("fixed-cogs-product");
   if(!sel) return;
+  // Спеціальні матеріали + товари без BOM
+  var specialItems = [
+    {id:"__tube__",  name:"🔩 Тубус (ціна/шт)"},
+    {id:"__label__", name:"🏷️ Наліпка (ціна/шт)"},
+  ];
   var fixedProducts = products.filter(function(p){
     return p.group==="stand" || p.group==="other";
   });
-  sel.innerHTML = fixedProducts.map(function(p){
-    var cur = fixedCogsMap[p.id] != null ? " ("+fixedCogsMap[p.id]+" ₴)" : "";
-    return "<option value='"+p.id+"'>"+esc(p.name.split(",")[0])+cur+"</option>";
+  var allItems = specialItems.concat(fixedProducts.map(function(p){
+    return {id:p.id, name:p.name.split(",")[0]};
+  }));
+  sel.innerHTML = allItems.map(function(item){
+    var cur = fixedCogsMap[item.id] != null ? " — "+fixedCogsMap[item.id]+" ₴" : "";
+    return "<option value='"+item.id+"'>"+esc(item.name)+cur+"</option>";
   }).join("");
-  // Pre-fill value for selected product
-  if(fixedProducts.length) {
-    var v = fixedCogsMap[fixedProducts[0].id];
-    var valEl = document.getElementById("fixed-cogs-value");
-    if(valEl) valEl.value = v != null ? v : "";
-  }
+  // Pre-fill value
+  var firstVal = fixedCogsMap[allItems[0] && allItems[0].id];
+  var valEl = document.getElementById("fixed-cogs-value");
+  if(valEl) valEl.value = firstVal != null ? firstVal : "";
   renderFixedCogsTable();
 }
 
@@ -2499,13 +2502,19 @@ function renderFixedCogsTable() {
     el.innerHTML = '<div style="color:var(--ink4);font-size:12px;padding:8px 0">Немає збережених значень</div>';
     return;
   }
+  // Sort: special keys first
+  entries.sort(function(a,b){
+    var specialOrder={"__tube__":0,"__label__":1};
+    return (specialOrder[a]!=null?specialOrder[a]:99)-(specialOrder[b]!=null?specialOrder[b]:99);
+  });
   var trash = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>';
   var html = '<table class="inv-table" style="width:100%"><thead><tr>' +
     '<th>Товар</th><th style="text-align:right">COGS (₴/шт)</th><th style="width:50px"></th>' +
     '</tr></thead><tbody>';
   entries.forEach(function(pid, i) {
+    var specialNames = {"__tube__":"🔩 Тубус (ціна/шт)","__label__":"🏷️ Наліпка (ціна/шт)"};
     var p = products.find(function(x){ return x.id === pid; });
-    var name = p ? p.name.split(",")[0] : pid;
+    var name = specialNames[pid] || (p ? p.name.split(",")[0] : pid);
     html += '<tr style="' + (i%2 ? "background:var(--washi)" : "") + '">' +
       '<td style="font-weight:600">' + esc(name) + '</td>' +
       '<td style="text-align:right;font-weight:700;color:var(--pine)">' + fixedCogsMap[pid] + ' ₴</td>' +
@@ -5449,8 +5458,12 @@ function calcCogsForGroup(group, supplierKey) {
   var pricePerStick = pricePerKg / sticksPerKg;
   var stickCost   = (bom.sticks || 0) * pricePerStick;
   // Tube/label price from rawStock avg
-  var tubePrice=(rawStock.tubes&&rawStock.tubes.avgCostUah>0)?rawStock.tubes.avgCostUah:(mp.tube_uah||DEFAULT_MAT_PRICES.tube_uah||0);
-  var labelPrice=(rawStock.labels&&rawStock.labels.avgCostUah>0)?rawStock.labels.avgCostUah:(mp.label_uah||DEFAULT_MAT_PRICES.label_uah||0);
+  var tubePrice = (fixedCogsMap["__tube__"] != null) ? fixedCogsMap["__tube__"]
+    : (rawStock.tubes&&rawStock.tubes.avgCostUah>0) ? rawStock.tubes.avgCostUah
+    : (mp.tube_uah||DEFAULT_MAT_PRICES.tube_uah||0);
+  var labelPrice = (fixedCogsMap["__label__"] != null) ? fixedCogsMap["__label__"]
+    : (rawStock.labels&&rawStock.labels.avgCostUah>0) ? rawStock.labels.avgCostUah
+    : (mp.label_uah||DEFAULT_MAT_PRICES.label_uah||0);
   var tubeCost    = (bom.tubes   || 0) * tubePrice;
   var labelCost   = (bom.labels  || 0) * labelPrice;
   var materialCost = stickCost + tubeCost + labelCost;
@@ -5499,8 +5512,10 @@ function calcCogsForCustomBom(bom, supplierKey) {
   }
   var sticksPerKg = 2000;
   var stickCost   = (bom.sticks||0) * (pricePerKg/sticksPerKg);
-  var tubePrice   = (rawStock.tubes&&rawStock.tubes.avgCostUah>0)?rawStock.tubes.avgCostUah:(mp.tube_uah||DEFAULT_MAT_PRICES.tube_uah||0);
-  var labelPrice  = (rawStock.labels&&rawStock.labels.avgCostUah>0)?rawStock.labels.avgCostUah:(mp.label_uah||DEFAULT_MAT_PRICES.label_uah||0);
+  var tubePrice = (fixedCogsMap["__tube__"] != null) ? fixedCogsMap["__tube__"]
+    : (rawStock.tubes&&rawStock.tubes.avgCostUah>0) ? rawStock.tubes.avgCostUah : (mp.tube_uah||DEFAULT_MAT_PRICES.tube_uah||0);
+  var labelPrice = (fixedCogsMap["__label__"] != null) ? fixedCogsMap["__label__"]
+    : (rawStock.labels&&rawStock.labels.avgCostUah>0) ? rawStock.labels.avgCostUah : (mp.label_uah||DEFAULT_MAT_PRICES.label_uah||0);
   var tubeCost    = (bom.tubes||0)*tubePrice;
   var labelCost   = (bom.labels||0)*labelPrice;
   var materialCost = stickCost+tubeCost+labelCost;
@@ -5510,62 +5525,20 @@ function calcCogsForCustomBom(bom, supplierKey) {
 
 function renderCogs() {
   try {
-  loadCogsPrices();
-
-  // ── Material price input form (grouped by category) ────────
-  var cats = [];
-  var catMap = {};
-  MAT_FIELDS.forEach(function(f) {
-    if(!catMap[f.cat]) { catMap[f.cat] = []; cats.push(f.cat); }
-    catMap[f.cat].push(f);
-  });
-  var fhtml = '';
-  cats.forEach(function(cat) {
-    fhtml += '<div style="margin-bottom:14px"><div style="font-weight:700;font-size:13px;color:var(--pine);margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px">' + esc(cat) + '</div>';
-    fhtml += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px">';
-    catMap[cat].forEach(function(f) {
-      var val = matPrices[f.key] != null ? matPrices[f.key] : DEFAULT_MAT_PRICES[f.key];
-      fhtml += '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);padding:12px">'
-        + '<div style="font-weight:700;font-size:12px;color:var(--ink);margin-bottom:2px">' + esc(f.label) + '</div>'
-        + '<div style="font-size:11px;color:var(--ink4);margin-bottom:6px">' + esc(f.hint || f.unit) + '</div>'
-        + '<div style="display:flex;align-items:center;gap:6px">'
-        + '<input type="number" min="0" step="0.01" id="mp_' + f.key + '" value="' + val + '" '
-        + 'style="flex:1;padding:7px 10px;font-weight:700;font-size:14px;color:var(--pine)" oninput="onMatPriceChange()">'
-        + '<span style="color:var(--ink4);font-size:12px;white-space:nowrap">' + esc(f.unit) + '</span>'
-        + '</div></div>';
-    });
-    fhtml += '</div></div>';
-  });
-  document.getElementById("cogs-materials-form").innerHTML = fhtml;
-
-  // ── BOM table ────────────────────────────────────────────
-  var bhtml = '<div style="overflow-x:auto"><table class="inv-table" style="min-width:500px"><thead><tr>'
-    + '<th>Матеріал</th>';
-  BOM_GROUPS.forEach(function(g) { bhtml += '<th style="text-align:center">' + esc(g.label) + '</th>'; });
-  bhtml += '</tr></thead><tbody>';
-  BOM_ROWS.forEach(function(row) {
-    bhtml += '<tr><td style="font-weight:600">' + esc(row.label)
-      + ' <span style="color:var(--ink4);font-weight:normal;font-size:11px">(' + esc(row.unit) + ')</span></td>';
-    BOM_GROUPS.forEach(function(g) {
-      var bom = bomData[g.key] || DEFAULT_BOM[g.key] || {};
-      var val = bom[row.key] != null ? bom[row.key] : 0;
-      bhtml += '<td style="text-align:center;padding:6px 8px">'
-        + '<input type="number" min="0" step="1" value="' + val + '" '
-        + 'id="bom_' + g.key + '_' + row.key + '" '
-        + 'style="width:64px;text-align:center;padding:5px;font-weight:700;color:var(--pine)" '
-        + 'oninput="onBomChange()">'
-        + '</td>';
-    });
-    bhtml += '</tr>';
-  });
-  bhtml += '</tbody></table></div>';
-  document.getElementById("cogs-bom-table").innerHTML = bhtml;
-
-  renderCogsResult();
+    loadCogsPrices();
+    // Sync tube/label prices from fixedCogsMap into matPrices for calculations
+    if(fixedCogsMap["__tube__"] != null)  matPrices.tube_uah  = fixedCogsMap["__tube__"];
+    if(fixedCogsMap["__label__"] != null) matPrices.label_uah = fixedCogsMap["__label__"];
+    // Clear form/bom areas (no longer editable)
+    var mf = document.getElementById("cogs-materials-form");
+    if(mf) mf.innerHTML = "";
+    var bt = document.getElementById("cogs-bom-table");
+    if(bt) bt.innerHTML = "";
+    renderCogsResult();
   } catch(e) {
     console.error("renderCogs error:", e);
     var errDiv = document.getElementById("cogs-materials-form");
-    if(errDiv) errDiv.innerHTML = '<div style="color:red;padding:12px">Помилка рендерингу: ' + e.message + '</div>';
+    if(errDiv) errDiv.innerHTML = '<div style="color:red;padding:12px">Помилка: ' + e.message + '</div>';
   }
 }
 
@@ -5592,70 +5565,67 @@ function onBomChange() {
 
 function renderCogsResult() {
   var aromaKeys = Object.keys(AROMAS);
+  var tubeP  = fixedCogsMap["__tube__"]  != null ? fixedCogsMap["__tube__"]  : (matPrices.tube_uah  || DEFAULT_MAT_PRICES.tube_uah  || 0);
+  var labelP = fixedCogsMap["__label__"] != null ? fixedCogsMap["__label__"] : (matPrices.label_uah || DEFAULT_MAT_PRICES.label_uah || 0);
 
-  // Єдиний формат: 4 секції <details> — Тубус 20, Тубус 40, Папір 20, Папір 10
   var SECTIONS = [
-    { key:"tube20",   label:"🌿 Тубус 20шт",   pidFn: function(aId){ return aId+"20"; },          shelf_fallback:450 },
-    { key:"tube40",   label:"🌿 Тубус 40шт",   pidFn: function(aId){ return aId+"40"; },          shelf_fallback:700 },
-    { key:"refill",   label:"📄 Папір 20шт",   pidFn: function(aId){ return "ref20_"+aId; },      shelf_fallback:400 },
-    { key:"refill10", label:"📄 Папір 10шт",   pidFn: function(aId){ return "ref10_"+aId; },      shelf_fallback:250 },
+    { key:"tube20",   label:"Тубус 20шт",       recipe:"20 паличок + 1 тубус + 1 наліпка",   pidFn:function(a){return a+"20";},       shelf_fallback:450 },
+    { key:"tube40",   label:"Тубус 40шт",        recipe:"40 паличок + 1 тубус + 1 наліпка",   pidFn:function(a){return a+"40";},       shelf_fallback:700 },
+    { key:"refill",   label:"Папір 20шт",        recipe:"20 паличок + 1 тубус + 1 наліпка",   pidFn:function(a){return "ref20_"+a;},   shelf_fallback:400 },
+    { key:"refill10", label:"Папір 10шт",        recipe:"10 паличок + 1 тубус + 1 наліпка",   pidFn:function(a){return "ref10_"+a;},   shelf_fallback:250 },
   ];
 
   var rhtml = "";
 
   SECTIONS.forEach(function(sec, si) {
+    var bom = DEFAULT_BOM[sec.key] || {};
     rhtml += "<details"+(si===0?" open":"")+' style="margin-bottom:8px;border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;">'+
-      '<summary style="cursor:pointer;font-weight:700;font-size:13px;color:var(--pine);padding:10px 14px;background:var(--surface2);list-style:none;display:flex;align-items:center;gap:8px;">'+
-      esc(sec.label)+"</summary>"+
-      '<div style="overflow-x:auto;padding:0;">'+
-      '<table class="inv-table" style="min-width:640px;"><thead><tr>'+
-      "<th>Аромат</th>"+
-      "<th>Постачальник</th>"+
-      '<th style="text-align:right">₴/кг</th>'+
-      '<th style="text-align:right">Палички</th>'+
-      '<th style="text-align:right">Тубус+Наліпка</th>'+
-      '<th style="text-align:right">Накладні</th>'+
-      '<th style="text-align:right;font-weight:700;color:var(--pine)">COGS (₴)</th>'+
-      '<th style="text-align:right">Полиця (₴)</th>'+
-      '<th style="text-align:center">Маржа %</th>'+
-      "</tr></thead><tbody>";
+      '<summary style="cursor:pointer;font-weight:700;font-size:13px;color:var(--pine);padding:10px 16px;background:var(--surface2);list-style:none;display:flex;align-items:center;justify-content:space-between;">'+
+        '<span>🌿 '+esc(sec.label)+'</span>'+
+        '<span style="font-size:11px;font-weight:400;color:var(--ink3);margin-left:12px;">'+esc(sec.recipe)+'</span>'+
+      '</summary>'+
+      '<div style="overflow-x:auto;">'+
+      '<table class="inv-table" style="min-width:600px;"><thead><tr>'+
+        '<th>Аромат</th>'+
+        '<th>Постачальник</th>'+
+        '<th style="text-align:right">₴/кг</th>'+
+        '<th style="text-align:right">Палички</th>'+
+        '<th style="text-align:right">Тубус+Нал.</th>'+
+        '<th style="text-align:right;font-weight:700;color:var(--pine)">COGS (₴)</th>'+
+        '<th style="text-align:right">Полиця (₴)</th>'+
+        '<th style="text-align:center">Маржа %</th>'+
+      '</tr></thead><tbody>';
 
     aromaKeys.forEach(function(aId, ai) {
       var aromaKey = "aroma_"+aId;
       var pricePerKg = matPrices[aromaKey] || DEFAULT_MAT_PRICES[aromaKey] || 0;
       var sup = aromaSupplier(aId);
-      var supName = sup ? sup.name.replace("B-Faith (","").replace("Daiwa Co (","").replace("Nippon Paper Trading (","").replace("Asayu (","").replace(")","") : "—";
-
-      var c;
-      if(sec.bom10) c = calcCogsForCustomBom({sticks:10, tubes:1, labels:1}, aromaKey);
-      else c = calcCogsForGroup(sec.key, aromaKey);
-
+      var supShort = sup ? sup.name.replace(/\s*\([^)]*\)/g,"").replace("Trading","").trim() : "—";
+      var c = calcCogsForGroup(sec.key, aromaKey);
       var pid = sec.pidFn(aId);
       var p = products.find(function(x){return x.id===pid;});
       var shelf = p ? (p.shelf||0) : sec.shelf_fallback;
       var margin = shelf - c.totalCost;
       var marginPct = shelf > 0 ? (margin/shelf*100) : 0;
-      var pillClass = marginPct>=55?"pill-ok":marginPct>=40?"pill-low":"pill-zero";
-      var rowBg = ai%2===0?"":"background:var(--washi)";
-
-      rhtml += '<tr style="'+rowBg+'">'+
-        "<td><span style='font-weight:600'>"+esc(AROMAS[aId].en)+"</span> <span style='font-size:10.5px;color:var(--ink4)'>"+esc(AROMAS[aId].uk)+"</span></td>"+
-        "<td style='font-size:11px;color:var(--ink3)'>"+esc(supName)+"</td>"+
-        "<td style='text-align:right;color:var(--ink3)'>"+pricePerKg.toLocaleString("uk-UA")+"</td>"+
-        "<td style='text-align:right'>"+c.stickCost.toFixed(2)+"</td>"+
-        "<td style='text-align:right'>"+(c.tubeCost+c.labelCost).toFixed(2)+"</td>"+
-        "<td style='text-align:right;color:var(--ink4)'>"+(c.overheadFixed+c.miscCost).toFixed(2)+"</td>"+
-        "<td style='text-align:right;font-weight:700;color:var(--pine)'>"+c.totalCost.toFixed(2)+"</td>"+
-        "<td style='text-align:right'>"+(shelf||"—")+"</td>"+
-        "<td style='text-align:center'><span class='stock-pill "+pillClass+"'>"+marginPct.toFixed(1)+"%</span></td>"+
-        "</tr>";
+      var pillClass = marginPct>=70?"pill-ok":marginPct>=50?"pill-low":"pill-zero";
+      rhtml += '<tr style="'+(ai%2?"background:var(--washi)":"")+'">'+
+        '<td><span style="font-weight:600">'+esc(AROMAS[aId].en)+'</span> <span style="font-size:10.5px;color:var(--ink4)">'+esc(AROMAS[aId].uk)+'</span></td>'+
+        '<td style="font-size:11px;color:var(--ink3)">'+esc(supShort)+'</td>'+
+        '<td style="text-align:right;color:var(--ink3)">'+pricePerKg.toLocaleString("uk-UA")+'</td>'+
+        '<td style="text-align:right">'+c.stickCost.toFixed(2)+'</td>'+
+        '<td style="text-align:right">'+(c.tubeCost+c.labelCost).toFixed(2)+'</td>'+
+        '<td style="text-align:right;font-weight:700;color:var(--pine)">'+c.totalCost.toFixed(2)+'</td>'+
+        '<td style="text-align:right">'+(shelf||"—")+'</td>'+
+        '<td style="text-align:center"><span class="stock-pill '+pillClass+'">'+marginPct.toFixed(1)+'%</span></td>'+
+      '</tr>';
     });
 
-    rhtml += "</tbody></table></div></details>";
+    rhtml += '</tbody></table></div></details>';
   });
 
   document.getElementById("cogs-result-table").innerHTML = rhtml;
 }
+
 
 function mkBreakItem(label, cost, total) {
   var pct = total > 0 ? (cost / total * 100).toFixed(1) : 0;
