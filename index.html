@@ -615,7 +615,18 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 }
 .jact:hover{border-color:var(--ink3);background:var(--surface2);}
 .jact:active{background:var(--surface3);transform:scale(0.95);}
-/* ── Toast notifications ── */
+/* ── Preview action buttons ── */
+.preview-actions{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:8px;
+  padding:12px 16px 0;
+  margin-bottom:14px;
+}
+@media(max-width:480px){
+  .preview-actions{grid-template-columns:1fr 1fr;}
+}
+
 #atik-toast-container{
   position:fixed;bottom:24px;right:24px;
   display:flex;flex-direction:column;gap:8px;
@@ -851,13 +862,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   </div>
   </div>
   <div id="docs-preview" style="display:none">
-    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-      <button class="btn btn-gray btn-sm" onclick="switchDocsSub('form')">← Редагувати</button>
-      <button class="btn btn-excel" onclick="doExportExcel(generated)">📊 Excel</button>
-      <button class="btn btn-pdf" onclick="doExportPDF(generated)">📄 PDF</button>
-      <button class="btn btn-copy" onclick="copyInvoiceText(generated)">📋 Копіювати</button>
+    <div class="preview-actions">
+      <button class="btn btn-excel" onclick="doExportExcel(generated)" style="justify-content:center;padding:10px;">📊 Excel</button>
+      <button class="btn btn-pdf"   onclick="doExportPDF(generated)"   style="justify-content:center;padding:10px;">📄 PDF</button>
+      <button class="btn btn-copy"  onclick="copyInvoiceText(generated)" style="justify-content:center;padding:10px;">📋 Копіювати</button>
+      <button class="btn btn-gray"  onclick="switchDocsSub('form')"     style="justify-content:center;padding:10px;">← Редагувати</button>
     </div>
-    <div class="preview-box" id="preview-content"></div>
+    <div class="preview-box" id="preview-content" style="margin:0 4px 20px;"></div>
   </div>
   <div id="docs-journal" style="display:none;padding:16px 20px 20px;">
     <!-- Filters row -->
@@ -1509,12 +1520,12 @@ service cloud.firestore {
       <button class="modal-close" onclick="closeModal('modal-journal')">×</button>
     </div>
     <div id="modal-journal-content"></div>
-    <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
-      <button class="btn btn-excel" onclick="doExportExcel(currentJournalItem)">📊 Excel</button>
-      <button class="btn btn-pdf"   onclick="doExportPDF(currentJournalItem)">📄 PDF</button>
-      <button class="btn btn-moss"  onclick="loadFromJournal(currentJournalItem)">✏️ Редагувати</button>
-      <button class="btn btn-gray"  onclick="duplicateInvoice(currentJournalItem)">📋 Дублювати</button>
-      <button class="btn btn-danger btn-sm" onclick="deleteFromJournal(currentJournalItem)">🗑 Видалити</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px;">
+      <button class="btn btn-excel" onclick="doExportExcel(currentJournalItem)" style="justify-content:center;">📊 Excel</button>
+      <button class="btn btn-pdf"   onclick="doExportPDF(currentJournalItem)"   style="justify-content:center;">📄 PDF</button>
+      <button class="btn btn-moss"  onclick="loadFromJournal(currentJournalItem)" style="justify-content:center;">✏️ Редагувати</button>
+      <button class="btn btn-gray"  onclick="duplicateInvoice(currentJournalItem)" style="justify-content:center;">📋 Дублювати</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteFromJournal(currentJournalItem)" style="grid-column:1/-1;justify-content:center;">🗑 Видалити</button>
     </div>
   </div>
 </div>
@@ -3151,7 +3162,23 @@ function doExportPDF(g){
     +"<script>window.addEventListener('load',function(){setTimeout(function(){window.print();},300);});<\/script>"
     +"</body></html>";
 
-  var win=window.open("","_blank");win.document.write(pdfHtml);win.document.close();
+  // On mobile (iOS/Android) window.open traps the user — use blob download instead
+  var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  if(isMobile){
+    var blob = new Blob([pdfHtml], {type:"text/html;charset=utf-8"});
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement("a");
+    a.href   = url;
+    a.target = "_blank";
+    a.rel    = "noopener";
+    a.download = (isBill?"Рахунок_":"Накладна_")+g.invoiceNum+".html";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 2000);
+  } else {
+    var win=window.open("","_blank");
+    if(win){ win.document.write(pdfHtml); win.document.close(); }
+  }
 }
   
 // ============================================================
