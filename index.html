@@ -2,7 +2,7 @@
 <html lang="uk">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>🌿 All trees I know — Облік</title>
 <!-- PWA -->
 <link rel="manifest" href="./manifest.json">
@@ -47,10 +47,14 @@
   --kpi-g4:linear-gradient(135deg,#ece3f2,#ddd0e8);
 }
 *{box-sizing:border-box;margin:0;padding:0}
+html{overflow-x:hidden;max-width:100vw;}
 body{font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   font-size:13px;background:var(--washi);color:var(--ink);min-height:100vh;
+  overflow-x:hidden;max-width:100vw;
   background-image:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c8c4ba' fill-opacity='0.08'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");}
-.app{max-width:1060px;margin:0 auto;padding:0 14px 14px;}
+.app{max-width:1060px;margin:0 auto;padding:0 14px 14px;width:100%;min-width:0;}
+/* Таблиці — горизонтальний скрол замість розтягування */
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%;}
 
 /* ── HEADER ───────────────────────────────────────────────── */
 .header{background:linear-gradient(135deg,var(--pine) 0%,var(--moss) 60%,var(--bamboo) 100%);
@@ -519,6 +523,18 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   .dash-grid{grid-template-columns:repeat(2,1fr)!important;}
   #pane-dashboard{padding:12px 12px 20px;gap:12px;}
   .stats-grid{grid-template-columns:1fr 1fr;}
+
+  /* ── Overflow fixes — не дають сторінці "гуляти" ── */
+  .item-row{flex-wrap:wrap;min-width:0;}
+  .item-name{min-width:0;word-break:break-word;}
+  .bar-wrap{min-width:0;overflow:hidden;}
+  .bar-label{max-width:120px;min-width:0;}
+  .preview-box{overflow-x:auto;}
+  .card{min-width:0;overflow:hidden;}
+  .kpi-val{word-break:break-all;font-size:18px!important;}
+  /* Таблиці в журналі — горизонтальний скрол всередині */
+  .inv-table{min-width:520px;}
+  .jnl-table-wrap,.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
 }
 
 
@@ -684,6 +700,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   </button>
   <button class="tab" data-tab="settings" onclick="switchTab('settings')">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+    Налаштування
   </button>
 </div>
 <!-- Sub-nav -->
@@ -1280,14 +1297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <div class="settings-row" style="border-bottom:none;"><span class="settings-key">Адреса</span><span class="settings-val">01030, м.Київ, вул. В.Липинського, 4В, кв.70</span></div>
   </div>
 
-  <!-- Theme section -->
-  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:14px;box-shadow:var(--shadow);">
-    <div style="padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em;">Тема інтерфейсу</div>
-    <div style="padding:12px 14px;display:flex;gap:8px;">
-      <button style="padding:8px 20px;border-radius:var(--r);border:2px solid var(--accent);background:var(--accent-light);color:var(--pine);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Washi</button>
-      <button style="padding:8px 20px;border-radius:var(--r);border:1px solid var(--border);background:none;color:var(--ink3);font-size:13px;cursor:pointer;font-family:inherit;">Світла</button>
-    </div>
-  </div>
+  <!-- Theme section removed — washi only -->
 
   <!-- Notifications section -->
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:14px;box-shadow:var(--shadow);">
@@ -4320,7 +4330,7 @@ function renderBuyersList(){
         +'<td class="jtd jtd-muted" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(b.address||"—")+'</td>'
         +'<td class="jtd">'+priceForBuyer(b)+'</td>'
         +'<td class="jtd"><div style="display:flex;gap:3px;justify-content:flex-end;">'
-          +'<button class="jact" title="Редагувати" onclick="showBuyerForm(\'+b.id+\')">'
+          +'<button class="jact" title="Редагувати" onclick="showBuyerForm(\'"+b.id+"\')">'
             +'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--pine)" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
           +'</button>'
           +'<button class="jact" title="Видалити" onclick="deleteBuyer(\'+b.id+\')">'
@@ -4499,10 +4509,10 @@ function renderProductsList(){
         +'<td class="jtd jtd-muted" style="text-align:right;font-family:ui-monospace,monospace;">'+(dist||"—")+'</td>'
         +'<td class="jtd jtd-mono" style="text-align:right;">'+(p.shelf||"—")+'</td>'
         +'<td class="jtd"><div style="display:flex;gap:3px;justify-content:flex-end;">'
-          +'<button class="jact" title="Редагувати" onclick="showProductForm(\'+p.id+\')">'
+          +'<button class="jact" title="Редагувати" onclick="showProductForm(\'"+p.id+"\')">'
             +'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--pine)" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
           +'</button>'
-          +'<button class="jact" title="Видалити" onclick="deleteProduct(\'+p.id+\')">'
+          +'<button class="jact" title="Видалити" onclick="deleteProduct(\'"+p.id+"\')">'
             +'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>'
           +'</button>'
         +'</div></td>'
