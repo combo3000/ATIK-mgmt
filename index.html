@@ -2151,7 +2151,13 @@ function switchSubTab(tab, sub) {
     if (sub==="raw")      { renderRawMaterials(); }
     if (sub==="receive")  { /* form ready */ }
     if (sub==="history")  { renderReceiveHistory(); }
-    if (sub==="cogs")     { renderCogs(); }
+    if (sub==="cogs")     {
+      var cogsPan = document.getElementById("wh-cogs");
+      console.log("wh-cogs el:", cogsPan, "display:", cogsPan ? cogsPan.style.display : "NOT FOUND");
+      console.log("cogs-materials-form:", document.getElementById("cogs-materials-form"));
+      renderCogs();
+      console.log("renderCogs done, materials innerHTML length:", (document.getElementById("cogs-materials-form")||{}).innerHTML && document.getElementById("cogs-materials-form").innerHTML.length);
+    }
   }
   if (tab==="sales") {
     var salesPanels = {overview:"sales-overview", margin:"sales-margin", buyers:"sales-buyers", products:"sales-products"};
