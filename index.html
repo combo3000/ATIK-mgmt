@@ -1643,6 +1643,7 @@ const BOM={
   tube20:  {sticks:20, tubes:1, labels:1},
   tube40:  {sticks:40, tubes:1, labels:1},
   refill:  {sticks:20, tubes:1, labels:1},
+  refill10:{sticks:10, tubes:1, labels:1},
   stand:   {sticks:0,  tubes:0, labels:0},
   other:   {sticks:0,  tubes:0, labels:0},
 };
@@ -3600,6 +3601,35 @@ function renderRawMaterials(){
   });
   html+='</div>';
 
+  // Підставки на складі
+  var standProducts = products.filter(function(p){ return p.group==="stand"; });
+  if(standProducts.length) {
+    html+='<div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em;margin:18px 0 10px;">Підставки</div>';
+    html+='<div class="raw-grid">';
+    standProducts.forEach(function(p){
+      var rawKey="stand_"+p.id;
+      var r=rawStock[rawKey]||{qty:0,avgCostUah:0};
+      var qty=Math.round(r.qty||0);
+      var fixedCost=fixedCogsMap[p.id]||0;
+      var costStr=r.avgCostUah>0?(r.avgCostUah.toFixed(0)+" ₴/шт"):fixedCost>0?(fixedCost.toFixed(0)+" ₴/шт"):"—";
+      var isZero=qty<=0;
+      var shortName=p.name.split(",")[0].replace("Підставка ","").replace('"ATIK&','').replace('"','').trim();
+      html+='<div class="raw-card" style="border-left:'+(isZero?"4px solid var(--red)":"4px solid var(--sky)")+'">'+
+        (isZero?'<span class="raw-card-status raw-status-zero">НЕМАЄ</span>':'')+
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'+
+          '<span style="font-size:22px;">🪵</span>'+
+          '<div><div style="font-size:13px;font-weight:600;color:var(--ink);">'+esc(shortName)+'</div>'+
+          '<div style="font-size:10.5px;color:var(--ink3);">'+esc(p.id)+'</div></div>'+
+        '</div>'+
+        '<div style="font-size:26px;font-weight:700;color:'+(isZero?"var(--red)":"var(--ink)")+';font-family:ui-monospace,monospace;line-height:1;">'+
+          qty+'<span style="font-size:13px;color:var(--ink3);margin-left:4px;">шт</span>'+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--ink3);margin-top:6px;">COGS: <strong style="color:var(--ink);">'+costStr+'</strong></div>'+
+      '</div>';
+    });
+    html+='</div>';
+  }
+
   // Summary strip
   var totalSticks=0;
   aromaKeys.forEach(function(a){totalSticks+=(rawStock["sticks_"+a]&&rawStock["sticks_"+a].sticks)||Math.round((rawStock["sticks_"+a]&&rawStock["sticks_"+a].qty||0)*2000);});
@@ -5342,6 +5372,7 @@ var DEFAULT_BOM = {
   tube20:  { sticks:20, tubes:1, labels:1 },
   tube40:  { sticks:40, tubes:1, labels:1 },
   refill:  { sticks:20, tubes:1, labels:1 },
+  refill10:{ sticks:10, tubes:1, labels:1 },
   stand:   { sticks:0,  tubes:0, labels:0 },
   other:   { sticks:0,  tubes:0, labels:0 },
 };
@@ -5393,7 +5424,7 @@ var BOM_GROUPS = [
   { key:"tube20",  label:"Тубус 20шт" },
   { key:"tube40",  label:"Тубус 40шт" },
   { key:"refill",  label:"Рефіл 20шт (папір)" },
-  { key:"stand",   label:"Підставка" },
+  { key:"refill10", label:"Рефіл 10шт (папір)" },
 ];
 var BOM_ROWS = [
   { key:"sticks", label:"Палички",   unit:"шт/пачку" },
@@ -5449,10 +5480,9 @@ function calcCogsForProduct(productId) {
     var pack = p.pack || 20;
     if(pack <= 10) bomGroup = "refill"; // ref10 — рахуємо як refill але зі своїм BOM
     else bomGroup = "refill"; // ref20
-    // Для ref10 — override стіків на 10
+    // Для ref10 — використовуємо refill10 BOM group
     if(pack === 10) {
-      var bom10 = {sticks:10, tubes:1, labels:1};
-      return calcCogsForCustomBom(bom10, aromaKey);
+      return calcCogsForGroup("refill10", aromaKey);
     }
   }
   return calcCogsForGroup(bomGroup, aromaKey);
@@ -5568,7 +5598,7 @@ function renderCogsResult() {
     { key:"tube20",   label:"🌿 Тубус 20шт",   pidFn: function(aId){ return aId+"20"; },          shelf_fallback:450 },
     { key:"tube40",   label:"🌿 Тубус 40шт",   pidFn: function(aId){ return aId+"40"; },          shelf_fallback:700 },
     { key:"refill",   label:"📄 Папір 20шт",   pidFn: function(aId){ return "ref20_"+aId; },      shelf_fallback:400 },
-    { key:"refill",   label:"📄 Папір 10шт",   pidFn: function(aId){ return "ref10_"+aId; },      shelf_fallback:250, bom10:true },
+    { key:"refill10", label:"📄 Папір 10шт",   pidFn: function(aId){ return "ref10_"+aId; },      shelf_fallback:250 },
   ];
 
   var rhtml = "";
