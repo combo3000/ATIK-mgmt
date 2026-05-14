@@ -1073,82 +1073,91 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
         </select>
       </div>
     </div>
-
     <!-- KPI tiles -->
     <div id="stats-cards" class="stats-grid" style="margin-bottom:14px;"></div>
     <div id="stats-margin-cards" class="stats-grid" style="margin-bottom:20px;"></div>
-
-
-
     <!-- P&L -->
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);
       padding:16px;margin-bottom:14px;box-shadow:var(--shadow);" id="stats-pl-wrap">
       <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:10px;">P&L за період</div>
       <div id="stats-pl"></div>
     </div>
-    <!-- Топ покупців + Топ товарів -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;flex-wrap:wrap;" class="dash-two-col">
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:14px;box-shadow:var(--shadow);">
-        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:10px;">Топ покупців</div>
-        <div class="bar-wrap" id="stats-buyers-bar-overview"></div>
-      </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:14px;box-shadow:var(--shadow);">
-        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:10px;">Топ товарів</div>
-        <div class="bar-wrap" id="stats-products-bar-overview"></div>
-      </div>
-    </div>
   </div>
 
-  <!-- МАРЖА sub-panel -->
+  <!-- ДОХІД sub-panel (колишня Маржа + топ покупців/товарів) -->
   <div id="sales-margin" style="display:none;padding:18px;">
-    <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0 0 16px;">Маржинальність</h2>
-    <!-- KPI: Виручка / Собівартість / Валовий прибуток -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+      <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0;">Дохід</h2>
+      <select id="income-period" onchange="renderStats()"
+        style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--r);
+        background:var(--surface);color:var(--ink);font-size:12.5px;font-family:inherit;">
+        <option value="month">Цей місяць</option>
+        <option value="quarter">Квартал</option>
+        <option value="year">Рік</option>
+        <option value="all">Весь час</option>
+      </select>
+    </div>
+    <!-- KPI -->
     <div id="stats-margin-kpi" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:14px;"></div>
-    <!-- Stacked bar — Структура виручки -->
+    <!-- Структура виручки -->
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);
       padding:16px;margin-bottom:14px;box-shadow:var(--shadow);">
       <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:12px;">Структура виручки</div>
       <div id="stats-margin-bar" style="height:36px;border-radius:6px;overflow:hidden;display:flex;"></div>
       <div id="stats-margin-legend" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;"></div>
     </div>
+    <!-- Маржа по товарах -->
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);
       padding:16px;margin-bottom:14px;box-shadow:var(--shadow);">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap;">
-        <div style="font-size:13px;font-weight:600;color:var(--ink);">OPEX за місяць</div>
-        <input type="month" id="opex-month" onchange="loadOpexForMonth()"
-          style="padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--r);">
+      <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:10px;">По товарах (виручка − COGS)</div>
+      <div id="stats-margin-products"></div>
+    </div>
+    <!-- Топ покупців + Топ товарів -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;" class="dash-two-col">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:14px;box-shadow:var(--shadow);">
+        <div class="bar-wrap" id="stats-buyers-bar"></div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;">
-        <div><label style="font-size:10.5px;color:var(--ink4);">Реклама</label><input type="number" id="opex-ads" value="0" min="0" oninput="updateOpexTotal()" style="padding:6px 8px;font-size:12px;width:100%;"></div>
-        <div><label style="font-size:10.5px;color:var(--ink4);">Оренда</label><input type="number" id="opex-rent" value="0" min="0" oninput="updateOpexTotal()" style="padding:6px 8px;font-size:12px;width:100%;"></div>
-        <div><label style="font-size:10.5px;color:var(--ink4);">Зарплата</label><input type="number" id="opex-salary" value="0" min="0" oninput="updateOpexTotal()" style="padding:6px 8px;font-size:12px;width:100%;"></div>
-        <div><label style="font-size:10.5px;color:var(--ink4);">Доставка</label><input type="number" id="opex-delivery" value="0" min="0" oninput="updateOpexTotal()" style="padding:6px 8px;font-size:12px;width:100%;"></div>
-        <div><label style="font-size:10.5px;color:var(--ink4);">Інше</label><input type="number" id="opex-other" value="0" min="0" oninput="updateOpexTotal()" style="padding:6px 8px;font-size:12px;width:100%;"></div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:14px;box-shadow:var(--shadow);">
+        <div class="bar-wrap" id="stats-products-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COGS sub-panel -->
+  <div id="sales-cogs" style="display:none;padding:18px;">
+    <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0 0 16px;">Собівартість (BOM)</h2>
+    <div id="cogs-materials-form-sales"></div>
+    <div id="cogs-bom-table-sales"></div>
+    <div id="cogs-result-table-sales"></div>
+  </div>
+
+  <!-- OPEX sub-panel -->
+  <div id="sales-opex" style="display:none;padding:18px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+      <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0;">OPEX</h2>
+      <input type="month" id="opex-month" onchange="loadOpexForMonth()"
+        style="padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--r);">
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);
+      padding:16px;margin-bottom:14px;box-shadow:var(--shadow);">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;">
+        <div><label style="font-size:11px;color:var(--ink4);font-weight:600;">Реклама</label><input type="number" id="opex-ads" value="0" min="0" oninput="updateOpexTotal()" style="padding:8px;font-size:14px;width:100%;margin-top:4px;"></div>
+        <div><label style="font-size:11px;color:var(--ink4);font-weight:600;">Оренда</label><input type="number" id="opex-rent" value="0" min="0" oninput="updateOpexTotal()" style="padding:8px;font-size:14px;width:100%;margin-top:4px;"></div>
+        <div><label style="font-size:11px;color:var(--ink4);font-weight:600;">Зарплата</label><input type="number" id="opex-salary" value="0" min="0" oninput="updateOpexTotal()" style="padding:8px;font-size:14px;width:100%;margin-top:4px;"></div>
+        <div><label style="font-size:11px;color:var(--ink4);font-weight:600;">Доставка</label><input type="number" id="opex-delivery" value="0" min="0" oninput="updateOpexTotal()" style="padding:8px;font-size:14px;width:100%;margin-top:4px;"></div>
+        <div><label style="font-size:11px;color:var(--ink4);font-weight:600;">Інше</label><input type="number" id="opex-other" value="0" min="0" oninput="updateOpexTotal()" style="padding:8px;font-size:14px;width:100%;margin-top:4px;"></div>
         <div style="display:flex;flex-direction:column;justify-content:flex-end;">
-          <div style="font-size:10.5px;color:var(--ink4);margin-bottom:3px;">Разом</div>
-          <div id="opex-total-display" style="font-size:18px;font-weight:700;color:var(--pine);font-family:ui-monospace,monospace;">0 ₴</div>
+          <div style="font-size:11px;color:var(--ink4);font-weight:600;margin-bottom:4px;">Разом</div>
+          <div id="opex-total-display" style="font-size:22px;font-weight:700;color:var(--pine);font-family:ui-monospace,monospace;">0 ₴</div>
           <input type="hidden" id="stats-opex" value="0">
         </div>
       </div>
     </div>
-    <!-- Маржа по товарах -->
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);
-      padding:16px;box-shadow:var(--shadow);">
-      <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:10px;">По товарах (виручка − COGS)</div>
-      <div id="stats-margin-products"></div>
+    <!-- Збережені місяці OPEX -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:16px;box-shadow:var(--shadow);">
+      <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:10px;">Історія OPEX по місяцях</div>
+      <div id="opex-history-table"></div>
     </div>
-  </div>
-
-  <!-- ПО ПОКУПЦЯХ sub-panel -->
-  <div id="sales-buyers" style="display:none;padding:18px;">
-    <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0 0 16px;">По покупцях</h2>
-    <div class="bar-wrap" id="stats-buyers-bar"></div>
-  </div>
-
-  <!-- ПО ТОВАРАХ sub-panel -->
-  <div id="sales-products" style="display:none;padding:18px;">
-    <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0 0 16px;">По товарах</h2>
-    <div class="bar-wrap" id="stats-products-bar"></div>
   </div>
 
 </div>
@@ -2115,8 +2124,8 @@ function updateBreadcrumb(tab, sub) { /* removed */ }
 /* Sub-nav definitions */
 var SUB_NAVS = {
   docs:      [{id:"all",label:"Всі"},{id:"invoice",label:"Накладні"},{id:"bill",label:"Рахунки"}],
-  warehouse: [{id:"raw",label:"Сировина"},{id:"receive",label:"Прийом"},{id:"history",label:"Журнал"},{id:"cogs",label:"Собівартість"}],
-  sales:     [{id:"overview",label:"Огляд"},{id:"margin",label:"Маржа"},{id:"buyers",label:"По покупцях"},{id:"products",label:"По товарах"}],
+  warehouse: [{id:"raw",label:"Сировина"},{id:"receive",label:"Прийом"},{id:"history",label:"Журнал"}],
+  sales:     [{id:"overview",label:"Огляд"},{id:"margin",label:"Дохід"},{id:"cogs",label:"COGS"},{id:"opex",label:"OPEX"}],
   catalog:   [{id:"buyers", label:"Покупці"}, {id:"products",label:"Товари"},   {id:"suppliers",label:"Постачальники"}],
   orders:    [{id:"all",label:"Всі"},{id:"new",label:"Нові"},{id:"confirmed",label:"Підтверджені"}],
 };
@@ -2150,7 +2159,7 @@ function switchSubTab(tab, sub) {
   }
   if (tab==="warehouse") {
     // show/hide sub-panels
-    var panels = {raw:"wh-raw", receive:"wh-receive", history:"wh-journal", cogs:"wh-cogs"};
+    var panels = {raw:"wh-raw", receive:"wh-receive", history:"wh-journal"};
     Object.keys(panels).forEach(function(k){
       var el = document.getElementById(panels[k]);
       if(el) el.style.display = k===sub ? "" : "none";
@@ -2158,15 +2167,16 @@ function switchSubTab(tab, sub) {
     if (sub==="raw")      { renderRawMaterials(); }
     if (sub==="receive")  { /* form ready */ }
     if (sub==="history")  { renderReceiveHistory(); }
-    if (sub==="cogs")     { renderCogs(); }
   }
   if (tab==="sales") {
-    var salesPanels = {overview:"sales-overview", margin:"sales-margin", buyers:"sales-buyers", products:"sales-products"};
+    var salesPanels = {overview:"sales-overview", margin:"sales-margin", cogs:"sales-cogs", opex:"sales-opex"};
     Object.keys(salesPanels).forEach(function(k){
       var el=document.getElementById(salesPanels[k]);
       if(el) el.style.display = k===sub ? "" : "none";
     });
     renderStats();
+    if(sub==="cogs") renderCogsSales();
+    if(sub==="opex") { loadOpexForMonth(); renderOpexHistory(); }
   }
   if (tab==="catalog") {
     // Show/hide catalog sections based on active sub-tab
@@ -2224,7 +2234,7 @@ function switchTab(tab){
   if(tab==="warehouse")  {
     // restore last active sub-tab (default: raw)
     var whSub = currentSubTab["warehouse"] || "raw";
-    ["wh-raw","wh-receive","wh-journal","wh-cogs"].forEach(function(id){
+    ["wh-raw","wh-receive","wh-journal"].forEach(function(id){
       var el=document.getElementById(id);
       if(el) el.style.display=(id==="wh-"+whSub)?"":"none";
     });
@@ -2234,7 +2244,7 @@ function switchTab(tab){
   }
   if(tab==="sales")      {
     // init: show overview, hide others
-    ["sales-overview","sales-margin","sales-buyers","sales-products"].forEach(function(id,i){
+    ["sales-overview","sales-margin","sales-cogs","sales-opex"].forEach(function(id,i){
       var el=document.getElementById(id); if(el) el.style.display=i===0?"":"none";
     });
     var nm=new Date(),ym=nm.getFullYear()+"-"+String(nm.getMonth()+1).padStart(2,"0");
@@ -2368,6 +2378,64 @@ function loadOpexForMonth(){
 function saveOpexForMonth(){
   opexStore[getOpexMonth()]=getOpexBreakdown();
   localStorage.setItem('atik5_opex',JSON.stringify(opexStore));
+}
+
+
+// ── COGS у вкладці Продажі ────────────────────────────────────
+function renderCogsSales() {
+  loadCogsPrices();
+  // Reuse renderCogs logic but write to sales-specific elements
+  var origMat = document.getElementById("cogs-materials-form");
+  var origBom = document.getElementById("cogs-bom-table");
+  var origRes = document.getElementById("cogs-result-table");
+  // Temporarily swap IDs, render, then restore
+  var salesMat = document.getElementById("cogs-materials-form-sales");
+  var salesBom = document.getElementById("cogs-bom-table-sales");
+  var salesRes = document.getElementById("cogs-result-table-sales");
+  if(!salesMat) return;
+  // Clone IDs
+  if(origMat) origMat.id = "cogs-materials-form-hidden";
+  if(origBom) origBom.id = "cogs-bom-table-hidden";
+  if(origRes) origRes.id = "cogs-result-table-hidden";
+  salesMat.id = "cogs-materials-form";
+  salesBom.id = "cogs-bom-table";
+  salesRes.id = "cogs-result-table";
+  renderCogs();
+  // Restore
+  salesMat.id = "cogs-materials-form-sales";
+  salesBom.id = "cogs-bom-table-sales";
+  salesRes.id = "cogs-result-table-sales";
+  if(origMat) origMat.id = "cogs-materials-form";
+  if(origBom) origBom.id = "cogs-bom-table";
+  if(origRes) origRes.id = "cogs-result-table";
+}
+
+// ── Історія OPEX по місяцях ───────────────────────────────────
+function renderOpexHistory() {
+  var el = document.getElementById("opex-history-table");
+  if(!el) return;
+  var keys = Object.keys(opexStore||{}).sort().reverse();
+  if(!keys.length){ el.innerHTML='<div style="color:var(--ink4);font-size:12px">Немає збережених місяців</div>'; return; }
+  var html = '<div style="overflow-x:auto"><table class="inv-table" style="min-width:400px"><thead><tr>'+
+    '<th>Місяць</th><th style="text-align:right">Реклама</th><th style="text-align:right">Оренда</th>'+
+    '<th style="text-align:right">Зарплата</th><th style="text-align:right">Доставка</th>'+
+    '<th style="text-align:right">Інше</th><th style="text-align:right;font-weight:700">Разом</th>'+
+    '</tr></thead><tbody>';
+  keys.forEach(function(k,i){
+    var o=opexStore[k]||{};
+    var total=(o.ads||0)+(o.rent||0)+(o.salary||0)+(o.delivery||0)+(o.other||0);
+    html+='<tr style="'+(i%2?"background:var(--washi)":"")+'">'+
+      '<td style="font-weight:600">'+esc(k)+'</td>'+
+      '<td style="text-align:right">'+(o.ads||0)+'</td>'+
+      '<td style="text-align:right">'+(o.rent||0)+'</td>'+
+      '<td style="text-align:right">'+(o.salary||0)+'</td>'+
+      '<td style="text-align:right">'+(o.delivery||0)+'</td>'+
+      '<td style="text-align:right">'+(o.other||0)+'</td>'+
+      '<td style="text-align:right;font-weight:700;color:var(--pine)">'+(total)+' ₴</td>'+
+      '</tr>';
+  });
+  html+='</tbody></table></div>';
+  el.innerHTML=html;
 }
 
 function renderMarginKpi(){
@@ -4122,6 +4190,14 @@ function renderMonthlyChart(){
 // STATS
 // ============================================================
 function renderStats(){
+  // Sync period selectors
+  var sp=document.getElementById("stats-period");
+  var ip=document.getElementById("income-period");
+  if(sp&&ip){
+    var active=document.activeElement;
+    if(active&&active.id==="income-period") sp.value=ip.value;
+    else if(active&&active.id==="stats-period") ip.value=sp.value;
+  }
   renderMonthlyChart();
   var period  = document.getElementById("stats-period").value  || "month";
   var opex=(function(){
@@ -4142,22 +4218,17 @@ function renderStats(){
 
   // ── Base metrics ─────────────────────────────────────────────
   var revenue  = list.reduce(function(s,j){ return s + j.total; }, 0);
-  var cogsTotal= list.reduce(function(s,j){
-    return s + j.items.reduce(function(ss,it){ return ss + (it.cogs||0)*it.qty; }, 0);
-  }, 0);
-  // If no COGS recorded yet, estimate from matPrices BOM
-  var cogsEst = false;
-  if(cogsTotal === 0 && list.length > 0){
-    cogsEst = true;
-    list.forEach(function(j){
-      j.items.forEach(function(it){
-        var p = products.find(function(x){ return x.id === it.id; });
-        if(!p) return;
-        var c = calcCogsForProduct(it.id);
-        cogsTotal += c.totalCost * it.qty;
-      });
+  // COGS: якщо на позиції it.cogs=0 — рахуємо з BOM ретроспективно
+  var cogsTotal = 0;
+  list.forEach(function(j){
+    j.items.forEach(function(it){
+      var itemCogs = (it.cogs && it.cogs > 0) ? it.cogs : calcCogsForProduct(it.id||"").totalCost;
+      cogsTotal += itemCogs * (it.qty||0);
     });
-  }
+  });
+  var cogsEst = list.some(function(j){
+    return j.items.some(function(it){ return !(it.cogs && it.cogs > 0); });
+  });
 
   var grossProfit  = revenue - cogsTotal;
   var grossMarginP = revenue > 0 ? grossProfit / revenue * 100 : 0;
@@ -4251,7 +4322,7 @@ function renderStats(){
       var k = shortName(it.name);
       if(!pmap[k]) pmap[k] = {rev:0, cogs:0, qty:0, pid:it.id, group: (products.find(function(x){return x.id===it.id;})||{}).group||"other"};
       pmap[k].rev  += it.sum;
-      pmap[k].cogs += (it.cogs||0) * it.qty;
+      pmap[k].cogs += ((it.cogs && it.cogs>0) ? it.cogs : calcCogsForProduct(it.id||"").totalCost) * it.qty;
       pmap[k].qty  += it.qty;
     });
   });
@@ -4304,7 +4375,7 @@ function renderStats(){
   var bHtml = '<div style="font-weight:700;margin-bottom:10px;font-size:13px;color:var(--pine)">🏅 Топ покупців</div>'
     +btop.map(function(e){return '<div class="bar-row"><div class="bar-label">'+esc(e[0])+'</div><div class="bar-bg"><div class="bar-fill" style="width:'+((e[1]/bmax)*100).toFixed(1)+'%"></div></div><div class="bar-val">'+fmt(e[1])+' ₴</div></div>';}).join("")
     +(btop.length===0?'<div style="color:var(--ink4);font-size:12px">Немає даних</div>':"");
-  ['stats-buyers-bar','stats-buyers-bar-overview'].forEach(function(id){
+  ['stats-buyers-bar'].forEach(function(id){
     var el=document.getElementById(id); if(el) el.innerHTML=bHtml;
   });
 
@@ -4316,7 +4387,7 @@ function renderStats(){
   var pHtml = '<div style="font-weight:700;margin-bottom:10px;font-size:13px;color:var(--pine)">🌿 Топ товарів (шт.)</div>'
     +qtop.map(function(e){return '<div class="bar-row"><div class="bar-label">'+esc(e[0])+'</div><div class="bar-bg"><div class="bar-fill" style="width:'+((e[1]/qmax)*100).toFixed(1)+'%"></div></div><div class="bar-val">'+e[1]+' шт.</div></div>';}).join("")
     +(qtop.length===0?'<div style="color:var(--ink4);font-size:12px">Немає даних</div>':"");
-  ['stats-products-bar','stats-products-bar-overview'].forEach(function(id){
+  ['stats-products-bar'].forEach(function(id){
     var el=document.getElementById(id); if(el) el.innerHTML=pHtml;
   });
   renderMarginKpi();
