@@ -537,8 +537,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   .jnl-table-wrap,.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
 }
 
-
-
 /* ── Dashboard grid classes ── */
 @media(max-width:768px){
   .dash-chart-row{grid-template-columns:1fr!important;}
@@ -954,7 +952,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
       <div>
         <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0;">Готова продукція</h2>
-        <div id="wh-finished-meta" style="font-size:12px;color:var(--ink3);margin-top:3px;"></div>
       </div>
     </div>
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;box-shadow:var(--shadow);">
@@ -972,7 +969,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
               <th class="jth" style="text-align:center;">Статус</th>
             </tr>
           </thead>
-          <tbody id="wh-finished-tbody"></tbody>
         </table>
       </div>
     </div>
@@ -1439,7 +1435,6 @@ service cloud.firestore {
   </div>
 </div>
 
-
 <!-- ═══ QUICK ORDER MODAL ═══ -->
 <div class="modal-overlay" id="modal-quickorder" style="align-items:flex-end;">
   <div class="modal qo-modal">
@@ -1543,7 +1538,6 @@ service cloud.firestore {
   </canvas>
   <div class="tree-label" id="tree-stage-label" style="display:none"></div>
 </div>
-
 
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
@@ -1706,7 +1700,6 @@ var chartMode='revenue';
 var chartPeriod=6;
 var reorderPoints={};
 var opexStore={};
-// fixedCogsMap: {productId: costUah} — фіксована собівартість для товарів без BOM
 var fixedCogsMap={};
 function setChartPeriod(p){
   chartPeriod=p;
@@ -2442,8 +2435,6 @@ function saveOpexForMonth(){
   localStorage.setItem('atik5_opex',JSON.stringify(opexStore));
 }
 
-
-
 // ── Фіксована собівартість (підставки та інші) ───────────────
 function renderFixedCogsSection() {
   var sel = document.getElementById("fixed-cogs-product");
@@ -2524,7 +2515,6 @@ function renderFixedCogsTable() {
   html += '</tbody></table>';
   el.innerHTML = html;
 }
-
 
 function deleteFixedCogs(pid) {
   if(!confirm("Видалити фіксовану собівартість для цього товару?")) return;
@@ -2645,7 +2635,6 @@ function renderMarginKpi(){
     "<span style='display:flex;align-items:center;gap:5px;font-size:12px'><span style='width:12px;height:12px;border-radius:2px;background:var(--gold);display:inline-block'></span>COGS "+cogsP.toFixed(0)+"%</span>"+
     "<span style='display:flex;align-items:center;gap:5px;font-size:12px'><span style='width:12px;height:12px;border-radius:2px;background:var(--ash);display:inline-block'></span>OPEX "+opexP.toFixed(0)+"%</span>";
 }
-
 
 function updateOpexTotal(){
   var b=getOpexBreakdown(),total=b.ads+b.rent+b.salary+b.delivery+b.other;
@@ -3478,9 +3467,6 @@ function receiveGoods(){
   alert("✅ Прийнято "+rawQty+" "+unit+(t==="sticks"?" "+aromaLabel+" (≈"+sticks+" паличок)":"")+" за "+priceUah+" ₴/"+unit);
 }
 
-
-
-
 // ============================================================
 // DEDUCT RAW MATERIALS FOR INVOICE ITEMS (replaces assembly step)
 // ============================================================
@@ -3521,7 +3507,6 @@ function deductRawForItems(invoiceItems){
       rawStock.labels.qty=Math.max(0,(rawStock.labels.qty||0)-labelsNeeded);
   });
 }
-
 
 function renderRawMaterials(){
   var aromaKeys=Object.keys(AROMAS);
@@ -3656,53 +3641,6 @@ function renderRawMaterials(){
   if(el) el.innerHTML=html;
 }
 
-
-function renderFinishedGoods(){
-  var rows = products.filter(function(p){
-    return p.group==="tube20"||p.group==="tube40"||p.group==="stand"||p.group==="refill";
-  });
-  var metaEl = document.getElementById("wh-finished-meta");
-  if(metaEl) metaEl.textContent = rows.length + " позицій";
-
-  var tbody = document.getElementById("wh-finished-tbody");
-  if(!tbody) return;
-
-  var groupLabels = {tube20:"20шт",tube40:"40шт",stand:"підставка",refill:"рефіл"};
-
-  tbody.innerHTML = rows.map(function(p){
-    var stock = p.stock != null ? p.stock : "—";
-    var isLow = typeof stock==="number" && stock < (p.minStock||15);
-    var isZero= typeof stock==="number" && stock<=0;
-    var aromaId = PRODUCT_AROMA[p.id];
-    var emoji = aromaId ? qoAromaEmoji(aromaId) : "🪴";
-    var name = p.name.replace(/,?\s*All trees I know/i,"").trim();
-    // Short display: "Cherry Bloom · Цвіт Вишні · 20шт"
-    var parts = name.split(",").map(function(s){return s.trim();});
-    var displayName = parts.slice(0,2).join(" · ");
-
-    return '<tr class="jtr">'
-      +'<td class="jtd">'
-        +'<span style="margin-right:6px;font-size:14px;">'+emoji+'</span>'
-        +'<span style="font-weight:500;">'+esc(displayName)+'</span>'
-      +'</td>'
-      +'<td class="jtd jtd-muted" style="font-family:ui-monospace,monospace;font-size:11.5px;">'+esc(p.id)+'</td>'
-      +'<td class="jtd jtd-muted">'+esc(groupLabels[p.group]||p.group)+'</td>'
-      +'<td class="jtd" style="text-align:right;font-family:ui-monospace,monospace;font-weight:700;color:'
-        +(isZero?"var(--red)":isLow?"var(--gold)":"var(--ink)")+';">'
-        +(typeof stock==="number"?stock:"—")
-      +'</td>'
-      +'<td class="jtd jtd-muted" style="text-align:right;font-family:ui-monospace,monospace;">'+(p.wholesale||p.price||"—")+'</td>'
-      +'<td class="jtd jtd-muted" style="text-align:right;font-family:ui-monospace,monospace;">'+(p.distributor||"—")+'</td>'
-      +'<td class="jtd jtd-mono" style="text-align:right;">'+(p.shelf||"—")+'</td>'
-      +'<td class="jtd" style="text-align:center;">'
-        +(isZero?'<span style="background:rgba(176,64,64,.1);color:var(--red);padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:600;">НЕМАЄ</span>'
-          :isLow?'<span style="background:rgba(200,168,75,.12);color:var(--gold);padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:600;">МАЛО</span>'
-          :'<span style="background:var(--accent-light);color:var(--pine);padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:600;">ОК</span>')
-      +'</td>'
-    +'</tr>';
-  }).join("");
-}
-
 function openAromaModal(aromaId){
   var aroma=AROMAS[aromaId]; if(!aroma)return;
   var rawKey="sticks_"+aromaId,r=rawStock[rawKey]||{qty:0,avgCostUah:0,sticks:0};
@@ -3755,45 +3693,7 @@ function openAromaModal(aromaId){
       +(allEv.length>60?'<div style="font-size:11px;color:var(--ink4);margin-top:6px">Показано 60 з '+allEv.length+'</div>':"")
     :'<div style="color:var(--ink4);font-size:12px;padding:12px 0">Рухiв ще немає</div>');
   document.getElementById("modal-aroma").classList.add("open");
-}
-function renderRawEditFields(){
-  var html='';
-  // Aroma sticks
-  html+='<div style="font-weight:700;font-size:13px;color:var(--pine);margin-bottom:8px">🌿 Палички (сировина)</div>';
-  html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;margin-bottom:16px">';
-  Object.keys(AROMAS).forEach(function(aId){
-    var k="sticks_"+aId;
-    var r=rawStock[k]||{qty:0,avgCostUah:0,sticks:0};
-    html+='<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);padding:10px">'
-      +'<div style="font-weight:700;font-size:12px">'+esc(AROMAS[aId].en)+'</div>'
-      +'<div style="display:flex;gap:8px;margin-top:6px">'
-      +'<div style="flex:1"><label style="font-size:11px">Кількість (кг)</label>'
-      +'<input type="number" step="0.01" min="0" value="'+r.qty.toFixed(2)+'" id="redit_qty_'+k+'" style="font-size:13px;padding:5px"></div>'
-      +'<div style="flex:1"><label style="font-size:11px">Ціна (₴/кг)</label>'
-      +'<input type="number" step="0.01" min="0" value="'+(r.avgCostUah||0).toFixed(2)+'" id="redit_price_'+k+'" style="font-size:13px;padding:5px"></div>'
-      +'<div style="flex:0 0 88px"><label style="font-size:11px">Мiн.кг</label>'
-      +'<input type="number" step="0.5" min="0" value="'+(reorderPoints[aId]||2)+'" id="redit_reorder_'+aId+'" style="font-size:13px;padding:5px;border-color:var(--gold)"></div>'
-      +'</div></div>';
-  });
-  html+='</div>';
-  // Tubes, labels
-  html+='<div style="font-weight:700;font-size:13px;color:var(--pine);margin-bottom:8px">📦 Інші матеріали</div>';
-  html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px">';
-  [{key:"tubes",label:"🧪 Тубуси",unitL:"шт",priceL:"₴/шт"},{key:"labels",label:"🏷 Наліпки",unitL:"шт",priceL:"₴/шт"}].forEach(function(def){
-    var r=rawStock[def.key]||{qty:0,avgCostUah:0};
-    html+='<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);padding:10px">'
-      +'<div style="font-weight:700;font-size:12px">'+def.label+'</div>'
-      +'<div style="display:flex;gap:8px;margin-top:6px">'
-      +'<div style="flex:1"><label style="font-size:11px">Кількість ('+def.unitL+')</label>'
-      +'<input type="number" step="1" min="0" value="'+Math.round(r.qty)+'" id="redit_qty_'+def.key+'" style="font-size:13px;padding:5px"></div>'
-      +'<div style="flex:1"><label style="font-size:11px">Ціна ('+def.priceL+')</label>'
-      +'<input type="number" step="0.01" min="0" value="'+(r.avgCostUah||0).toFixed(2)+'" id="redit_price_'+def.key+'" style="font-size:13px;padding:5px"></div>'
-      +'</div></div>';
-  });
-  html+='</div>';
-  document.getElementById("raw-edit-fields").innerHTML=html;
-}
-function saveRawEdits(){
+}function saveRawEdits(){
   // Save aroma sticks
   Object.keys(AROMAS).forEach(function(aId){
     var k="sticks_"+aId;
@@ -4306,7 +4206,6 @@ function renderDashboard(){
 
   // ── Forecast ─────────────────────────────────────────────────
 
-
   // ── Alerts ───────────────────────────────────────────────────
   var alerts=[];
   Object.keys(AROMAS).forEach(function(aId){
@@ -4674,7 +4573,6 @@ function saveBuyer(){
   var fullName=document.getElementById("nb-fullName").value.trim();
   var receiver=document.getElementById("nb-receiver").value.trim();
   if(!name||!fullName||!receiver){alert("Заповніть обов'язкові поля: Коротка назва, Повна назва, ПІБ отримувача");return;}
-  // Auto-extract retail name from parentheses: "ФОП Сибіга Яна (Інтегралісt)" → "Інтегралісt"
   var retailNameInput=document.getElementById("nb-retailname").value.trim();
   var autoRetailName=name.match(/\(([^)]+)\)/);
   var retailName=retailNameInput || (autoRetailName?autoRetailName[1]:name);
@@ -5167,11 +5065,8 @@ function qoRenderGrid(){
   grid.innerHTML = html;
 }
 
-
 function qoShortName(name) {
   // Strip "Палички ароматичні " prefix, show EN aroma + pack + type
-  // "Палички ароматичні Cherry Bloom, Цвіт Вишні 20шт, All trees I know" → "Cherry Bloom 20шт"
-  // "Палички ароматичні Cherry Bloom, Цвіт Вишні 20шт, Папір" → "Cherry Bloom 20шт Папір"
   // "Підставка..." → kept as is via shortName
   var m = name.match(/Палички ароматичні (.+?),\s*.+?\s*(\d+шт),?\s*(Папір|тестер)?/i);
   if (m) {
@@ -5306,7 +5201,6 @@ function submitQuickOrder(){
   setTimeout(function(){ switchDocsSub('journal'); renderJournal(); }, 80);
 }
 
-
 // ============================================================
 // TOAST SYSTEM
 // ============================================================
@@ -5342,7 +5236,6 @@ document.addEventListener("keydown",function(e){
     ["modal-journal","modal-sales","modal-aroma","modal-quickorder","modal-retail-detail"].forEach(closeModal);
   }
 });
-
 
 // ============================================================
 // LOGO (base64 transparent PNG)
@@ -5422,24 +5315,7 @@ function saveCogsPrices() {
   localStorage.setItem("atik5_bom",       JSON.stringify(bomData));
 }
 
-// ── Material fields definition ───────────────────────────────
-var MAT_FIELDS = [
-  { key:"tube_uah",   label:"Тубус",    unit:"₴/шт", hint:"середня ціна закупки тубусу", cat:"Матеріали"},
-  { key:"label_uah",  label:"Наліпка",  unit:"₴/шт", hint:"середня ціна наліпки",        cat:"Матеріали"},
-];
 
-// BOM group display
-var BOM_GROUPS = [
-  { key:"tube20",  label:"Тубус 20шт" },
-  { key:"tube40",  label:"Тубус 40шт" },
-  { key:"refill",  label:"Рефіл 20шт (папір)" },
-  { key:"refill10", label:"Рефіл 10шт (папір)" },
-];
-var BOM_ROWS = [
-  { key:"sticks", label:"Палички",   unit:"шт/пачку" },
-  { key:"tubes",  label:"Тубуси",  unit:"шт/пачку" },
-  { key:"labels", label:"Наліпки", unit:"шт/пачку" },
-];
 
 function calcCogsForGroup(group, supplierKey) {
   // supplierKey can be "aroma_xxx" — get price from rawStock or matPrices fallback
@@ -5501,28 +5377,6 @@ function calcCogsForProduct(productId) {
   return calcCogsForGroup(bomGroup, aromaKey);
 }
 
-// Розрахунок по кастомному BOM (для ref10 тощо)
-function calcCogsForCustomBom(bom, supplierKey) {
-  var mp = matPrices;
-  var pricePerKg = 0;
-  if(supplierKey && supplierKey.indexOf("aroma_")===0){
-    var aId=supplierKey.replace("aroma_","");
-    var rk="sticks_"+aId;
-    pricePerKg=(rawStock[rk]&&rawStock[rk].avgCostUah>0)?rawStock[rk].avgCostUah:(mp[supplierKey]||DEFAULT_MAT_PRICES[supplierKey]||0);
-  }
-  var sticksPerKg = 2000;
-  var stickCost   = (bom.sticks||0) * (pricePerKg/sticksPerKg);
-  var tubePrice = (fixedCogsMap["__tube__"] != null) ? fixedCogsMap["__tube__"]
-    : (rawStock.tubes&&rawStock.tubes.avgCostUah>0) ? rawStock.tubes.avgCostUah : (mp.tube_uah||DEFAULT_MAT_PRICES.tube_uah||0);
-  var labelPrice = (fixedCogsMap["__label__"] != null) ? fixedCogsMap["__label__"]
-    : (rawStock.labels&&rawStock.labels.avgCostUah>0) ? rawStock.labels.avgCostUah : (mp.label_uah||DEFAULT_MAT_PRICES.label_uah||0);
-  var tubeCost    = (bom.tubes||0)*tubePrice;
-  var labelCost   = (bom.labels||0)*labelPrice;
-  var materialCost = stickCost+tubeCost+labelCost;
-  var totalCost = materialCost;
-  return {stickCost:stickCost,tubeCost:tubeCost,labelCost:labelCost,materialCost:materialCost,overheadFixed:0,miscCost:0,totalCost:totalCost,pricePerKg:pricePerKg};
-}
-
 function renderCogs() {
   try {
     loadCogsPrices();
@@ -5541,28 +5395,6 @@ function renderCogs() {
     if(errDiv) errDiv.innerHTML = '<div style="color:red;padding:12px">Помилка: ' + e.message + '</div>';
   }
 }
-
-function onMatPriceChange() {
-  // read all inputs into matPrices live
-  MAT_FIELDS.forEach(function(f) {
-    var el = document.getElementById("mp_" + f.key);
-    if(el) matPrices[f.key] = parseFloat(el.value) || 0;
-  });
-  renderCogsResult();
-}
-
-function onBomChange() {
-  BOM_GROUPS.forEach(function(g) {
-    if(!bomData[g.key]) bomData[g.key] = JSON.parse(JSON.stringify(DEFAULT_BOM[g.key] || {}));
-    BOM_ROWS.forEach(function(row) {
-      var el = document.getElementById("bom_" + g.key + "_" + row.key);
-      if(el) bomData[g.key][row.key] = parseFloat(el.value) || 0;
-    });
-  });
-  renderCogsResult();
-}
-
-
 function renderCogsResult() {
   var aromaKeys = Object.keys(AROMAS);
   var tubeP  = fixedCogsMap["__tube__"]  != null ? fixedCogsMap["__tube__"]  : (matPrices.tube_uah  || DEFAULT_MAT_PRICES.tube_uah  || 0);
@@ -5625,17 +5457,6 @@ function renderCogsResult() {
 
   document.getElementById("cogs-result-table").innerHTML = rhtml;
 }
-
-
-function mkBreakItem(label, cost, total) {
-  var pct = total > 0 ? (cost / total * 100).toFixed(1) : 0;
-  return '<div style="min-width:120px">'
-    + '<div style="font-size:11px;color:var(--ink4)">' + esc(label) + '</div>'
-    + '<div style="font-weight:700;color:var(--pine)">' + cost.toFixed(2) + ' ₴</div>'
-    + '<div style="font-size:11px;color:var(--ink3)">' + pct + '% від COGS</div>'
-    + '</div>';
-}
-
 
 window.addEventListener("DOMContentLoaded",function(){
   load();
