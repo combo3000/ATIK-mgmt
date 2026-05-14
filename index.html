@@ -5201,6 +5201,7 @@ function calcCogsForProduct(productId) {
 }
 
 function renderCogs() {
+  try {
   loadCogsPrices();
 
   // ── Material price input form (grouped by category) ────────
@@ -5253,6 +5254,11 @@ function renderCogs() {
   document.getElementById("cogs-bom-table").innerHTML = bhtml;
 
   renderCogsResult();
+  } catch(e) {
+    console.error("renderCogs error:", e);
+    var errDiv = document.getElementById("cogs-materials-form");
+    if(errDiv) errDiv.innerHTML = '<div style="color:red;padding:12px">Помилка рендерингу: ' + e.message + '</div>';
+  }
 }
 
 function onMatPriceChange() {
