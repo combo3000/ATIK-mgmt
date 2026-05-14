@@ -768,12 +768,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <div class="card" style="margin:0;padding:20px 22px;">
       <div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:14px;">Останні документи</div>
       <div id="dash-recent-docs"></div>
-      <button onclick="switchTab('docs');setTimeout(function(){switchDocsSub('journal');},80)"
-        style="margin-top:12px;width:100%;padding:8px;background:var(--accent-light);
-        border:1px solid var(--border);border-radius:7px;color:var(--pine);
-        font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">
-        Всі документи →
-      </button>
     </div>
   </div>
 
@@ -809,13 +803,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       <div style="font-size:12px;color:var(--ink3);margin-top:3px;" id="docs-journal-meta"></div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button class="btn btn-gray btn-sm" onclick="switchDocsSub('form')">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Новий рахунок
-      </button>
       <button class="btn btn-moss btn-sm" onclick="switchDocsSub('form')" style="color:#fff;">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Нова накладна
+        Новий документ
       </button>
     </div>
   </div>
@@ -832,14 +822,23 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       <div class="field"><label>Покупець</label><select id="buyer-select" onchange="onBuyerChange();onFormFieldChange()"></select></div>
     </div>
     <div id="buyer-info-box"></div>
-    <div class="price-row" id="price-type-row" style="flex-wrap:wrap;gap:6px">
-      <strong style="font-size:12px;color:var(--ink3);width:100%;margin-bottom:2px">Тип цін:</strong>
-      <label class="radio-label price-type-btn" style="flex:1;min-width:130px;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r2);padding:9px 12px;justify-content:center;transition:all .18s"><input type="radio" name="pricetype" value="shelf" checked onchange="renderItems();refreshPriceTypeBtns()"> Полиця (100%)</label>
-      <label class="radio-label price-type-btn" style="flex:1;min-width:130px;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r2);padding:9px 12px;justify-content:center;transition:all .18s"><input type="radio" name="pricetype" value="real"  onchange="renderItems();refreshPriceTypeBtns()"> Реалізація (70%)</label>
-      <label class="radio-label price-type-btn" style="flex:1;min-width:130px;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r2);padding:9px 12px;justify-content:center;transition:all .18s"><input type="radio" name="pricetype" value="opt"   onchange="renderItems();refreshPriceTypeBtns()"> Викуп (60%)</label>
-    </div>
-    <div style="font-weight:600;margin-bottom:8px;font-size:12.5px;color:var(--ink2)">
-      Товари <span style="font-weight:normal;font-size:11px;color:var(--ink4);margin-left:8px">жовте поле — власна ціна</span>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+      <span style="font-size:11.5px;font-weight:600;color:var(--ink3);white-space:nowrap;">Ціни:</span>
+      <div style="display:flex;border:1.5px solid var(--border2);border-radius:var(--r2);overflow:hidden;background:var(--surface3);" id="price-type-row">
+        <label style="margin:0;display:flex;align-items:center;">
+          <input type="radio" name="pricetype" value="shelf" checked onchange="renderItems();refreshPriceTypeBtns()" style="display:none;">
+          <span class="price-seg-btn" data-val="shelf" onclick="this.closest('div').querySelectorAll('input[type=radio]')[0].checked=true;renderItems();refreshPriceTypeBtns()" style="display:block;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;transition:all .15s;color:var(--ink3);">Полиця</span>
+        </label>
+        <label style="margin:0;display:flex;align-items:center;border-left:1.5px solid var(--border2);border-right:1.5px solid var(--border2);">
+          <input type="radio" name="pricetype" value="real" onchange="renderItems();refreshPriceTypeBtns()" style="display:none;">
+          <span class="price-seg-btn" data-val="real" onclick="this.closest('div').querySelectorAll('input[type=radio]')[1].checked=true;renderItems();refreshPriceTypeBtns()" style="display:block;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;transition:all .15s;color:var(--ink3);">Реалізація</span>
+        </label>
+        <label style="margin:0;display:flex;align-items:center;">
+          <input type="radio" name="pricetype" value="opt" onchange="renderItems();refreshPriceTypeBtns()" style="display:none;">
+          <span class="price-seg-btn" data-val="opt" onclick="this.closest('div').querySelectorAll('input[type=radio]')[2].checked=true;renderItems();refreshPriceTypeBtns()" style="display:block;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;transition:all .15s;color:var(--ink3);">Викуп</span>
+        </label>
+      </div>
+      <span style="font-size:11px;color:var(--ink4);">жовте поле — власна ціна</span>
     </div>
     <div id="items-container"></div>
     <button class="btn-add" onclick="addItem()">+ Додати товар</button>
@@ -910,7 +909,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
         <table style="width:100%;border-collapse:collapse;min-width:600px;">
           <thead>
             <tr style="background:var(--surface2);">
-              <th class="jth">№ документа</th>
+              <th class="jth" style="width:80px;">№</th>
               <th class="jth">Дата</th>
               <th class="jth">Тип</th>
               <th class="jth">Покупець</th>
@@ -982,8 +981,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 
   <!-- RECEIVE FORM -->
   <div id="wh-receive" style="display:none;padding:18px;">
-    <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0 0 16px;">Прийом сировини</h2>
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:20px;max-width:560px;box-shadow:var(--shadow);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0;">Прийом сировини</h2>
+        <div style="font-size:12px;color:var(--ink3);margin-top:3px;">Оприбуткування нової партії на склад</div>
+      </div>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:24px;box-shadow:var(--shadow);">
       <div class="row">
         <div class="field">
           <label>Тип надходження</label>
@@ -1009,18 +1013,23 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       </div>
       <div id="recv-raw-fields">
         <div class="row">
-          <div class="field" style="flex:0 0 120px"><label id="recv-qty-label">Кількість (кг)</label><input id="recv-raw-qty" type="number" min="0.1" step="0.1" value="5"></div>
-          <div class="field" style="flex:0 0 150px"><label id="recv-price-label">Ціна (₴/кг)</label><input id="recv-raw-price" type="number" min="0" step="0.01" placeholder="₴"></div>
+          <div class="field" style="flex:0 0 160px"><label id="recv-qty-label">Кількість (кг)</label><input id="recv-raw-qty" type="number" min="0.1" step="0.1" value="5"></div>
+          <div class="field" style="flex:0 0 180px"><label id="recv-price-label">Ціна (₴/кг)</label><input id="recv-raw-price" type="number" min="0" step="0.01" placeholder="₴"></div>
+          <div class="field" style="flex:0 0 180px"><label>Дата</label><input id="recv-date" type="date"></div>
         </div>
         <div id="recv-sticks-info" class="hint" style="display:none"></div>
       </div>
       <div class="row">
-        <div class="field" style="flex:0 0 160px"><label>Дата</label><input id="recv-date" type="date"></div>
         <div class="field"><label>Примітка</label><input id="recv-note" placeholder="Партія №5..."></div>
       </div>
-      <button class="btn btn-moss" style="width:100%;padding:12px;justify-content:center;" onclick="receiveGoods()">
-        ✓ Провести прийом
-      </button>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:6px;">
+        <button class="btn btn-moss" style="padding:11px 28px;justify-content:center;font-size:13px;" onclick="receiveGoods()">
+          ✓ Провести прийом
+        </button>
+        <button class="btn btn-gray btn-sm" onclick="switchSubTab('warehouse','history')">
+          📋 Журнал прийомок
+        </button>
+      </div>
     </div>
   </div>
 
@@ -1333,7 +1342,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 </div>
 
 <!-- ═══ SETTINGS ═══ -->
-<div id="pane-settings" style="display:none;padding:18px;max-width:680px;">
+<div id="pane-settings" style="display:none;padding:18px;">
   <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0 0 20px;">Налаштування</h2>
 
   <!-- Profile section -->
@@ -1346,14 +1355,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   </div>
 
   <!-- Theme section removed — washi only -->
-
-  <!-- Notifications section -->
-  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:14px;box-shadow:var(--shadow);">
-    <div style="padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em;">Сповіщення</div>
-    <div class="settings-row toggle-row"><span style="font-size:13px;color:var(--ink);">Email при новому замовленні</span><div class="settings-toggle on" onclick="this.classList.toggle('on')"><div class="toggle-knob"></div></div></div>
-    <div class="settings-row toggle-row"><span style="font-size:13px;color:var(--ink);">Push при низьких залишках</span><div class="settings-toggle on" onclick="this.classList.toggle('on')"><div class="toggle-knob"></div></div></div>
-    <div class="settings-row toggle-row" style="border-bottom:none;"><span style="font-size:13px;color:var(--ink);">Тижневий звіт по неділях</span><div class="settings-toggle" onclick="this.classList.toggle('on')"><div class="toggle-knob"></div></div></div>
-  </div>
 
   <!-- Export section -->
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:14px;box-shadow:var(--shadow);">
@@ -1762,8 +1763,8 @@ function load(){
     var ssu=localStorage.getItem("atik5_suppliers");if(ssu) suppliers=JSON.parse(ssu);
     var sox=localStorage.getItem("atik5_opex");if(sox) opexStore=JSON.parse(sox);
     var srr=localStorage.getItem("atik5_reorder");if(srr) reorderPoints=JSON.parse(srr);
-    var sox=localStorage.getItem("atik5_opex");if(sox) opexStore=JSON.parse(sox);
-    var srr=localStorage.getItem("atik5_reorder");if(srr) reorderPoints=JSON.parse(srr);
+    var sfc=localStorage.getItem("atik5_fixedcogs");if(sfc) fixedCogsMap=JSON.parse(sfc);
+    var smp=localStorage.getItem("atik5_matprices");if(smp) matPrices=JSON.parse(smp);
     DEFAULT_BUYERS.forEach(function(d){if(!buyers.find(function(x){return x.id===d.id;})) buyers.push(Object.assign({},d));});
     DEFAULT_PRODUCTS.forEach(function(d){if(!products.find(function(x){return x.id===d.id;})) products.push(Object.assign({},d));});
     // Ensure all suppliers have aromas field
@@ -1820,9 +1821,6 @@ function save(){
   localStorage.setItem("atik5_retail",JSON.stringify(retailStock));
   localStorage.setItem("atik5_salesrep",JSON.stringify(salesReports));
   localStorage.setItem("atik5_suppliers",JSON.stringify(suppliers));
-  localStorage.setItem("atik5_opex",JSON.stringify(opexStore));
-  localStorage.setItem("atik5_fixedcogs",JSON.stringify(fixedCogsMap));
-  localStorage.setItem("atik5_reorder",JSON.stringify(reorderPoints));
   localStorage.setItem("atik5_opex",JSON.stringify(opexStore));
   localStorage.setItem("atik5_fixedcogs",JSON.stringify(fixedCogsMap));
   localStorage.setItem("atik5_reorder",JSON.stringify(reorderPoints));
@@ -2265,7 +2263,7 @@ function switchTab(tab){
   if(tab==="warehouse")  {
     // restore last active sub-tab (default: raw)
     var whSub = currentSubTab["warehouse"] || "raw";
-    ["wh-raw","wh-receive","wh-journal"].forEach(function(id){
+    ["wh-raw","wh-receive","wh-journal","wh-cogs"].forEach(function(id){
       var el=document.getElementById(id);
       if(el) el.style.display=(id==="wh-"+whSub)?"":"none";
     });
@@ -2274,13 +2272,16 @@ function switchTab(tab){
     else if(whSub==="cogs")    renderCogs();
   }
   if(tab==="sales")      {
-    // init: show overview, hide others
-    ["sales-overview","sales-margin","sales-cogs","sales-opex"].forEach(function(id,i){
-      var el=document.getElementById(id); if(el) el.style.display=i===0?"":"none";
+    var salesSub = currentSubTab["sales"] || "overview";
+    var salesPanelMap = {overview:"sales-overview", margin:"sales-margin", cogs:"sales-cogs", opex:"sales-opex"};
+    Object.keys(salesPanelMap).forEach(function(k){
+      var el=document.getElementById(salesPanelMap[k]); if(el) el.style.display=k===salesSub?"":"none";
     });
     var nm=new Date(),ym=nm.getFullYear()+"-"+String(nm.getMonth()+1).padStart(2,"0");
     var om=document.getElementById("opex-month");if(om&&!om.value)om.value=ym;
     loadOpexForMonth(); renderStats();
+    if(salesSub==="cogs") renderCogsSales();
+    if(salesSub==="opex") { loadOpexForMonth(); renderOpexHistory(); }
     setTimeout(function(){setChartPeriod(chartPeriod||6); renderMonthlyChart();},50);
   }
   if(tab==="orders")     { loadOrders(); }
@@ -2341,19 +2342,12 @@ function onBuyerChange(){
   }
 }
 function refreshPriceTypeBtns(){
-  document.querySelectorAll('.price-type-btn').forEach(function(lbl){
-    var inp=lbl.querySelector('input[type=radio]');
-    if(inp && inp.checked){
-      lbl.style.background='linear-gradient(135deg,var(--pine),var(--moss2))';
-      lbl.style.color='white';
-      lbl.style.borderColor='var(--moss)';
-      lbl.style.fontWeight='700';
-    } else {
-      lbl.style.background='var(--surface2)';
-      lbl.style.color='var(--ink)';
-      lbl.style.borderColor='var(--border)';
-      lbl.style.fontWeight='400';
-    }
+  var active = getPriceType();
+  document.querySelectorAll('.price-seg-btn').forEach(function(span){
+    var isActive = span.dataset.val === active;
+    span.style.background = isActive ? 'var(--pine)' : '';
+    span.style.color = isActive ? '#fff' : 'var(--ink3)';
+    span.style.fontWeight = isActive ? '600' : '500';
   });
 }
 function saveDraft(){
@@ -2389,7 +2383,7 @@ function checkDraftBanner(){
     banner.style.display=(hasItems&&age<24)?"flex":"none";
   }catch(e){banner.style.display="none";}
 }
-function restoreDraft(){if(loadDraft()){document.getElementById("draft-banner").style.display="none";switchDocsSub("form");}}
+function restoreDraft(){if(loadDraft()){document.getElementById("draft-banner").style.display="none";switchDocsSub("form");refreshPriceTypeBtns();}}
 function discardDraft(){clearDraft();document.getElementById("draft-banner").style.display="none";}
 function onFormFieldChange(){saveDraft();}
 function getOpexForPeriod(period){
@@ -4529,10 +4523,10 @@ function renderBuyersList(){
         +'<td class="jtd jtd-muted" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(b.address||"—")+'</td>'
         +'<td class="jtd">'+priceForBuyer(b)+'</td>'
         +'<td class="jtd"><div style="display:flex;gap:3px;justify-content:flex-end;">'
-          +'<button class="jact" title="Редагувати" onclick="showBuyerForm(\'"+b.id+"\')">'
+          +'<button class="jact" title="Редагувати" onclick="showBuyerForm(\''+b.id+'\')">'
             +'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--pine)" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
           +'</button>'
-          +'<button class="jact" title="Видалити" onclick="deleteBuyer(\'"+b.id+"\')">'
+          +'<button class="jact" title="Видалити" onclick="deleteBuyer(\''+b.id+'\')">'
             +'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>'
           +'</button>'
         +'</div></td>'
@@ -4618,7 +4612,7 @@ function renderSuppliersList(){
         +'<td class="jtd jtd-muted">'+(s.country||"Японія")+'</td>'
         +'<td class="jtd jtd-muted">Аромапалички</td>'
         +'<td class="jtd jtd-muted">'+esc(contact)+'</td>'
-        +'<td class="jtd">'+(s.custom?'<button class="jact" title="Видалити" onclick="deleteSupplier(\'+s.id+\')">'
+        +'<td class="jtd">'+(s.custom?'<button class="jact" title="Видалити" onclick="deleteSupplier(\''+s.id+'\')">'
           +'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>'
           +'</button>':"")+'</td>'
       +'</tr>';
@@ -4707,10 +4701,10 @@ function renderProductsList(){
         +'<td class="jtd jtd-muted" style="text-align:right;font-family:ui-monospace,monospace;">'+(dist||"—")+'</td>'
         +'<td class="jtd jtd-mono" style="text-align:right;">'+(p.shelf||"—")+'</td>'
         +'<td class="jtd"><div style="display:flex;gap:3px;justify-content:flex-end;">'
-          +'<button class="jact" title="Редагувати" onclick="showProductForm(\'"+p.id+"\')">'
+          +'<button class="jact" title="Редагувати" onclick="showProductForm(\''+p.id+'\')">'
             +'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--pine)" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
           +'</button>'
-          +'<button class="jact" title="Видалити" onclick="deleteProduct(\'"+p.id+"\')">'
+          +'<button class="jact" title="Видалити" onclick="deleteProduct(\''+p.id+'\')">'
             +'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>'
           +'</button>'
         +'</div></td>'
@@ -5562,7 +5556,8 @@ function renderOrders() {
       var stLabel=isNew?"НОВЕ":isConf?"ПІДТВЕРДЖЕНО":"ВІДХИЛЕНО";
       var stColor=isNew?"var(--gold)":isConf?"var(--pine)":"var(--red)";
       var stBg=isNew?"rgba(200,168,75,.12)":isConf?"var(--accent-light)":"rgba(176,64,64,.08)";
-      var date=(o.createdAt||"").substring(0,10)||"";
+      var _cat=o.createdAt;
+      var date=_cat?(_cat.toDate?_cat.toDate().toISOString().substring(0,10):String(_cat).substring(0,10)):"";
       var src=o.source||o.channel||"Site";
       var contact=o.contact||o.company||o.nickname||"—";
       var total=fmt(o.totalDiscounted||o.total||0);
@@ -5576,8 +5571,8 @@ function renderOrders() {
       }).join("");
       var btns="";
       if(isNew){
-        btns+='<button class="btn btn-gray btn-sm" onclick="declineOrder(\'+o._id+\')" style="flex:1;justify-content:center;">Відхилити</button>';
-        btns+='<button onclick="confirmOrder(\'+o._id+\')" style="flex:2;padding:8px 10px;border-radius:8px;border:none;background:var(--pine);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;">✓ Підтвердити → НН</button>';
+        btns+='<button class="btn btn-gray btn-sm" onclick="declineOrder(\''+o._id+'\')" style="flex:1;justify-content:center;">Відхилити</button>';
+        btns+='<button onclick="confirmOrder(\''+o._id+'\')" style="flex:2;padding:8px 10px;border-radius:8px;border:none;background:var(--pine);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;">✓ Підтвердити → НН</button>';
       }
       if(isConf){ btns+='<span style="font-size:11px;color:var(--ink3);">Накладна створена</span>'; }
       // Delete button — always visible
