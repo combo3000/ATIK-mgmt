@@ -1267,8 +1267,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
         </div>
       </div>
       <div id="stand-cogs-row" style="display:none" class="row">
-        <div class="field"><label>Собівартість підставки (₴)</label><input id="np-costStand" type="number" min="0" step="0.01" placeholder="0"></div>
-        <div class="field"><label>Собівартість коробки (₴)</label><input id="np-costBox" type="number" min="0" step="0.01" placeholder="0"></div>
+        <div class="field"><label>Собівартість підставки (₴)</label><input id="np-costStand" type="number" min="0" step="0.01" placeholder="0"><div style="font-size:11px;color:var(--ink3);margin-top:3px;">закупна ціна підставки</div></div>
+        <div class="field"><label>Собівартість коробки (₴)</label><input id="np-costBox" type="number" min="0" step="0.01" placeholder="0"><div style="font-size:11px;color:var(--ink3);margin-top:3px;">закупна ціна коробки</div></div>
+      </div>
+      <div id="stand-cogs-total" style="display:none;font-size:12px;color:var(--pine);font-weight:600;margin-bottom:10px;padding:6px 10px;background:var(--moss4);border-radius:var(--r);">
+        COGS = підставка + коробка
       </div>
       <div style="display:flex;gap:10px;margin-top:8px">
         <button class="btn btn-moss btn-sm" onclick="saveProduct()">💾 Зберегти</button>
@@ -2030,13 +2033,16 @@ function getItemPrice(item){
 function getTotal(){return items.filter(function(i){return i.productId&&i.qty>0;}).reduce(function(s,i){return s+getItemPrice(i)*i.qty;},0);}
 function getWHCogs(pid){return (warehouseStock[pid]&&warehouseStock[pid].avgCogs)||0;}
 function getEstItemCogs(it){
+  // 1. Записана фактична собівартість на позиції
   if(it.cogs && it.cogs > 0) return it.cogs;
+  // 2. Середня собівартість зі складу (після збірки)
   var whCogs = getWHCogs(it.id);
   if(whCogs > 0) return whCogs;
+  // 3. Розрахунок по BOM (для всіх типів включно з підставками і рефілами)
   var p = products.find(function(x){ return x.id === it.id; });
   if(!p) return 0;
   var c = calcCogsForProduct(it.id);
-  return c.totalCost;
+  return c.totalCost || 0;
 }
 function numberToWords(n){
   if(n===0)return"нуль";
@@ -4551,7 +4557,10 @@ function showProductForm(editId){
 function toggleStandCogs(){
   var grp=(document.getElementById("np-group")||{}).value;
   var row=document.getElementById("stand-cogs-row");
-  if(row) row.style.display=(grp==="stand")?"":"none";
+  var tot=document.getElementById("stand-cogs-total");
+  var isStand=(grp==="stand");
+  if(row) row.style.display=isStand?"":"none";
+  if(tot) tot.style.display=isStand?"":"none";
 }
 function hideProductForm(){document.getElementById("product-form").style.display="none";toggleStandCogs();}
 function saveProduct(){
@@ -5202,7 +5211,42 @@ function calcCogsForProduct(productId) {
   }
   var aromaId = PRODUCT_AROMA[productId];
   var aromaKey = aromaId ? "aroma_"+aromaId : "aroma_osmanthus";
-  return calcCogsForGroup(group, aromaKey);
+  // Визначити правильну BOM-групу по pack і group
+  var bomGroup = group;
+  if(group === "refill") {
+    var pack = p.pack || 20;
+    if(pack <= 10) bomGroup = "refill"; // ref10 — рахуємо як refill але зі своїм BOM
+    else bomGroup = "refill"; // ref20
+    // Для ref10 — override стіків на 10
+    if(pack === 10) {
+      var bom10 = {sticks:10, tubes:1, labels:1};
+      return calcCogsForCustomBom(bom10, aromaKey);
+    }
+  }
+  return calcCogsForGroup(bomGroup, aromaKey);
+}
+
+// Розрахунок по кастомному BOM (для ref10 тощо)
+function calcCogsForCustomBom(bom, supplierKey) {
+  var mp = matPrices;
+  var pricePerKg = 0;
+  if(supplierKey && supplierKey.indexOf("aroma_")===0){
+    var aId=supplierKey.replace("aroma_","");
+    var rk="sticks_"+aId;
+    pricePerKg=(rawStock[rk]&&rawStock[rk].avgCostUah>0)?rawStock[rk].avgCostUah:(mp[supplierKey]||DEFAULT_MAT_PRICES[supplierKey]||0);
+  }
+  var sticksPerKg = 2000;
+  var stickCost   = (bom.sticks||0) * (pricePerKg/sticksPerKg);
+  var tubePrice   = (rawStock.tubes&&rawStock.tubes.avgCostUah>0)?rawStock.tubes.avgCostUah:(mp.tube_uah||DEFAULT_MAT_PRICES.tube_uah||0);
+  var labelPrice  = (rawStock.labels&&rawStock.labels.avgCostUah>0)?rawStock.labels.avgCostUah:(mp.label_uah||DEFAULT_MAT_PRICES.label_uah||0);
+  var tubeCost    = (bom.tubes||0)*tubePrice;
+  var labelCost   = (bom.labels||0)*labelPrice;
+  var materialCost = stickCost+tubeCost+labelCost;
+  var overheadFixed = (mp.labor_uah||0)+(mp.delivery_per_pack_uah||0)+(mp.promo_per_pack_uah||0);
+  var subtotal = materialCost+overheadFixed;
+  var miscCost = subtotal*((mp.misc_pct||0)/100);
+  var totalCost = subtotal+miscCost;
+  return {stickCost:stickCost,tubeCost:tubeCost,labelCost:labelCost,materialCost:materialCost,overheadFixed:overheadFixed,miscCost:miscCost,totalCost:totalCost,pricePerKg:pricePerKg};
 }
 
 function renderCogs() {
@@ -5288,127 +5332,69 @@ function onBomChange() {
 
 
 function renderCogsResult() {
-  // Build result table: one row per aroma × group, show breakdown + margin
   var aromaKeys = Object.keys(AROMAS);
 
-  var rhtml = '<div style="overflow-x:auto">'
-    + '<table class="inv-table" style="min-width:700px"><thead><tr>'
-    + '<th>Аромат</th>'
-    + '<th>Постачальник</th>'
-    + '<th style="text-align:center">Група</th>'
-    + '<th style="text-align:right">₴/кг</th>'
-    + '<th style="text-align:right">Матеріали (₴)</th>'
-    + '<th style="text-align:right">+ Накладні</th>'
-    + '<th style="text-align:right;font-weight:700">COGS (₴)</th>'
-    + '<th style="text-align:right">Полиця (₴)</th>'
-    + '<th style="text-align:right">Маржа (₴)</th>'
-    + '<th style="text-align:center">Маржа %</th>'
-    + '</tr></thead><tbody>';
+  // Єдиний формат: 4 секції <details> — Тубус 20, Тубус 40, Папір 20, Папір 10
+  var SECTIONS = [
+    { key:"tube20",   label:"🌿 Тубус 20шт",   pidFn: function(aId){ return aId+"20"; },          shelf_fallback:450 },
+    { key:"tube40",   label:"🌿 Тубус 40шт",   pidFn: function(aId){ return aId+"40"; },          shelf_fallback:700 },
+    { key:"refill",   label:"📄 Папір 20шт",   pidFn: function(aId){ return "ref20_"+aId; },      shelf_fallback:400 },
+    { key:"refill",   label:"📄 Папір 10шт",   pidFn: function(aId){ return "ref10_"+aId; },      shelf_fallback:250, bom10:true },
+    { key:"refill40", label:"📄 Папір 40шт",   pidFn: function(aId){ return "ref40_"+aId; },      shelf_fallback:600 },
+  ];
 
-  // For each aroma, show tube20 row (main SKU)
-  aromaKeys.forEach(function(aId, ai) {
-    var sup = aromaSupplier(aId);
-    var supName = sup ? sup.name : "—";
-    var aromaKey = "aroma_" + aId;
-    var pricePerKg = matPrices[aromaKey] || DEFAULT_MAT_PRICES[aromaKey] || 0;
+  var rhtml = "";
 
-    // Find the 20-stick product for this aroma to get shelf price
-    var pid20 = Object.keys(PRODUCT_AROMA).find(function(pid){
-      return PRODUCT_AROMA[pid]===aId && pid.indexOf("40")<0 && pid.indexOf("ref")<0;
+  SECTIONS.forEach(function(sec, si) {
+    rhtml += "<details"+(si===0?" open":"")+' style="margin-bottom:8px;border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;">'+
+      '<summary style="cursor:pointer;font-weight:700;font-size:13px;color:var(--pine);padding:10px 14px;background:var(--surface2);list-style:none;display:flex;align-items:center;gap:8px;">'+
+      esc(sec.label)+"</summary>"+
+      '<div style="overflow-x:auto;padding:0;">'+
+      '<table class="inv-table" style="min-width:640px;"><thead><tr>'+
+      "<th>Аромат</th>"+
+      "<th>Постачальник</th>"+
+      '<th style="text-align:right">₴/кг</th>'+
+      '<th style="text-align:right">Палички</th>'+
+      '<th style="text-align:right">Тубус+Наліпка</th>'+
+      '<th style="text-align:right">Накладні</th>'+
+      '<th style="text-align:right;font-weight:700;color:var(--pine)">COGS (₴)</th>'+
+      '<th style="text-align:right">Полиця (₴)</th>'+
+      '<th style="text-align:center">Маржа %</th>'+
+      "</tr></thead><tbody>";
+
+    aromaKeys.forEach(function(aId, ai) {
+      var aromaKey = "aroma_"+aId;
+      var pricePerKg = matPrices[aromaKey] || DEFAULT_MAT_PRICES[aromaKey] || 0;
+      var sup = aromaSupplier(aId);
+      var supName = sup ? sup.name.replace("B-Faith (","").replace("Daiwa Co (","").replace("Nippon Paper Trading (","").replace("Asayu (","").replace(")","") : "—";
+
+      var c;
+      if(sec.bom10) c = calcCogsForCustomBom({sticks:10, tubes:1, labels:1}, aromaKey);
+      else c = calcCogsForGroup(sec.key, aromaKey);
+
+      var pid = sec.pidFn(aId);
+      var p = products.find(function(x){return x.id===pid;});
+      var shelf = p ? (p.shelf||0) : sec.shelf_fallback;
+      var margin = shelf - c.totalCost;
+      var marginPct = shelf > 0 ? (margin/shelf*100) : 0;
+      var pillClass = marginPct>=55?"pill-ok":marginPct>=40?"pill-low":"pill-zero";
+      var rowBg = ai%2===0?"":"background:var(--washi)";
+
+      rhtml += '<tr style="'+rowBg+'">'+
+        "<td><span style='font-weight:600'>"+esc(AROMAS[aId].en)+"</span> <span style='font-size:10.5px;color:var(--ink4)'>"+esc(AROMAS[aId].uk)+"</span></td>"+
+        "<td style='font-size:11px;color:var(--ink3)'>"+esc(supName)+"</td>"+
+        "<td style='text-align:right;color:var(--ink3)'>"+pricePerKg.toLocaleString("uk-UA")+"</td>"+
+        "<td style='text-align:right'>"+c.stickCost.toFixed(2)+"</td>"+
+        "<td style='text-align:right'>"+(c.tubeCost+c.labelCost).toFixed(2)+"</td>"+
+        "<td style='text-align:right;color:var(--ink4)'>"+(c.overheadFixed+c.miscCost).toFixed(2)+"</td>"+
+        "<td style='text-align:right;font-weight:700;color:var(--pine)'>"+c.totalCost.toFixed(2)+"</td>"+
+        "<td style='text-align:right'>"+(shelf||"—")+"</td>"+
+        "<td style='text-align:center'><span class='stock-pill "+pillClass+"'>"+marginPct.toFixed(1)+"%</span></td>"+
+        "</tr>";
     });
-    var p20 = pid20 ? products.find(function(x){return x.id===pid20;}) : null;
-    var shelf20 = p20 ? (p20.shelf||0) : 450;
 
-    var c = calcCogsForGroup("tube20", aromaKey);
-    var margin = shelf20 - c.totalCost;
-    var marginPct = shelf20 > 0 ? (margin / shelf20 * 100) : 0;
-    var marginCol = marginPct >= 55 ? "var(--pine)" : marginPct >= 40 ? "var(--cedar)" : "var(--red)";
-    var rowBg = ai % 2 === 0 ? "" : "background:var(--washi)";
-
-    rhtml += '<tr style="' + rowBg + '">'
-      + '<td><span style="font-weight:700">' + esc(AROMAS[aId].en) + '</span>'
-      + ' <span style="font-size:11px;color:var(--ink4)">' + esc(AROMAS[aId].uk) + '</span></td>'
-      + '<td style="font-size:11px;color:var(--ink3)">' + esc(supName) + '</td>'
-      + '<td style="text-align:center;font-size:11px">20шт</td>'
-      + '<td style="text-align:right;color:var(--ink3)">' + pricePerKg.toLocaleString("uk-UA") + '</td>'
-      + '<td style="text-align:right">' + c.materialCost.toFixed(2) + '</td>'
-      + '<td style="text-align:right;color:var(--ink4)">' + (c.overheadFixed + c.miscCost).toFixed(2) + '</td>'
-      + '<td style="text-align:right;font-weight:700;color:var(--pine)">' + c.totalCost.toFixed(2) + '</td>'
-      + '<td style="text-align:right">' + shelf20 + '</td>'
-      + '<td style="text-align:right;font-weight:700;color:' + marginCol + '">' + margin.toFixed(2) + '</td>'
-      + '<td style="text-align:center">'
-      + '<span class="stock-pill ' + (marginPct>=55?"pill-ok":marginPct>=40?"pill-low":"pill-zero") + '">'
-      + marginPct.toFixed(1) + '%</span></td>'
-      + '</tr>';
+    rhtml += "</tbody></table></div></details>";
   });
-
-  rhtml += '</tbody></table></div>';
-
-  // Expandable: 40шт packs
-  rhtml += '<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700;font-size:13px;color:var(--pine);padding:8px 0">📦 Тубус 40шт — по ароматах</summary>';
-  rhtml += '<div style="overflow-x:auto;margin-top:8px"><table class="inv-table" style="min-width:600px"><thead><tr>'
-    + '<th>Аромат</th><th style="text-align:right">₴/кг</th>'
-    + '<th style="text-align:right;font-weight:700">COGS (₴)</th>'
-    + '<th style="text-align:right">Полиця (₴)</th>'
-    + '<th style="text-align:right">Маржа (₴)</th>'
-    + '<th style="text-align:center">Маржа %</th>'
-    + '</tr></thead><tbody>';
-  aromaKeys.forEach(function(aId, ai) {
-    var aromaKey = "aroma_" + aId;
-    var pricePerKg = matPrices[aromaKey] || DEFAULT_MAT_PRICES[aromaKey] || 0;
-    var pid40 = Object.keys(PRODUCT_AROMA).find(function(pid){
-      return PRODUCT_AROMA[pid]===aId && pid.indexOf("40")>=0;
-    });
-    var p40 = pid40 ? products.find(function(x){return x.id===pid40;}) : null;
-    var shelf40 = p40 ? (p40.shelf||0) : 700;
-    var c = calcCogsForGroup("tube40", aromaKey);
-    var margin = shelf40 - c.totalCost;
-    var marginPct = shelf40 > 0 ? (margin / shelf40 * 100) : 0;
-    var marginCol = marginPct >= 55 ? "var(--pine)" : marginPct >= 40 ? "var(--cedar)" : "var(--red)";
-    rhtml += '<tr style="' + (ai%2?"background:var(--washi)":"") + '">'
-      + '<td style="font-weight:600">' + esc(AROMAS[aId].en) + '</td>'
-      + '<td style="text-align:right;color:var(--ink3)">' + pricePerKg.toLocaleString("uk-UA") + '</td>'
-      + '<td style="text-align:right;font-weight:700;color:var(--pine)">' + c.totalCost.toFixed(2) + '</td>'
-      + '<td style="text-align:right">' + shelf40 + '</td>'
-      + '<td style="text-align:right;font-weight:700;color:' + marginCol + '">' + margin.toFixed(2) + '</td>'
-      + '<td style="text-align:center"><span class="stock-pill ' + (marginPct>=55?"pill-ok":marginPct>=40?"pill-low":"pill-zero") + '">' + marginPct.toFixed(1) + '%</span></td></tr>';
-  });
-  rhtml += '</tbody></table></div></details>';
-
-  // Cost breakdown for cheapest and most expensive aroma
-  var cheapest = aromaKeys.reduce(function(best,a){
-    var p=matPrices["aroma_"+a]||DEFAULT_MAT_PRICES["aroma_"+a]||Infinity;
-    return p<best.p?{a:a,p:p}:best;
-  },{a:"",p:Infinity});
-  var expensive = aromaKeys.reduce(function(best,a){
-    var p=matPrices["aroma_"+a]||DEFAULT_MAT_PRICES["aroma_"+a]||0;
-    return p>best.p?{a:a,p:p}:best;
-  },{a:"",p:0});
-
-  if(cheapest.a){
-    var cc = calcCogsForGroup("tube20", "aroma_"+cheapest.a);
-    rhtml += '<div style="margin-top:12px;padding:12px 14px;background:var(--surface3);border-radius:var(--r2);'
-      + 'border:1px solid var(--border);font-size:12px">'
-      + '<strong>Найдешевший аромат — ' + esc(AROMAS[cheapest.a].en) + ' (' + cheapest.p.toLocaleString("uk-UA") + ' ₴/кг):</strong><br>'
-      + '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">'
-      + mkBreakItem("Палички", cc.stickCost, cc.totalCost)
-      + mkBreakItem("Тубус", cc.tubeCost, cc.totalCost)
-      + mkBreakItem("Наліпка", cc.labelCost, cc.totalCost)
-      + mkBreakItem("Накладні", cc.overheadFixed + cc.miscCost, cc.totalCost)
-      + '</div></div>';
-  }
-  if(expensive.a && expensive.a !== cheapest.a){
-    var ce = calcCogsForGroup("tube20", "aroma_"+expensive.a);
-    rhtml += '<div style="margin-top:8px;padding:12px 14px;background:var(--surface3);border-radius:var(--r2);'
-      + 'border:1px solid var(--border);font-size:12px">'
-      + '<strong>Найдорожчий аромат — ' + esc(AROMAS[expensive.a].en) + ' (' + expensive.p.toLocaleString("uk-UA") + ' ₴/кг):</strong><br>'
-      + '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">'
-      + mkBreakItem("Палички", ce.stickCost, ce.totalCost)
-      + mkBreakItem("Тубус", ce.tubeCost, ce.totalCost)
-      + mkBreakItem("Наліпка", ce.labelCost, ce.totalCost)
-      + mkBreakItem("Накладні", ce.overheadFixed + ce.miscCost, ce.totalCost)
-      + '</div></div>';
-  }
 
   document.getElementById("cogs-result-table").innerHTML = rhtml;
 }
