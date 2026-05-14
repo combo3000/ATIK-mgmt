@@ -227,7 +227,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 .badge-shipped{background:#e3f2fd;color:#1565c0}
 .pay-box{background:#f7faf8;border:1px solid #b7dfc9;border-radius:6px;padding:10px 14px;margin:10px 0 14px;line-height:1.6}
 .pay-box .pay-title{font-weight:700;margin-bottom:4px}
-.action-bar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.action-bar{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
 .hint{font-size:11px;color:var(--ink3);padding:6px 10px;background:rgba(200,168,75,.1);
   border-radius:var(--r);border:1px solid var(--gold2);margin-bottom:12px}
 
@@ -525,8 +525,12 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   .stats-grid{grid-template-columns:1fr 1fr;}
 
   /* ── Overflow fixes — не дають сторінці "гуляти" ── */
-  .item-row{flex-wrap:wrap;min-width:0;}
-  .item-name{min-width:0;word-break:break-word;}
+  .item-row{flex-wrap:nowrap;min-width:0;gap:5px;}
+  .item-name{min-width:0;flex:3;}
+  .item-qty{flex:0 0 52px;}
+  .item-price{flex:0 0 70px;}
+  .item-sum{flex:0 0 70px;font-size:12px;}
+  .item-name select{font-size:12px;}
   .bar-wrap{min-width:0;overflow:hidden;}
   .bar-label{max-width:120px;min-width:0;}
   .preview-box{overflow-x:auto;}
@@ -603,12 +607,14 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 .jf-btn.jf-active{background:var(--accent-light);color:var(--pine);font-weight:600;}
 /* Icon action buttons */
 .jact{
-  width:26px;height:26px;padding:0;border:1px solid var(--border);
-  background:var(--surface);border-radius:5px;cursor:pointer;
+  width:32px;height:32px;padding:0;border:1px solid var(--border);
+  background:var(--surface);border-radius:6px;cursor:pointer;
   display:inline-flex;align-items:center;justify-content:center;
   transition:border-color .12s,background .12s;
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent;
 }
 .jact:hover{border-color:var(--ink3);background:var(--surface2);}
+.jact:active{background:var(--surface3);transform:scale(0.95);}
 /* ── Toast notifications ── */
 #atik-toast-container{
   position:fixed;bottom:24px;right:24px;
@@ -1353,11 +1359,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:14px;box-shadow:var(--shadow);">
     <div style="padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em;">Експорт</div>
     <div style="padding:12px 14px;display:flex;gap:8px;flex-wrap:wrap;">
-      <button class="btn btn-gray btn-sm" onclick="exportJournalPDF&&exportJournalPDF()">
+      <button class="btn btn-gray btn-sm" onclick="printJournalPDF()">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
         Журнал PDF
       </button>
-      <button class="btn btn-gray btn-sm" onclick="exportCatalogPDF&&exportCatalogPDF()">
+      <button class="btn btn-gray btn-sm" onclick="printCatalogPDF()">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
         Довідники PDF
       </button>
@@ -2637,6 +2643,7 @@ function renderMarginKpi(){
 }
 
 function updateOpexTotal(){
+  saveOpexForMonth();
   var b=getOpexBreakdown(),total=b.ads+b.rent+b.salary+b.delivery+b.other;
   var h=document.getElementById('stats-opex');if(h)h.value=total;
   var d=document.getElementById('opex-total-display');if(d)d.textContent=total.toLocaleString('uk-UA')+' грн';
@@ -4514,7 +4521,7 @@ function renderBuyersList(){
   };
   var el=document.getElementById("buyers-list");
   if(!buyers.length){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--ink3);">Немає покупців</div>';return;}
-  el.innerHTML='<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;box-shadow:var(--shadow);"><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:500px;"><thead><tr style="background:var(--surface2);"><th class="jth">Назва</th><th class="jth">ЄДРПОУ</th><th class="jth">Адреса</th><th class="jth">Цінова категорія</th><th class="jth" style="width:70px;"></th></tr></thead><tbody>'
+  el.innerHTML='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:500px;"><thead><tr style="background:var(--surface2);"><th class="jth">Назва</th><th class="jth">ЄДРПОУ</th><th class="jth">Адреса</th><th class="jth">Цінова категорія</th><th class="jth" style="width:70px;"></th></tr></thead><tbody>'
     +buyers.map(function(b){
       return '<tr class="jtr">'
         +'<td class="jtd"><div style="font-weight:600;">'+esc(b.name)+'</div>'+(b.fullName&&b.fullName!==b.name?'<div style="font-size:11px;color:var(--ink3);">'+esc(b.fullName)+'</div>':"")+'</td>'
@@ -4531,7 +4538,7 @@ function renderBuyersList(){
         +'</div></td>'
       +'</tr>';
     }).join("")
-    +'</tbody></table></div></div>';
+    +'</tbody></table></div>';
 }
 document.addEventListener("change",function(e){});
 function showBuyerForm(editId){
@@ -4684,7 +4691,7 @@ function renderProductsList(){
   var gLabel={tube20:"Палички 20шт",tube40:"Палички 40шт",refill:"Рефіл",stand:"Підставка",other:"Інше"};
   var el=document.getElementById("products-list");
   if(!products.length){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--ink3);">Немає товарів</div>';return;}
-  el.innerHTML='<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;box-shadow:var(--shadow);"><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:560px;"><thead><tr style="background:var(--surface2);"><th class="jth">Назва</th><th class="jth">SKU</th><th class="jth">Група</th><th class="jth" style="text-align:right;">Опт</th><th class="jth" style="text-align:right;">Дистр.</th><th class="jth" style="text-align:right;">Полиця</th><th class="jth" style="width:70px;"></th></tr></thead><tbody>'
+  el.innerHTML='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:560px;"><thead><tr style="background:var(--surface2);"><th class="jth">Назва</th><th class="jth">SKU</th><th class="jth">Група</th><th class="jth" style="text-align:right;">Опт</th><th class="jth" style="text-align:right;">Дистр.</th><th class="jth" style="text-align:right;">Полиця</th><th class="jth" style="width:70px;"></th></tr></thead><tbody>'
     +products.slice(0,100).map(function(p){
       var aromaId=PRODUCT_AROMA[p.id];
       var emoji=aromaId?qoAromaEmoji(aromaId):"🪴";
@@ -4709,7 +4716,7 @@ function renderProductsList(){
         +'</div></td>'
       +'</tr>';
     }).join("")
-    +'</tbody></table></div></div>';
+    +'</tbody></table></div>';
 }
 function showProductForm(editId){
   document.getElementById("product-form-title").textContent=editId?"Редагувати":"Новий товар";
@@ -4779,6 +4786,33 @@ function toggleAutoincrement(){
 
 document.addEventListener("change",function(e){if(e.target.id==="setting-autoincrement"){settings.autoincrement=e.target.checked;save();}});
 
+function printJournalPDF(){
+  var w=window.open('','_blank','width=900,height=700');
+  if(!w) return;
+  var rows=journal.map(function(j){
+    return '<tr><td>'+esc(j.invoiceNum||j.billNum||'')+'</td><td>'+esc(j.invoiceDate||'')+'</td>'+
+      '<td>'+esc(j.buyer&&j.buyer.name||'')+'</td><td style="text-align:right">'+fmt(j.total)+' ₴</td>'+
+      '<td>'+esc(j.status||'')+'</td></tr>';
+  }).join('');
+  w.document.write('<html><head><title>Журнал</title><style>body{font-family:Arial,sans-serif;font-size:12px;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #ccc;padding:5px 8px;}th{background:#f5f5f5;}</style></head>'+
+    '<body><h2>Журнал документів — All trees I know</h2>'+
+    '<table><thead><tr><th>№</th><th>Дата</th><th>Покупець</th><th>Сума</th><th>Статус</th></tr></thead><tbody>'+rows+'</tbody></table></body></html>');
+  w.document.close();
+  w.print();
+}
+function printCatalogPDF(){
+  var w=window.open('','_blank','width=900,height=700');
+  if(!w) return;
+  var rows=products.map(function(p){
+    return '<tr><td>'+esc(p.name||'')+'</td><td>'+esc(p.id)+'</td>'+
+      '<td style="text-align:right">'+(p.shelf||'—')+'</td><td style="text-align:right">'+(p.price||'—')+'</td></tr>';
+  }).join('');
+  w.document.write('<html><head><title>Довідник товарів</title><style>body{font-family:Arial,sans-serif;font-size:11px;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #ccc;padding:4px 7px;}th{background:#f5f5f5;}</style></head>'+
+    '<body><h2>Довідник товарів — All trees I know</h2>'+
+    '<table><thead><tr><th>Назва</th><th>SKU</th><th>Полиця</th><th>Опт</th></tr></thead><tbody>'+rows+'</tbody></table></body></html>');
+  w.document.close();
+  w.print();
+}
 function exportBackup(){
   var data={products:products,buyers:buyers,journal:journal,settings:settings,
     warehouseStock:warehouseStock,rawStock:rawStock,receiveHistory:receiveHistory,
