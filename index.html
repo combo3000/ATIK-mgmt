@@ -950,7 +950,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   </div>
 
   <!-- FINISHED GOODS -->
-  <div id="wh-finished" style="display:none;padding:18px;">
+  <div id="wh-finished" style="display:none!important;padding:18px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
       <div>
         <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0;">Готова продукція</h2>
@@ -1040,8 +1040,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
         Надходжень ще немає
       </div>
     </div>
-    <!-- COGS hidden but functional -->
-    <div style="display:none;">
+    <!-- COGS tab -->
+    <div id="wh-cogs" style="display:none;padding:18px;">
+      <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0 0 16px;">Собівартість (BOM)</h2>
       <div id="cogs-materials-form"></div>
       <div id="cogs-bom-table"></div>
       <div id="cogs-result-table"></div>
@@ -1257,12 +1258,16 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
         <div class="field"><label>Ціна полиці (₴) *</label><input id="np-shelf" type="number" min="0"></div>
         <div class="field"><label>К-сть в упаковці</label><input id="np-pack" type="number" min="1"></div>
         <div class="field"><label>Група</label>
-          <select id="np-group">
+          <select id="np-group" onchange="toggleStandCogs()">
             <option value="tube20">Тубус 20шт</option><option value="tube40">Тубус 40шт</option>
             <option value="refill">Рефіл папір</option><option value="stand">Підставка</option>
             <option value="other">Інше</option>
           </select>
         </div>
+      </div>
+      <div id="stand-cogs-row" style="display:none" class="row">
+        <div class="field"><label>Собівартість підставки (₴)</label><input id="np-costStand" type="number" min="0" step="0.01" placeholder="0"></div>
+        <div class="field"><label>Собівартість коробки (₴)</label><input id="np-costBox" type="number" min="0" step="0.01" placeholder="0"></div>
       </div>
       <div style="display:flex;gap:10px;margin-top:8px">
         <button class="btn btn-moss btn-sm" onclick="saveProduct()">💾 Зберегти</button>
@@ -1550,7 +1555,6 @@ const DEFAULT_PRODUCTS=[
   {id:"sofika_green",   name:'Підставка "ATIK&Sofika" Sofika зелена, All trees I know',                  shelf:650, price:650,unit:"шт.",pack:null,group:"stand"},
   {id:"sofika_spotted", name:'Підставка "ATIK&Sofika" Sofika плямиста, All trees I know',                shelf:650, price:650,unit:"шт.",pack:null,group:"stand"},
   {id:"sofika_brown",   name:'Підставка "ATIK&Sofika" Sofika коричнева, All trees I know',               shelf:650, price:650,unit:"шт.",pack:null,group:"stand"},
-  {id:"tester20",       name:"Палички ароматичні тестер 20шт, All trees I know",                         shelf:0,   price:0,  unit:"шт.",pack:20,group:"tester"},
   {id:"ref20_cherry",      name:"Палички ароматичні Cherry Bloom, Цвіт Вишні 20шт, Папір",     shelf:400,price:280,unit:"шт.",pack:20,group:"refill"},
   {id:"ref20_osmanthus",   name:"Палички ароматичні Osmanthus, Османтус 20шт, Папір",           shelf:400,price:280,unit:"шт.",pack:20,group:"refill"},
   {id:"ref20_camphor",     name:"Палички ароматичні Camphor Tree, Камфорне дерево 20шт, Папір", shelf:400,price:280,unit:"шт.",pack:20,group:"refill"},
@@ -1575,7 +1579,6 @@ const DEFAULT_PRODUCTS=[
   {id:"ref10_agarwood",    name:"Палички ароматичні Agarwood, Агарове дерево 10шт, Папір",      shelf:300,price:210,unit:"шт.",pack:10,group:"refill"},
   {id:"ref10_frankincense",name:"Палички ароматичні Frankincense, Ладан 10шт, Папір",           shelf:350,price:245,unit:"шт.",pack:10,group:"refill"},
   {id:"ref10_gardentree",  name:"Палички ароматичні Garden Tree, Садове дерево 10шт, Папір",    shelf:300,price:210,unit:"шт.",pack:10,group:"refill"},
-  {id:"tester_paper10",    name:"Палички ароматичні тестер 10шт, Папір",                        shelf:0,  price:0,  unit:"шт.",pack:10,group:"tester"},
 ];
 
 const DEFAULT_BUYERS=[
@@ -1596,7 +1599,8 @@ const DEFAULT_BUYERS=[
 const BOM={
   tube20:  {sticks:20, tubes:1, labels:1},
   tube40:  {sticks:40, tubes:1, labels:1},
-  refill:  {sticks:20, tubes:0, labels:1},
+  refill:  {sticks:20, tubes:1, labels:1},
+  refill40:{sticks:40, tubes:1, labels:1},
   stand:   {sticks:0,  tubes:0, labels:0},
   other:   {sticks:0,  tubes:0, labels:0},
 };
@@ -2104,7 +2108,7 @@ function updateBreadcrumb(tab, sub) { /* removed */ }
 /* Sub-nav definitions */
 var SUB_NAVS = {
   docs:      [{id:"all",label:"Всі"},{id:"invoice",label:"Накладні"},{id:"bill",label:"Рахунки"}],
-  warehouse: [{id:"raw",label:"Сировина"},{id:"finished",label:"Готова продукція"},{id:"receive",label:"Прийом"},{id:"history",label:"Журнал"}],
+  warehouse: [{id:"raw",label:"Сировина"},{id:"receive",label:"Прийом"},{id:"history",label:"Журнал"},{id:"cogs",label:"Собівартість"}],
   sales:     [{id:"overview",label:"Огляд"},{id:"margin",label:"Маржа"},{id:"buyers",label:"По покупцях"},{id:"products",label:"По товарах"}],
   catalog:   [{id:"buyers", label:"Покупці"}, {id:"products",label:"Товари"},   {id:"suppliers",label:"Постачальники"}],
   orders:    [{id:"all",label:"Всі"},{id:"new",label:"Нові"},{id:"confirmed",label:"Підтверджені"}],
@@ -2139,15 +2143,15 @@ function switchSubTab(tab, sub) {
   }
   if (tab==="warehouse") {
     // show/hide sub-panels
-    var panels = {raw:"wh-raw", finished:"wh-finished", receive:"wh-receive", history:"wh-journal"};
+    var panels = {raw:"wh-raw", receive:"wh-receive", history:"wh-journal", cogs:"wh-cogs"};
     Object.keys(panels).forEach(function(k){
       var el = document.getElementById(panels[k]);
       if(el) el.style.display = k===sub ? "" : "none";
     });
     if (sub==="raw")      { renderRawMaterials(); }
-    if (sub==="finished") { renderFinishedGoods(); }
     if (sub==="receive")  { /* form ready */ }
-    if (sub==="history")  { renderReceiveHistory(); renderCogs(); }
+    if (sub==="history")  { renderReceiveHistory(); }
+    if (sub==="cogs")     { renderCogs(); }
   }
   if (tab==="sales") {
     var salesPanels = {overview:"sales-overview", margin:"sales-margin", buyers:"sales-buyers", products:"sales-products"};
@@ -2212,7 +2216,7 @@ function switchTab(tab){
   if(tab==="docs")       { renderJournal(); checkDraftBanner(); switchDocsSub("journal"); }
   if(tab==="warehouse")  {
     // init: show raw panel, hide others
-    ["wh-raw","wh-finished","wh-receive","wh-journal"].forEach(function(id,i){
+    ["wh-raw","wh-receive","wh-journal","wh-cogs"].forEach(function(id,i){
       var el=document.getElementById(id); if(el) el.style.display=i===0?"":"none";
     });
     renderRawMaterials();
@@ -2428,17 +2432,16 @@ function onDocTypeChange(){
 function buildProductOptions(){
   function opt(p){return "<option value=\""+p.id+"\">"+shortName(p.name)+" — "+calcPrice(p)+" ₴</option>";}
   function grp(lbl,list){return list.length?"<optgroup label=\""+lbl+"\">"+list.map(opt).join("")+"</optgroup>":"";}
-  var p20=products.filter(function(p){return p.group==="tube20"&&p.id!=="tester20";});
+  var p20=products.filter(function(p){return p.group==="tube20";});
   var p40=products.filter(function(p){return p.group==="tube40";});
   var r20=products.filter(function(p){return p.group==="refill"&&p.pack===20;});
   var r10=products.filter(function(p){return p.group==="refill"&&p.pack===10;});
   var st=products.filter(function(p){return p.group==="stand";});
-  var te=products.filter(function(p){return p.id==="tester20"||p.id==="tester_paper10";});
   var cu=products.filter(function(p){return p.custom;});
   return "<option value=\"\">— Оберіть товар —</option>"
     +grp("🌿 Палички тубус 20шт",p20)+grp("🌿 Палички тубус 40шт",p40)
     +grp("📄 Рефіл папір 20шт",r20)+grp("📄 Рефіл папір 10шт",r10)
-    +grp("🪵 Підставки",st)+grp("📦 Тестери",te)+(cu.length?grp("⭐ Мої товари",cu):"");
+    +grp("🪵 Підставки",st)+(cu.length?grp("⭐ Мої товари",cu):"");
 }
 function renderItems(){
   var container=document.getElementById("items-container");
@@ -4333,7 +4336,7 @@ function renderBuyersList(){
           +'<button class="jact" title="Редагувати" onclick="showBuyerForm(\'"+b.id+"\')">'
             +'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--pine)" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
           +'</button>'
-          +'<button class="jact" title="Видалити" onclick="deleteBuyer(\'+b.id+\')">'
+          +'<button class="jact" title="Видалити" onclick="deleteBuyer(\'"+b.id+"\')">'
             +'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>'
           +'</button>'
         +'</div></td>'
@@ -4526,7 +4529,10 @@ function showProductForm(editId){
   ["name","shelf","pack"].forEach(function(f){var el=document.getElementById("np-"+f);if(el)el.value="";});
   if(editId){var p=products.find(function(x){return x.id===editId;});
     if(p){document.getElementById("np-name").value=p.name||"";document.getElementById("np-shelf").value=p.shelf||"";document.getElementById("np-pack").value=p.pack||"";
-      if(document.getElementById("np-group"))document.getElementById("np-group").value=p.group||"tube20";}}
+      if(document.getElementById("np-group"))document.getElementById("np-group").value=p.group||"tube20";
+      var csEl=document.getElementById("np-costStand");if(csEl)csEl.value=p.costStand||"";
+      var cbEl=document.getElementById("np-costBox");if(cbEl)cbEl.value=p.costBox||"";}}
+  toggleStandCogs();
   // Make sure the products section is visible
   var psection=document.getElementById("catalog-products-section");
   if(psection) psection.style.display="";
@@ -4537,7 +4543,12 @@ function showProductForm(editId){
   document.getElementById("product-form").style.display="";
   document.getElementById("product-form").scrollIntoView({behavior:"smooth"});
 }
-function hideProductForm(){document.getElementById("product-form").style.display="none";}
+function toggleStandCogs(){
+  var grp=(document.getElementById("np-group")||{}).value;
+  var row=document.getElementById("stand-cogs-row");
+  if(row) row.style.display=(grp==="stand")?"":"none";
+}
+function hideProductForm(){document.getElementById("product-form").style.display="none";toggleStandCogs();}
 function saveProduct(){
   var editId=document.getElementById("edit-product-id").value;
   var name=document.getElementById("np-name").value.trim();
@@ -4545,7 +4556,10 @@ function saveProduct(){
   if(!name||!shelf){alert("Вкажіть назву і ціну полиці");return;}
   var pack=parseInt(document.getElementById("np-pack").value)||null;
   var group=document.getElementById("np-group").value||"other";
+  var costStand=parseFloat(document.getElementById("np-costStand").value)||0;
+  var costBox=parseFloat(document.getElementById("np-costBox").value)||0;
   var data={id:editId||uid(),name:name,shelf:shelf,price:Math.round(shelf*0.6),unit:"шт.",pack:pack,group:group,custom:true};
+  if(group==="stand"){data.costStand=costStand;data.costBox=costBox;}
   if(editId){var idx=products.findIndex(function(p){return p.id===editId;});if(idx>=0)products[idx]=Object.assign({},products[idx],data);}
   else products.push(data);
   save();hideProductForm();renderProductsList();
@@ -4824,7 +4838,7 @@ function qoRenderGrid(){
 
   /* Group products: tube20, tube40, stand */
   var groups = [
-    { key:'tube20', label:'Палички 20шт',  items: products.filter(function(p){return p.group==='tube20'&&p.id!=='tester20';}) },
+    { key:'tube20', label:'Палички 20шт',  items: products.filter(function(p){return p.group==='tube20';}) },
     { key:'tube40', label:'Палички 40шт',  items: products.filter(function(p){return p.group==='tube40';}) },
     { key:'stand',  label:'Підставки',     items: products.filter(function(p){return p.group==='stand';}) },
   ];
@@ -5077,8 +5091,8 @@ var DEFAULT_MAT_PRICES = {
 var DEFAULT_BOM = {
   tube20:  { sticks:20, tubes:1, labels:1 },
   tube40:  { sticks:40, tubes:1, labels:1 },
-  refill:  { sticks:20, tubes:0, labels:1 },
-  tester:  { sticks:5,  tubes:0, labels:0 },
+  refill:  { sticks:20, tubes:1, labels:1 },
+  refill40:{ sticks:40, tubes:1, labels:1 },
   stand:   { sticks:0,  tubes:0, labels:0 },
   other:   { sticks:0,  tubes:0, labels:0 },
 };
@@ -5132,7 +5146,6 @@ var BOM_GROUPS = [
   { key:"tube20",  label:"Тубус 20шт" },
   { key:"tube40",  label:"Тубус 40шт" },
   { key:"refill",  label:"Рефіл 20шт (папір)" },
-  { key:"tester",  label:"Тестер 5шт" },
   { key:"stand",   label:"Підставка" },
 ];
 var BOM_ROWS = [
@@ -5175,8 +5188,13 @@ function calcCogsForGroup(group, supplierKey) {
 // Calculate COGS for a specific product (using its aroma price)
 function calcCogsForProduct(productId) {
   var p = products.find(function(x){return x.id===productId;});
-  if(!p) return calcCogsForGroup("other", "aroma_osmanthus");
+  if(!p) return {totalCost:0, stickCost:0, tubeCost:0, labelCost:0, materialCost:0, overheadFixed:0, miscCost:0};
   var group = p.group || "other";
+  // Підставки — собівартість = підставка + коробка (вводиться вручну)
+  if(group === "stand") {
+    var total = (p.costStand||0) + (p.costBox||0);
+    return {totalCost:total, stickCost:0, tubeCost:p.costStand||0, labelCost:p.costBox||0, materialCost:total, overheadFixed:0, miscCost:0, isStand:true};
+  }
   var aromaId = PRODUCT_AROMA[productId];
   var aromaKey = aromaId ? "aroma_"+aromaId : "aroma_osmanthus";
   return calcCogsForGroup(group, aromaKey);
@@ -5380,27 +5398,6 @@ function renderCogsResult() {
       + mkBreakItem("Накладні", ce.overheadFixed + ce.miscCost, ce.totalCost)
       + '</div></div>';
   }
-
-  // Expandable: Тестер 5шт — only sticks cost (no tube, no label)
-  rhtml += '<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700;font-size:13px;color:var(--pine);padding:8px 0">🧪 Тестер 5шт — собівартість по ароматах</summary>';
-  rhtml += '<div style="overflow-x:auto;margin-top:8px"><table class="inv-table" style="min-width:500px"><thead><tr>'
-    + '<th>Аромат</th>'
-    + '<th style="text-align:right">₴/кг</th>'
-    + '<th style="text-align:right;font-weight:700">COGS (₴)</th>'
-    + '<th style="font-size:11px;color:var(--ink4);text-align:center">Склад: 5 паличок, без тубусу і наліпки</th>'
-    + '</tr></thead><tbody>';
-  aromaKeys.forEach(function(aId, ai) {
-    var aromaKey = "aroma_" + aId;
-    var pricePerKg = matPrices[aromaKey] || DEFAULT_MAT_PRICES[aromaKey] || 0;
-    var c = calcCogsForGroup("tester", aromaKey);
-    rhtml += '<tr style="' + (ai%2?"background:var(--washi)":"") + '">'
-      + '<td style="font-weight:600">' + esc(AROMAS[aId].en) + '</td>'
-      + '<td style="text-align:right;color:var(--ink3)">' + pricePerKg.toLocaleString("uk-UA") + '</td>'
-      + '<td style="text-align:right;font-weight:700;color:var(--pine)">' + c.totalCost.toFixed(2) + '</td>'
-      + '<td style="text-align:center;font-size:11px;color:var(--ink4)">палички: ' + c.stickCost.toFixed(2) + ' + накладні: ' + (c.overheadFixed+c.miscCost).toFixed(2) + '</td>'
-      + '</tr>';
-  });
-  rhtml += '</tbody></table></div></details>';
 
   document.getElementById("cogs-result-table").innerHTML = rhtml;
 }
