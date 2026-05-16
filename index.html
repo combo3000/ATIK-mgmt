@@ -615,6 +615,10 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 }
 .jact:hover{border-color:var(--ink3);background:var(--surface2);}
 .jact:active{background:var(--surface3);transform:scale(0.95);}
+@media(max-width:480px){
+  #cloud-status{display:none!important;}
+  #cloud-user{display:none!important;}
+}
 /* ── Preview action buttons ── */
 .preview-actions{
   display:grid;
@@ -673,11 +677,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       <div style="font-size:10px;color:rgba(255,255,255,.65);line-height:1.3;">Облік · склад · продажі</div>
     </div>
   </div>
-  <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-shrink:0">
-    <div id="cloud-status" style="font-size:11px;color:rgba(255,255,255,0.65);white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis"></div>
-    <span id="cloud-user" style="font-size:11px;color:rgba(255,255,255,0.7);white-space:nowrap"></span>
-    <button class="btn btn-sm" id="btn-signin" onclick="cloudSignIn()" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);font-size:11px;padding:5px 10px;position:relative;z-index:200;pointer-events:all;cursor:pointer;">Google →</button>
-    <button class="btn btn-sm" id="btn-signout" onclick="cloudSignOut()" style="display:none;background:rgba(255,255,255,0.12);color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.2);font-size:11px;padding:5px 10px;position:relative;z-index:200;pointer-events:all;cursor:pointer;">Вийти</button>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;min-width:0;">
+    <div id="cloud-status" style="font-size:11px;color:rgba(255,255,255,0.65);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(200px,30vw);"></div>
+    <span id="cloud-user" style="font-size:11px;color:rgba(255,255,255,0.7);white-space:nowrap;max-width:min(100px,20vw);overflow:hidden;text-overflow:ellipsis;"></span>
+    <button class="btn btn-sm" id="btn-signin" onclick="cloudSignIn()" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);font-size:11px;padding:5px 10px;white-space:nowrap;flex-shrink:0;cursor:pointer;">Google →</button>
+    <button class="btn btn-sm" id="btn-signout" onclick="cloudSignOut()" style="display:none;background:rgba(255,255,255,0.12);color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.2);font-size:11px;padding:5px 10px;white-space:nowrap;flex-shrink:0;cursor:pointer;">Вийти</button>
     <button class="btn btn-sm" id="btn-cloud-sync" onclick="manualCloudSync()" style="display:none;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);font-size:11px;padding:5px 10px;position:relative;z-index:200;pointer-events:all;cursor:pointer;">↻ Sync</button>
   </div>
 </div>
