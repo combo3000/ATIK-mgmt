@@ -617,6 +617,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 .jact:active{background:var(--surface3);transform:scale(0.95);}
 @media(max-width:480px){
   #cloud-status{display:none!important;}
+  #sync-banner{display:none;position:fixed;left:0;right:0;top:0;z-index:99999;
+    padding:9px 14px;font-size:13px;font-weight:700;text-align:center;
+    color:#fff;cursor:pointer;letter-spacing:.2px;
+    box-shadow:0 2px 10px rgba(0,0,0,.25);}
+  #sync-banner.sb-pending{display:block;background:#b07b17;}
+  #sync-banner.sb-error{display:block;background:#b3261e;}
+  #sync-banner.sb-ok{display:block;background:#2f6b3a;}
   #cloud-user{display:none!important;}
 }
 /* ── Preview action buttons ── */
@@ -668,6 +675,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 </style>
 </head>
 <body>
+<div id="sync-banner" onclick="forceSyncNow()"><span id="sync-banner-text"></span></div>
 <div class="app">
 <div class="header">
   <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
@@ -1760,6 +1768,12 @@ var cloudApp=null, cloudDb=null, cloudAuth=null, cloudUser=null, cloudUnsub=null
 var cloudReady=false, cloudApplyingRemote=false, cloudPushTimer=null;
 var cloudDocPath={collection:"shared",doc:"main"};
 var lastPushedRevision=null, lastSeenRemoteRevision=null;
+// Revisions written BY THIS CLIENT. A snapshot carrying any of these must never
+// be applied back onto local state — that was the silent rollback bug.
+var myRevisions=[];
+var inFlightPushes=0;      // set() calls issued but not yet acknowledged
+var localDirty=false;      // local edits not yet confirmed by the server
+var syncState="idle";
 
 // ============================================================
 // PERSISTENCE
@@ -1812,6 +1826,7 @@ function load(){
         b.retailName=m?m[1]:b.name;
       }
     });
+    compactJournal();
     // Prune zero-qty entries from retailStock (cleanup legacy accumulated zeros)
     Object.keys(retailStock).forEach(function(bid){
       Object.keys(retailStock[bid]).forEach(function(pid){
@@ -1826,6 +1841,15 @@ function load(){
   }
 }
 function save(){
+  try{ saveLocal(); }
+  catch(e){
+    console.error("localStorage save failed:",e);
+    setSyncState("error","⚠️ Немає місця в пам'яті браузера. Натисніть тут.");
+  }
+  markDirty();
+  scheduleCloudPush();
+}
+function saveLocal(){
   localStorage.setItem("atik5_products",JSON.stringify(products));
   localStorage.setItem("atik5_buyers",JSON.stringify(buyers));
   localStorage.setItem("atik5_journal",JSON.stringify(journal));
@@ -1839,8 +1863,122 @@ function save(){
   localStorage.setItem("atik5_opex",JSON.stringify(opexStore));
   localStorage.setItem("atik5_fixedcogs",JSON.stringify(fixedCogsMap));
   localStorage.setItem("atik5_reorder",JSON.stringify(reorderPoints));
-  scheduleCloudPush();
+  localStorage.setItem("atik5_matprices",JSON.stringify(matPrices));
+  localStorage.setItem("atik5_bom",JSON.stringify(bomData));
 }
+
+// ============================================================
+// JOURNAL COMPACTION
+// Documents used to embed a full copy of the buyer object (~600 B each).
+// Now they store buyerId only. Legal accuracy is preserved by freezing a
+// snapshot into buyerSnap at the moment the buyer record is edited/deleted,
+// so historical documents keep the data they were issued with.
+// ============================================================
+var BUYER_DOC_FIELDS=["name","fullName","address","contract","receiver","iban","edrpou","bank"];
+
+function jBuyer(j){
+  if(!j) return {};
+  var base=null;
+  var bid=j.buyerId||(j.buyer&&j.buyer.id);
+  if(bid) base=buyers.find(function(b){return b.id===bid;});
+  if(!base && j.buyer) return j.buyer;                 // legacy uncompacted entry
+  if(!base) base={id:bid,name:"(видалений покупець)"};
+  if(j.buyerSnap) return Object.assign({},base,j.buyerSnap,{id:bid});
+  return base;
+}
+function jBuyerId(j){ return j&&(j.buyerId||(j.buyer&&j.buyer.id))||null; }
+function jBuyerName(j){ var b=jBuyer(j); return b&&b.name||"—"; }
+
+// Before a buyer record changes, pin its current values onto every document
+// that still resolves live — otherwise old накладні would silently mutate.
+function freezeBuyerInJournal(buyerId, newData){
+  var cur=buyers.find(function(b){return b.id===buyerId;});
+  if(!cur)return;
+  var snap={};
+  BUYER_DOC_FIELDS.forEach(function(f){
+    if(cur[f]===undefined)return;
+    // On edit, freeze only the fields that are actually about to change.
+    if(newData && (newData[f]===undefined || newData[f]===cur[f]))return;
+    snap[f]=cur[f];
+  });
+  if(!Object.keys(snap).length)return;
+  journal.forEach(function(j){
+    if(jBuyerId(j)!==buyerId)return;
+    if(j.buyerSnap)return;      // already frozen at an earlier edit
+    if(j.buyer)return;          // legacy entry already carries a full copy
+    j.buyerSnap=snap;
+  });
+}
+
+// One-time migration: strip the embedded buyer copy from historical entries.
+function compactJournal(){
+  var changed=0;
+  journal.forEach(function(j){
+    if(!j.buyer)return;
+    var bid=j.buyer.id;
+    j.buyerId=bid;
+    var cur=buyers.find(function(b){return b.id===bid;});
+    var diff={};
+    BUYER_DOC_FIELDS.forEach(function(f){
+      var was=j.buyer[f]===undefined?null:j.buyer[f];
+      var now=cur&&cur[f]!==undefined?cur[f]:null;
+      if(was!==now) diff[f]=was;      // keep only what actually differs
+    });
+    if(!cur){ BUYER_DOC_FIELDS.forEach(function(f){ if(j.buyer[f]!==undefined) diff[f]=j.buyer[f]; }); }
+    if(Object.keys(diff).length) j.buyerSnap=diff;
+    delete j.buyer;
+    // Derived fields — recomputed on render instead of stored.
+    delete j.totalWords;
+    if(j.items) j.items.forEach(function(it){ delete it.sum; });
+    changed++;
+  });
+  return changed;
+}
+
+// Returning a deleted document's materials to stock. Only amounts recorded at
+// issue time are given back — never a recomputed BOM estimate, which would
+// invent stock that was never actually taken.
+function restoreStockFromDoc(j){
+  if(!j||j.docType!=="invoice")return false;
+  var restored=false;
+  if(j.stockUsed){
+    Object.keys(j.stockUsed).forEach(function(k){
+      var u=j.stockUsed[k]; if(!u)return;
+      if(!rawStock[k])rawStock[k]={qty:0,avgCostUah:0,sticks:0,unit:k.indexOf("sticks_")===0?"кг":"шт"};
+      rawStock[k].qty=(rawStock[k].qty||0)+(u.qty||0);
+      if(u.sticks) rawStock[k].sticks=(rawStock[k].sticks||0)+u.sticks;
+      restored=true;
+    });
+  }
+  var bid=jBuyerId(j);
+  if(bid&&retailStock[bid]){
+    (j.items||[]).forEach(function(it){
+      var pid=it.productId||it.id;
+      if(!retailStock[bid][pid])return;
+      retailStock[bid][pid].qty=Math.max(0,(retailStock[bid][pid].qty||0)-(it.qty||0));
+      if(retailStock[bid][pid].qty<=0) delete retailStock[bid][pid];
+      restored=true;
+    });
+  }
+  return restored;
+}
+
+// Document numbering. Numbers are the one thing accountants actually check,
+// so it lives in one place and skips anything already used.
+function nextInvoiceNum(){
+  var max=journal.reduce(function(m,j){
+    var n=parseInt(String(j.invoiceNum||"").replace(/\D/g,""),10);
+    return isNaN(n)?m:Math.max(m,n);
+  },0);
+  return max+1;
+}
+function invoiceNumExists(num){
+  var t=String(num||"").trim();
+  return journal.some(function(j){ return String(j.invoiceNum||"").trim()===t; });
+}
+
+function itemSum(it){ return it&&(it.sum!==undefined?it.sum:(it.price||0)*(it.qty||0))||0; }
+function docWords(g){ return g&&(g.totalWords||mkWords(g.total||0))||""; }
 
 function collectAppState(){
   return {
@@ -1848,7 +1986,7 @@ function collectAppState(){
     warehouseStock:warehouseStock, rawStock:rawStock, receiveHistory:receiveHistory,
     retailStock:retailStock, salesReports:salesReports, suppliers:suppliers,
     reorderPoints:reorderPoints, opexStore:opexStore,
-    reorderPoints:reorderPoints, opexStore:opexStore
+    fixedCogsMap:fixedCogsMap, matPrices:matPrices, bomData:bomData
   };
 }
 
@@ -1872,8 +2010,9 @@ function applyAppState(data){
   if(data.suppliers)suppliers=data.suppliers;
   if(data.reorderPoints)reorderPoints=data.reorderPoints;
   if(data.opexStore)opexStore=data.opexStore;
-  if(data.reorderPoints)reorderPoints=data.reorderPoints;
-  if(data.opexStore)opexStore=data.opexStore;
+  if(data.fixedCogsMap&&Object.keys(data.fixedCogsMap).length)fixedCogsMap=data.fixedCogsMap;
+  if(data.matPrices&&Object.keys(data.matPrices).length)matPrices=data.matPrices;
+  if(data.bomData&&Object.keys(data.bomData).length)bomData=data.bomData;
   // Ensure suppliers have aromas
   suppliers.forEach(function(s){if(!s.aromas)s.aromas=[];});
   var defSup={yasuhito:["osmanthus","cherry","sandalwood","camphor"],ryo:["hydrangea","blacksandal","musk","frankincense"],yoko:["temple","honeysandal"],hanna:["gardentree","agarwood"]};
@@ -1885,6 +2024,7 @@ function applyAppState(data){
   });
   DEFAULT_BUYERS.forEach(function(d){if(!buyers.find(function(x){return x.id===d.id;})) buyers.push(Object.assign({},d));});
   DEFAULT_PRODUCTS.forEach(function(d){if(!products.find(function(x){return x.id===d.id;})) products.push(Object.assign({},d));});
+  compactJournal();   // legacy entries pushed by an older client
 }
 
 function rerenderAfterStateChange(){
@@ -1901,8 +2041,8 @@ function rerenderAfterStateChange(){
   renderProductsList();
   renderCogs();
   if(settings.autoincrement){
-    var maxNum=journal.reduce(function(m,j){return Math.max(m,parseInt(j.invoiceNum)||0);},0);
-    if(maxNum>0&&document.getElementById("inv-num"))document.getElementById("inv-num").value=maxNum+1;
+    var el=document.getElementById("inv-num");
+    if(el) el.value=nextInvoiceNum();
   }
 }
 
@@ -1941,7 +2081,7 @@ function initCloud(){
     cloudReady=true;
     updateCloudStatus("Firebase підключено. Увійдіть через Google.");
     // Initialize Firestore immediately (safe to do before auth)
-    if(!cloudDb){ try{ cloudDb=firebase.firestore(); }catch(e){} }
+    if(!cloudDb){ try{ cloudDb=firebase.firestore(); enableCloudPersistence(); }catch(e){} }
 
     cloudAuth.onAuthStateChanged(function(user){
       cloudUser=user||null;
@@ -1956,8 +2096,7 @@ function initCloud(){
       // Initialize Firestore only after confirmed login
       if(!cloudDb){
         cloudDb=firebase.firestore();
-        // Optional: disable long-polling fallback to reduce console noise
-        // cloudDb.settings({ experimentalForceLongPolling: false });
+        enableCloudPersistence();
       }
       subscribeToCloudState();
     });
@@ -1969,6 +2108,7 @@ function initCloud(){
       cloudApp = firebase.app();
       cloudAuth = firebase.auth();
       cloudDb = firebase.firestore();
+      enableCloudPersistence();
       cloudReady = true;
       updateCloudStatus("Firebase відновлено.");
       cloudAuth.onAuthStateChanged(function(user){
@@ -2001,6 +2141,20 @@ function cloudSignOut(){
   if(cloudAuth) cloudAuth.signOut();
 }
 
+// IndexedDB-backed write queue: pending writes now survive the tab being
+// killed and are replayed on the next launch. This was the single biggest
+// cause of documents silently disappearing.
+var cloudPersistenceTried=false;
+function enableCloudPersistence(){
+  if(cloudPersistenceTried||!cloudDb)return;
+  cloudPersistenceTried=true;
+  try{
+    cloudDb.enablePersistence({synchronizeTabs:true}).catch(function(err){
+      console.warn("Firestore persistence unavailable:",err&&err.code);
+    });
+  }catch(e){ console.warn("Firestore persistence failed:",e); }
+}
+
 function getCloudDocRef(){
   return cloudDb.collection(cloudDocPath.collection).doc(cloudDocPath.doc);
 }
@@ -2009,20 +2163,40 @@ function subscribeToCloudState(){
   if(!cloudDb||!cloudUser)return;
   updateCloudStatus("Підключення до спільної бази...");
   cloudUnsub=getCloudDocRef().onSnapshot(function(snap){
+    // Local echo of our own pending write — nothing to learn from it.
+    if(snap.metadata && snap.metadata.hasPendingWrites) return;
+
     if(!snap.exists){
       updateCloudStatus("Спільна база порожня. Завантажую ваші поточні дані...");
       pushCloudState(true);
       return;
     }
     var data=snap.data()||{};
-    if(data.revision && data.revision===lastPushedRevision){
+
+    // Our own revision coming back from the server. NEVER re-apply it:
+    // a late acknowledgement of an older push used to overwrite newer local state.
+    if(data.revision && myRevisions.indexOf(data.revision)>=0){
       lastSeenRemoteRevision=data.revision;
-      updateCloudStatus("Синхронізовано ✔");
+      if(data.revision===lastPushedRevision && inFlightPushes===0){
+        localDirty=false;
+        setSyncState("ok","✔ Збережено в хмарі");
+      }
       return;
     }
+
+    // Remote change arrived while we still hold unsaved local work.
+    // Merge instead of overwriting, then push the union back.
+    if(localDirty || inFlightPushes>0 || cloudPushTimer){
+      mergeRemoteState(data.state||{});
+      rerenderAfterStateChange();
+      clearTimeout(cloudPushTimer); cloudPushTimer=null;
+      pushCloudState(false);
+      return;
+    }
+
     cloudApplyingRemote=true;
     applyAppState(data.state||{});
-    save();
+    try{ saveLocal(); }catch(e){ console.error(e); }
     rerenderAfterStateChange();
     cloudApplyingRemote=false;
     lastSeenRemoteRevision=data.revision||null;
@@ -2031,13 +2205,77 @@ function subscribeToCloudState(){
   }, function(err){
     console.error(err);
     updateCloudStatus("Помилка читання Firestore: "+err.message, true);
+    setSyncState("error","⚠️ Немає зв'язку з базою. Натисніть тут.");
   });
+}
+
+// Union two states without losing records from either side.
+// Local always wins on conflicts; remote-only records are added back in.
+function mergeRemoteState(remote){
+  if(!remote)return;
+  function unionById(localArr, remoteArr){
+    if(!remoteArr||!remoteArr.length) return localArr;
+    var seen={}; localArr.forEach(function(x){ if(x&&x.id) seen[x.id]=1; });
+    var extra=remoteArr.filter(function(x){ return x&&x.id&&!seen[x.id]; });
+    return localArr.concat(extra);
+  }
+  journal=unionById(journal, remote.journal);
+  journal.sort(function(a,b){ return String(b.savedAt||"").localeCompare(String(a.savedAt||"")); });
+  receiveHistory=unionById(receiveHistory, remote.receiveHistory);
+  salesReports =unionById(salesReports,  remote.salesReports);
+  buyers  =unionById(buyers,   remote.buyers);
+  products=unionById(products, remote.products);
+  suppliers=unionById(suppliers, remote.suppliers);
+  try{ saveLocal(); }catch(e){ console.error(e); }
 }
 
 function scheduleCloudPush(){
   if(!cloudReady||!cloudUser||cloudApplyingRemote)return;
   clearTimeout(cloudPushTimer);
-  cloudPushTimer=setTimeout(function(){ pushCloudState(false); }, 800);
+  // 200ms instead of 800ms — the window in which a closed tab loses data.
+  cloudPushTimer=setTimeout(function(){ cloudPushTimer=null; pushCloudState(false); }, 200);
+}
+
+function markDirty(){
+  localDirty=true;
+  if(cloudReady&&cloudUser) setSyncState("pending","⏳ Зберігаю…");
+}
+
+var _sbShown=false, _sbDelayT=null, _sbHideT=null;
+function setSyncState(state, text){
+  syncState=state;
+  var b=document.getElementById("sync-banner");
+  var t=document.getElementById("sync-banner-text");
+  if(!b||!t)return;
+  clearTimeout(_sbDelayT); clearTimeout(_sbHideT);
+
+  if(state==="error"){
+    t.textContent=text; b.className="sb-error"; _sbShown=true; return;
+  }
+  if(state==="pending"){
+    // Stay silent for a normal fast save; only warn if it drags on.
+    _sbDelayT=setTimeout(function(){
+      if(syncState!=="pending")return;
+      t.textContent=text||"⏳ Зберігаю…"; b.className="sb-pending"; _sbShown=true;
+    },1500);
+    return;
+  }
+  if(state==="ok"){
+    if(!_sbShown){ b.className=""; return; }   // nothing was shown, stay quiet
+    t.textContent=text||"✔ Збережено в хмарі"; b.className="sb-ok";
+    _sbHideT=setTimeout(function(){
+      if(syncState==="ok"){ b.className=""; _sbShown=false; }
+    },2000);
+    return;
+  }
+  b.className=""; _sbShown=false;
+}
+
+// Called when the banner is tapped — force an immediate write attempt.
+function forceSyncNow(){
+  if(!cloudUser||!cloudDb){ alert("Увійдіть через Google, щоб зберегти в хмару."); return; }
+  clearTimeout(cloudPushTimer); cloudPushTimer=null;
+  pushCloudState(true);
 }
 
 function manualCloudSync(){
@@ -2050,25 +2288,54 @@ function pushCloudState(isManual){
   if(!cloudReady||!cloudUser||!cloudDb||cloudApplyingRemote)return;
   var revision='rev_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
   lastPushedRevision=revision;
+  myRevisions.push(revision);
+  if(myRevisions.length>40) myRevisions=myRevisions.slice(-40);
+  inFlightPushes++;
   updateCloudStatus(isManual?"Синхронізую...":"Зберігаю в хмару...");
+  setSyncState("pending","⏳ Зберігаю…");
+  // No {merge:true}: we always write the complete state, and merge kept
+  // deleted map keys (retailStock/rawStock) alive on the server forever.
   getCloudDocRef().set({
     revision:revision,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     updatedBy:{ uid:cloudUser.uid, email:cloudUser.email||null, name:cloudUser.displayName||null },
     state:collectAppState()
-  }, {merge:true}).then(function(){
+  }).then(function(){
+    inFlightPushes--;
+    if(inFlightPushes<=0){ inFlightPushes=0; localDirty=false; setSyncState("ok","✔ Збережено в хмарі"); }
     updateCloudStatus("Синхронізовано ✔");
   }).catch(function(err){
+    inFlightPushes--; if(inFlightPushes<0) inFlightPushes=0;
     console.error(err);
     updateCloudStatus("Помилка запису Firestore: "+err.message, true);
+    setSyncState("error","⚠️ НЕ ЗБЕРЕЖЕНО в хмарі. Натисніть, щоб повторити.");
   });
 }
+
+// Flush before the page can be frozen or killed (mobile backgrounding,
+// tab close, PWA switch). Without this, a queued write simply died.
+function flushBeforeExit(){
+  if(!localDirty && !cloudPushTimer) return;
+  clearTimeout(cloudPushTimer); cloudPushTimer=null;
+  try{ saveLocal(); }catch(e){}
+  pushCloudState(false);
+}
+window.addEventListener("pagehide", flushBeforeExit);
+window.addEventListener("beforeunload", function(e){
+  flushBeforeExit();
+  if(localDirty||inFlightPushes>0){ e.preventDefault(); e.returnValue=""; return ""; }
+});
+document.addEventListener("visibilitychange", function(){
+  if(document.visibilityState==="hidden") flushBeforeExit();
+  else if(localDirty) scheduleCloudPush();
+});
+window.addEventListener("online", function(){ if(localDirty) forceSyncNow(); });
 
 // ============================================================
 // UTILS
 // ============================================================
 function uid(){return "c_"+Math.random().toString(36).substr(2,9);}
-function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
 function fmt(n){return (n||0).toLocaleString("uk-UA",{minimumFractionDigits:0,maximumFractionDigits:0});}
 function getPriceType(){return document.querySelector('input[name="pricetype"]:checked')&&document.querySelector('input[name="pricetype"]:checked').value||"shelf";}
 function calcPrice(p){
@@ -2790,7 +3057,13 @@ var _plt=null,_pls=0;
     }
   };
 })();
-function showLoader(){var el=document.getElementById("tree-loader");if(el){el.classList.add("show");_pls=0;_drawSprout(0);_plt=setInterval(function(){_pls=(_pls+1)%4;_drawSprout(_pls);},350);}}
+function showLoader(){
+  if(_plt){clearInterval(_plt);_plt=null;}   // a second call used to orphan the first interval forever
+  var el=document.getElementById("tree-loader");
+  if(!el)return;
+  el.classList.add("show");_pls=0;_drawSprout(0);
+  _plt=setInterval(function(){_pls=(_pls+1)%4;_drawSprout(_pls);},350);
+}
 function hideLoader(){if(_plt){clearInterval(_plt);_plt=null;}var el=document.getElementById("tree-loader");if(el)el.classList.remove("show");}
 
 // ============================================================
@@ -2803,6 +3076,8 @@ function generate(){
   var buyer=buyers.find(function(b){return b.id===sel.value;});
   if(!buyer){alert("Оберіть покупця");return;}
   var dt=document.querySelector('input[name="doctype"]:checked').value;
+  var _num=document.getElementById("inv-num").value;
+  if(invoiceNumExists(_num)&&!confirm("Документ №"+_num+" вже є в журналі.\nВсе одно створити дублікат номера?"))return;
   var total=getTotal();
 var priceLabel={
   "shelf":"Полиця (100%)",
@@ -2840,19 +3115,21 @@ var priceLabel={
     var g={
       id:uid(), invoiceNum:document.getElementById("inv-num").value,
       invoiceDate:document.getElementById("inv-date").value,
-      buyer:buyer, docType:dt, status:"created", priceType:getPriceType(), priceLabel:priceLabel,
+      buyerId:buyer.id, docType:dt, status:"created", priceType:getPriceType(), priceLabel:priceLabel,
       items:filled.map(function(i){
         var p=products.find(function(x){return x.id===i.productId;});
         var price=getItemPrice(i);
-        return {id:p.id,name:p.name,qty:i.qty,price:price,shelf:p.shelf||0,sum:price*i.qty,cogs:getWHCogs(p.id)||0};
+        return {id:p.id,name:p.name,qty:i.qty,price:price,shelf:p.shelf||0,cogs:getWHCogs(p.id)||0};
       }),
-      total:total, totalWords:mkWords(total),
+      total:total,
       savedAt:new Date().toISOString()
     };
 
     // AUTO DEDUCT from rawStock directly (invoices only, no assembly step)
     if(dt==="invoice"){
-      deductRawForItems(g.items);
+      var _led={};
+      deductRawForItems(g.items,_led);
+      if(Object.keys(_led).length) g.stockUsed=_led;
       // Update retail stock if buyer is a retail point
       if(buyer.isRetail){
         if(!retailStock[buyer.id])retailStock[buyer.id]={};
@@ -2872,16 +3149,21 @@ var priceLabel={
 
     journal.unshift(g);
     if(settings.autoincrement){
-      var num=parseInt(g.invoiceNum)||0;
-      document.getElementById("inv-num").value=num+1;
+      document.getElementById("inv-num").value=nextInvoiceNum();
     }
     generated=g;
     clearDraft();
     renderPreview();
-    save();
+    // save() can no longer throw past this point — the loader used to hang
+    // forever on a localStorage quota error, leaving the document unsaved.
+    try{ save(); }
+    catch(e){
+      console.error("save() failed:",e);
+      setSyncState("error","⚠️ Документ НЕ збережено. Натисніть тут.");
+    }
     hideLoader();
     switchTab("docs");switchDocsSub("preview");
-  },1200);
+  },350);
 }
 
 // ============================================================
@@ -2889,7 +3171,7 @@ var priceLabel={
 // ============================================================
 function renderPreview(){
   var g=generated; if(!g)return;
-  var b=g.buyer, dateStr=formatDate(g.invoiceDate);
+  var b=jBuyer(g), dateStr=formatDate(g.invoiceDate);
   var isBill=g.docType==="bill";
   var showShelfCol=g.items.some(function(it){var sh=it.shelf;if(!sh){var pp=products.find(function(x){return x.id===it.id;});sh=pp?pp.shelf:0;}return sh&&sh>0;});
   var colCount=showShelfCol?6:5;
@@ -2902,7 +3184,7 @@ function renderPreview(){
       +(showShelfCol?"<td style=\"text-align:right\">"+(shelfVal||"\u2014")+"</td>":"")
       +"<td style=\"text-align:center\">"+item.qty+" шт.</td>"
       +"<td style=\"text-align:right\">"+item.price.toFixed(2)+"</td>"
-      +"<td style=\"text-align:right;font-weight:600\">"+item.sum.toFixed(2)+"</td>"
+      +"<td style=\"text-align:right;font-weight:600\">"+itemSum(item).toFixed(2)+"</td>"
       +"</tr>";
   }).join("");
 
@@ -2934,7 +3216,7 @@ function renderPreview(){
 
   var summaryHtml="<div class=\"preview-summary\">"
     +"<strong>Всього найменувань "+g.items.length+", на суму "+g.total.toLocaleString("uk-UA",{minimumFractionDigits:2})+" грн</strong><br>"
-    +"<em>"+esc(g.totalWords)+"</em></div>";
+    +"<em>"+esc(docWords(g))+"</em></div>";
 
   var html="";
   if(isBill){
@@ -2970,7 +3252,7 @@ function renderPreview(){
 // ============================================================
 function doExportExcel(g){
   if(!g) return;
-  var b=g.buyer, dateStr=formatDate(g.invoiceDate);
+  var b=jBuyer(g), dateStr=formatDate(g.invoiceDate);
   var showShelfCol=g.items.some(function(it){var sh=it.shelf;if(!sh){var pp=products.find(function(x){return x.id===it.id;});sh=pp?pp.shelf:0;}return sh&&sh>0;});
   var isBill=g.docType==="bill";
   var title=(isBill?"Рахунок на оплату":"Видаткова накладна")+" №"+g.invoiceNum+" від "+dateStr;
@@ -2983,7 +3265,7 @@ function doExportExcel(g){
       +(showShelfCol?"<td class='cell right'>"+(function(){var sh=item.shelf;if(!sh){var pp=products.find(function(x){return x.id===item.id;});sh=pp?pp.shelf:0;}return sh||"\u2014";})()+"</td>":"")
       +"<td class='cell center'>"+item.qty+" шт.</td>"
       +"<td class='cell right'>"+item.price.toFixed(2)+"</td>"
-      +"<td class='cell right bold'>"+item.sum.toFixed(2)+"</td>"
+      +"<td class='cell right bold'>"+itemSum(item).toFixed(2)+"</td>"
       +"</tr>";
   }).join("");
 
@@ -3066,7 +3348,7 @@ function doExportExcel(g){
 
     +"<tr><td colspan='6' style='height:10px'></td></tr>"
     +"<tr><td colspan='6'><b>Всього найменувань "+g.items.length+", на суму "+g.total.toFixed(2)+" грн</b></td></tr>"
-    +"<tr><td colspan='6'><em>"+esc(g.totalWords)+"</em></td></tr>"
+    +"<tr><td colspan='6'><em>"+esc(docWords(g))+"</em></td></tr>"
     +sigRows
     +"</table></body></html>";
 
@@ -3084,7 +3366,7 @@ function doExportExcel(g){
 // ============================================================
 function doExportPDF(g){
   if(!g)return;
-  var b=g.buyer,dateStr=formatDate(g.invoiceDate);
+  var b=jBuyer(g),dateStr=formatDate(g.invoiceDate);
   var showShelfCol=g.items.some(function(it){var sh=it.shelf;if(!sh){var pp=products.find(function(x){return x.id===it.id;});sh=pp?pp.shelf:0;}return sh&&sh>0;});
   var isBill=g.docType==="bill";
   var colCount=showShelfCol?6:5;
@@ -3096,7 +3378,7 @@ function doExportPDF(g){
       +(showShelfCol?"<td style=\"border:1px solid #bbb;padding:3px 6px;text-align:right\">"+(function(){var sh=item.shelf;if(!sh){var pp=products.find(function(x){return x.id===item.id;});sh=pp?pp.shelf:0;}return sh||"\u2014";})()+"</td>":"")
       +"<td style=\"border:1px solid #bbb;padding:3px 6px;text-align:center\">"+item.qty+" шт.</td>"
       +"<td style=\"border:1px solid #bbb;padding:3px 6px;text-align:right\">"+item.price.toFixed(2)+"</td>"
-      +"<td style=\"border:1px solid #bbb;padding:3px 6px;text-align:right;font-weight:600\">"+item.sum.toFixed(2)+"</td>"
+      +"<td style=\"border:1px solid #bbb;padding:3px 6px;text-align:right;font-weight:600\">"+itemSum(item).toFixed(2)+"</td>"
       +"</tr>";
   }).join("");
 
@@ -3128,7 +3410,7 @@ function doExportPDF(g){
 
   var summaryBlock="<div style=\"margin-top:6px\">"
     +"<strong>Всього найменувань "+g.items.length+", на суму "+g.total.toLocaleString("uk-UA",{minimumFractionDigits:2})+" грн</strong><br>"
-    +esc(g.totalWords)+"</div>";
+    +esc(docWords(g))+"</div>";
 
   var payBox="";
   if(isBill){
@@ -3194,10 +3476,10 @@ function doExportPDF(g){
 function copyInvoiceText(g){
   if(!g)g=generated;
   if(!g)return;
-  var b=g.buyer;
+  var b=jBuyer(g);
   var lines=[docTitleStr(g)+" від "+formatDate(g.invoiceDate),"","Покупець: "+(b.fullName||b.name)];
-  g.items.forEach(function(it,i){lines.push((i+1)+". "+it.name+" — "+it.qty+" шт. × "+it.price.toFixed(2)+" = "+it.sum.toFixed(2)+" грн");});
-  lines.push("","Всього: "+g.total.toFixed(2)+" грн",g.totalWords);
+  g.items.forEach(function(it,i){lines.push((i+1)+". "+it.name+" — "+it.qty+" шт. × "+it.price.toFixed(2)+" = "+itemSum(it).toFixed(2)+" грн");});
+  lines.push("","Всього: "+g.total.toFixed(2)+" грн",docWords(g));
   navigator.clipboard.writeText(lines.join("\n")).then(function(){alert("Скопійовано!");});
 }
 
@@ -3223,7 +3505,7 @@ function renderJournal(){
   if(dtype!=="all") list = list.filter(function(j){return j.docType===dtype;});
   if(journalStatusFilter!=="all") list = list.filter(function(j){return (j.status||"created")===journalStatusFilter;});
   if(q) list = list.filter(function(j){
-    return (j.buyer&&j.buyer.name||"").toLowerCase().indexOf(q)>=0
+    return jBuyerName(j).toLowerCase().indexOf(q)>=0
         || (j.invoiceNum||"").toLowerCase().indexOf(q)>=0;
   });
   // Page header meta
@@ -3253,7 +3535,7 @@ function renderJournal(){
       +'<td class="jtd jtd-muted" style="font-family:ui-monospace,monospace;white-space:nowrap;">'+esc(j.invoiceDate||"")+'</td>'
       +'<td class="jtd"><span class="'+(isBill?"type-bill":"type-invoice")+'">'+(isBill?"РАХУНОК":"НАКЛАДНА")+'</span></td>'
       +'<td class="jtd" style="max-width:200px;">'
-        +'<div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(j.buyer&&j.buyer.name||"—")+'</div>'
+        +'<div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(jBuyerName(j))+'</div>'
         +(j.note?'<div style="font-size:10.5px;color:var(--ink3);margin-top:1px;">📝 '+esc(j.note)+'</div>':"")
       +'</td>'
       +'<td class="jtd jtd-muted" style="text-align:center;font-family:ui-monospace,monospace;">'+j.items.length+'</td>'
@@ -3290,21 +3572,33 @@ function cycleJournalStatus(id,e){
 function deleteFromJournalById(id){
   var j=journal.find(function(x){return x.id===id;});
   if(!j||!confirm("Видалити "+j.invoiceNum+"?"))return;
+  var back=confirmStockReturn(j);
   journal=journal.filter(function(x){return x.id!==id;});
-  save(); renderJournal();
-  addToast("Документ видалено","info");
+  save(); renderJournal(); renderRawMaterials(); renderRetailStoreGrid(); renderDashboard();
+  addToast("Документ видалено"+(back?" · сировину повернуто на склад":""),"info");
+}
+
+// Deleting an накладна used to leave the written-off sticks gone forever.
+function confirmStockReturn(j){
+  if(!j||j.docType!=="invoice")return false;
+  if(!j.stockUsed){
+    if(jBuyerId(j)&&retailStock[jBuyerId(j)]) return restoreStockFromDoc(j);
+    return false;
+  }
+  if(!confirm("Повернути списану сировину на склад?\n(Ні — залишити склад без змін)"))return false;
+  return restoreStockFromDoc(j);
 }
 function openJournalItem(id){
   var g=journal.find(function(j){return j.id===id;});if(!g)return;
   currentJournalItem=g;
   document.getElementById("modal-journal-title").textContent=docTitleStr(g)+" від "+formatDate(g.invoiceDate);
-  var b=g.buyer;
+  var b=jBuyer(g);
   var rows=g.items.map(function(item,i){
     return "<tr><td style=\"text-align:center;border:1px solid #ddd;padding:4px 8px\">"+(i+1)+"</td>"
       +"<td style=\"border:1px solid #ddd;padding:4px 8px;font-size:11px\">"+esc(item.name)+"</td>"
       +"<td style=\"text-align:center;border:1px solid #ddd;padding:4px 8px\">"+item.qty+" шт.</td>"
       +"<td style=\"text-align:right;border:1px solid #ddd;padding:4px 8px\">"+item.price.toFixed(2)+"</td>"
-      +"<td style=\"text-align:right;border:1px solid #ddd;padding:4px 8px;font-weight:700\">"+item.sum.toFixed(2)+"</td></tr>";
+      +"<td style=\"text-align:right;border:1px solid #ddd;padding:4px 8px;font-weight:700\">"+itemSum(item).toFixed(2)+"</td></tr>";
   }).join("");
   document.getElementById("modal-journal-content").innerHTML=
     '<div style="font-size:11.5px;border-left:3px solid var(--moss3);padding-left:10px;margin-bottom:10px">'
@@ -3320,7 +3614,7 @@ function openJournalItem(id){
     +'</tr></thead><tbody>'+rows+'</tbody></table>'
     +'<div style="font-size:12px"><strong>Разом: '+g.total.toLocaleString("uk-UA",{minimumFractionDigits:2})+' грн</strong>'
     +' <span style="color:var(--ink4);font-size:11px">'+esc(g.priceLabel||'')+'</span><br>'
-    +'<em style="font-size:11px;color:var(--ink3)">'+esc(g.totalWords)+'</em></div>'
+    +'<em style="font-size:11px;color:var(--ink3)">'+esc(docWords(g))+'</em></div>'
     +(function(){
       // Profitability block (internal, not for client)
       var docCogs=g.items.reduce(function(s,it){return s+getEstItemCogs(it)*it.qty;},0);
@@ -3347,8 +3641,11 @@ function openJournalItem(id){
 }
 function deleteFromJournal(g){
   if(!g||!confirm("Видалити цей запис з журналу?"))return;
+  var back=confirmStockReturn(g);
   journal=journal.filter(function(j){return j.id!==g.id;});
   save();closeModal("modal-journal");renderJournal();
+  renderRawMaterials(); renderRetailStoreGrid(); renderDashboard();
+  if(back) addToast("Сировину повернуто на склад","info");
 }
 function setStatus(id,status){
   var j=journal.find(function(x){return x.id===id;});
@@ -3362,7 +3659,8 @@ function loadFromJournal(g){
   if(!g)return;
   items=g.items.map(function(it){return{id:Date.now()+Math.random(),productId:it.id,qty:it.qty,customPrice:""};});
   var sel=document.getElementById("buyer-select");
-  if(buyers.find(function(b){return b.id===g.buyer.id;}))sel.value=g.buyer.id;
+  var _bid=jBuyerId(g);
+  if(_bid&&buyers.find(function(b){return b.id===_bid;}))sel.value=_bid;
   var ptEl=document.querySelector('input[name="pricetype"][value="'+(g.priceType||"shelf")+'"]');
   if(ptEl)ptEl.checked=true;
   var dtEl=document.querySelector('input[name="doctype"][value="'+(g.docType||"invoice")+'"]');
@@ -3376,7 +3674,8 @@ function duplicateInvoice(g){
   if(!g)return;
   items=g.items.map(function(it){return{id:Date.now()+Math.random(),productId:it.id,qty:it.qty,customPrice:""};});
   var sel=document.getElementById("buyer-select");
-  if(buyers.find(function(b){return b.id===g.buyer.id;}))sel.value=g.buyer.id;
+  var _bid=jBuyerId(g);
+  if(_bid&&buyers.find(function(b){return b.id===_bid;}))sel.value=_bid;
   var ptEl=document.querySelector('input[name="pricetype"][value="'+(g.priceType||"shelf")+'"]');
   if(ptEl)ptEl.checked=true;
   var dtEl=document.querySelector('input[name="doctype"][value="'+(g.docType||"invoice")+'"]');
@@ -3505,8 +3804,16 @@ function receiveGoods(){
 // ============================================================
 // DEDUCT RAW MATERIALS FOR INVOICE ITEMS (replaces assembly step)
 // ============================================================
-function deductRawForItems(invoiceItems){
+// ledger (optional) receives the AMOUNTS ACTUALLY TAKEN, keyed by rawStock key.
+// Stock may be short, so "needed" and "taken" are not the same number — only
+// what was really removed may ever be returned.
+function deductRawForItems(invoiceItems, ledger){
   var sticksPerKg=2000;
+  function note(k,qty,sticks){
+    if(!ledger)return;
+    if(!ledger[k])ledger[k]={qty:0,sticks:0};
+    ledger[k].qty+=qty; ledger[k].sticks+=(sticks||0);
+  }
   invoiceItems.forEach(function(it){
     var p=products.find(function(x){return x.id===it.id;});
     if(!p) return;
@@ -3525,6 +3832,7 @@ function deductRawForItems(invoiceItems){
       var sticksDeducted=Math.round(kgDeduct*sticksPerKg);
       rawStock[k].qty=Math.max(0,rawStock[k].qty-kgDeduct);
       rawStock[k].sticks=Math.max(0,(rawStock[k].sticks||0)-sticksDeducted);
+      note(k,kgDeduct,sticksDeducted);
     } else if(sticksNeeded>0 && !aromaId){
       var remaining=sticksNeeded;
       Object.keys(AROMAS).forEach(function(a){
@@ -3533,13 +3841,20 @@ function deductRawForItems(invoiceItems){
         var kgN=remaining/sticksPerKg; var kgD=Math.min(rawStock[k].qty,kgN);
         var sD=Math.round(kgD*sticksPerKg);
         rawStock[k].qty-=kgD; rawStock[k].sticks=Math.max(0,(rawStock[k].sticks||0)-sD);
+        note(k,kgD,sD);
         remaining-=sD;
       });
     }
-    if(tubesNeeded>0 && rawStock.tubes)
+    if(tubesNeeded>0 && rawStock.tubes){
+      var tTake=Math.min(rawStock.tubes.qty||0,tubesNeeded);
       rawStock.tubes.qty=Math.max(0,(rawStock.tubes.qty||0)-tubesNeeded);
-    if(labelsNeeded>0 && rawStock.labels)
+      note("tubes",tTake,0);
+    }
+    if(labelsNeeded>0 && rawStock.labels){
+      var lTake=Math.min(rawStock.labels.qty||0,labelsNeeded);
       rawStock.labels.qty=Math.max(0,(rawStock.labels.qty||0)-labelsNeeded);
+      note("labels",lTake,0);
+    }
   });
 }
 
@@ -3687,7 +4002,7 @@ function openAromaModal(aromaId){
       if(PRODUCT_AROMA[it.id]!==aromaId)return;
       var pg=products.find(function(x){return x.id===it.id;}),grp=pg&&pg.group||"other";
       var bom=(bomData[grp]||DEFAULT_BOM[grp]||{}),su=(bom.sticks||0)*it.qty;
-      if(su>0)outgoing.push({date:j.invoiceDate,doc:"Накладна "+j.invoiceNum,buyer:j.buyer&&j.buyer.name||"",product:it.name,qty:it.qty,sticks:su});
+      if(su>0)outgoing.push({date:j.invoiceDate,doc:"Накладна "+j.invoiceNum,buyer:jBuyerName(j),product:it.name,qty:it.qty,sticks:su});
     });
   });
   var allEv=[];
@@ -4194,7 +4509,7 @@ function renderDashboard(){
           +'</div>'
           +'<div style="flex:1;min-width:0;">'
             +'<div style="font-size:12.5px;font-weight:700;color:var(--ink);font-family:ui-monospace,monospace;">'+esc(j.invoiceNum)+'</div>'
-            +'<div style="font-size:11px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(j.buyer&&j.buyer.name||'—')+'</div>'
+            +'<div style="font-size:11px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(jBuyerName(j))+'</div>'
           +'</div>'
           +'<div style="text-align:right;flex-shrink:0;">'
             +'<div style="font-size:12.5px;font-weight:700;color:var(--pine);font-family:ui-monospace,monospace;">'+fmt(j.total)+' ₴</div>'
@@ -4378,7 +4693,7 @@ function renderStats(){
   var netMarginP   = revenue > 0 ? netProfit / revenue * 100 : 0;
   var avg          = list.length ? revenue / list.length : 0;
   var avgMargin    = list.length ? grossProfit / list.length : 0;
-  var bset         = new Set(list.map(function(j){ return j.buyer && j.buyer.id; }));
+  var bset         = new Set(list.map(function(j){ return jBuyerId(j); }));
 
   // ── KPI row 1: volume ────────────────────────────────────────
   document.getElementById("stats-cards").innerHTML = [
@@ -4463,7 +4778,7 @@ function renderStats(){
     j.items.forEach(function(it){
       var k = shortName(it.name);
       if(!pmap[k]) pmap[k] = {rev:0, cogs:0, qty:0, pid:it.id, group: (products.find(function(x){return x.id===it.id;})||{}).group||"other"};
-      pmap[k].rev  += it.sum;
+      pmap[k].rev  += itemSum(it);
       pmap[k].cogs += ((it.cogs && it.cogs>0) ? it.cogs : calcCogsForProduct(it.id||"").totalCost) * it.qty;
       pmap[k].qty  += it.qty;
     });
@@ -4511,7 +4826,7 @@ function renderStats(){
 
   // ── Top buyers ───────────────────────────────────────────────
   var bmap={};
-  list.forEach(function(j){ var k=j.buyer&&j.buyer.name||"—"; bmap[k]=(bmap[k]||0)+j.total; });
+  list.forEach(function(j){ var k=jBuyerName(j); bmap[k]=(bmap[k]||0)+j.total; });
   var btop=Object.entries(bmap).sort(function(a,b){return b[1]-a[1];}).slice(0,8);
   var bmax=btop[0]?btop[0][1]:1;
   var bHtml = '<div style="font-weight:700;margin-bottom:10px;font-size:13px;color:var(--pine)">🏅 Топ покупців</div>'
@@ -4620,12 +4935,18 @@ function saveBuyer(){
     isRetail:true, // all buyers are retail points
     retailName:retailName,
     custom:true};
-  if(editId){var idx=buyers.findIndex(function(b){return b.id===editId;});if(idx>=0)buyers[idx]=Object.assign({},buyers[idx],data);}
+  if(editId){
+    // Pin current values onto existing documents BEFORE overwriting the record,
+    // so already-issued накладні keep the requisites they were printed with.
+    freezeBuyerInJournal(editId, data);
+    var idx=buyers.findIndex(function(b){return b.id===editId;});if(idx>=0)buyers[idx]=Object.assign({},buyers[idx],data);
+  }
   else buyers.push(data);
   save();hideBuyerForm();renderBuyersList();renderBuyerSelect();
 }
 function deleteBuyer(id){
   if(!confirm("Видалити покупця?"))return;
+  freezeBuyerInJournal(id);   // keep historical documents readable
   buyers=buyers.filter(function(b){return b.id!==id;});
   save();renderBuyersList();renderBuyerSelect();
 }
@@ -4819,7 +5140,7 @@ function printJournalPDF(){
   if(!w) return;
   var rows=journal.map(function(j){
     return '<tr><td>'+esc(j.invoiceNum||j.billNum||'')+'</td><td>'+esc(j.invoiceDate||'')+'</td>'+
-      '<td>'+esc(j.buyer&&j.buyer.name||'')+'</td><td style="text-align:right">'+fmt(j.total)+' ₴</td>'+
+      '<td>'+esc(jBuyerName(j))+'</td><td style="text-align:right">'+fmt(j.total)+' ₴</td>'+
       '<td>'+esc(j.status||'')+'</td></tr>';
   }).join('');
   w.document.write('<html><head><title>Журнал</title><style>body{font-family:Arial,sans-serif;font-size:12px;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #ccc;padding:5px 8px;}th{background:#f5f5f5;}</style></head>'+
@@ -5199,11 +5520,11 @@ function submitQuickOrder(){
   var itemsList = Object.keys(qoPicks).filter(function(k){return qoPicks[k]>0;}).map(function(pid){
     var q = qoPicks[pid];
     var p = products.find(function(x){return x.id===pid;});
-    return { id:p.id, name:p.name, qty:q, price:p.shelf, shelf:p.shelf, sum:p.shelf*q, cogs:getWHCogs(p.id)||0 };
+    return { id:p.id, name:p.name, qty:q, price:p.shelf, shelf:p.shelf, cogs:getWHCogs(p.id)||0 };
   });
 
-  var total   = itemsList.reduce(function(s,it){return s+it.sum;},0);
-  var num     = 'НН-'+String(43+Math.floor(Math.random()*100)).padStart(4,'0');
+  var total   = itemsList.reduce(function(s,it){return s+itemSum(it);},0);
+  var num     = String(nextInvoiceNum());
   var today   = new Date().toISOString().slice(0,10);
   var note    = (document.getElementById('qo-note').value||'').trim();
 
@@ -5229,10 +5550,9 @@ function submitQuickOrder(){
     invoiceDate: today,
     docType:     'invoice',
     status:      'created',
-    buyer:       buyer,
+    buyerId:     buyer&&buyer.id,
     items:       itemsList,
     total:       total,
-    totalWords:  mkWords(total),
     priceLabel:  'полиця 100%',
     note:        note,
     source:      qoSource,
@@ -5240,7 +5560,9 @@ function submitQuickOrder(){
   };
 
   /* Deduct raw materials */
-  deductRawForItems(itemsList);
+  var _qled={};
+  deductRawForItems(itemsList,_qled);
+  if(Object.keys(_qled).length) doc.stockUsed=_qled;
 
   /* Add to retail stock if buyer is D2C (no retail deduction) */
 
@@ -5532,8 +5854,8 @@ window.addEventListener("DOMContentLoaded",function(){
   renderItems();
   refreshPriceTypeBtns();
   if(settings.autoincrement){
-    var maxNum=journal.reduce(function(m,j){return Math.max(m,parseInt(j.invoiceNum)||0);},0);
-    if(maxNum>0)document.getElementById("inv-num").value=maxNum+1;
+    var _el=document.getElementById("inv-num");
+    if(_el) _el.value=nextInvoiceNum();
   }
   renderDashboard();
   renderSubNav("dashboard");
