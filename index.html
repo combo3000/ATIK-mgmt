@@ -2033,6 +2033,7 @@ function updateCloudStatus(text, isError){
   var el=document.getElementById("cloud-status");
   if(!el)return;
   el.textContent=text;
+  el.title=text;
   el.style.color=isError?"var(--red)":"var(--ink4)";
 }
 
@@ -2159,6 +2160,7 @@ function getCloudDocRef(){
 //  7. Once a day a restore point is written to shared/main_history/{date}.
 // ============================================================
 var SYNC_SCHEMA=3;
+var lastSyncError="";
 var syncBase=null, syncBaseRev=null;
 var localDirty=false, editSeq=0;
 var pushing=false, pushAgain=false, remoteWhilePushing=false;
@@ -2193,7 +2195,8 @@ function _isIdArr(a){
   return true;
 }
 var MERGE_COUNTER_KEYS={qty:1,sticks:1};
-var _mergeNoBase=false;
+var _mergeNoBase=false, _mergeRoot=null;
+var MERGE_COUNTER_ROOTS={rawStock:1,warehouseStock:1,retailStock:1};
 
 function merge3(b,l,r,key,depth){
   var sl=stableStr(l), sr=stableStr(r);
@@ -2202,7 +2205,7 @@ function merge3(b,l,r,key,depth){
   if(sl===sb) return r;
   if(sr===sb) return l;
   // changed on both sides
-  if(MERGE_COUNTER_KEYS[key] && typeof l==="number" && typeof r==="number" && typeof b==="number")
+  if(MERGE_COUNTER_KEYS[key] && _mergeRoot && MERGE_COUNTER_ROOTS[_mergeRoot] && typeof l==="number" && typeof r==="number" && typeof b==="number")
     return l+r-b;
   if(Array.isArray(l)&&Array.isArray(r)){
     if(depth===0 && _isIdArr(l) && _isIdArr(r) && (b==null||_isIdArr(b)))
@@ -2217,7 +2220,11 @@ function mergeObj(b,l,r,depth){
   function one(k){
     if(has.call(out,k))return;
     var hb=has.call(b,k), hl=has.call(l,k), hr=has.call(r,k);
-    if(hl&&hr){ out[k]=merge3(b[k],l[k],r[k],k,depth+1); return; }
+    if(hl&&hr){
+      if(depth===-1) _mergeRoot=k;
+      out[k]=merge3(b[k],l[k],r[k],k,depth+1);
+      return;
+    }
     if(hl){ if(hb&&stableStr(l[k])===stableStr(b[k]))return; out[k]=l[k]; return; } // deleted remotely
     if(hr){ if(hb&&stableStr(r[k])===stableStr(b[k]))return; out[k]=r[k]; }          // deleted locally
   }
@@ -2357,6 +2364,7 @@ function pushCloudState(isManual){
         remoteRev=d.revision||null;
         if(remoteRev!==syncBaseRev){ out=mergeStates(syncBase, local, d.state||{}); merged=true; }
       }
+      out=sanitizeForFirestore(out);
       var bytes=new Blob([JSON.stringify(out)]).size;
       if(bytes>1000000){
         var e=new Error("Дані ("+Math.round(bytes/1024)+" KB) перевищують ліміт Firestore 1 MB");
@@ -2398,6 +2406,7 @@ function pushCloudState(isManual){
     console.error(err);
     // Dirty flag stays set (in localStorage too): retried by the timer and on
     // the next launch the records are merged, never overwritten.
+    lastSyncError=(err.code?err.code+": ":"")+(err.message||String(err));
     updateCloudStatus("Помилка запису Firestore: "+err.message, true);
     setSyncState("error", err.code==="atik/too-big"
       ? "⚠️ НЕ ЗБЕРЕЖЕНО: база завелика ("+err.kb+" KB). Потрібна архівація."
@@ -2405,6 +2414,23 @@ function pushCloudState(isManual){
           ? "⚠️ НЕ ЗБЕРЕЖЕНО: немає доступу (перевірте акаунт / оновіть застосунок)."
           : "⚠️ НЕ ЗБЕРЕЖЕНО в хмарі. Натисніть, щоб повторити."));
   });
+}
+// Firestore rejects undefined, NaN/Infinity, nested arrays and "__x__" keys.
+function sanitizeForFirestore(v){
+  if(v===undefined||typeof v==="function") return null;
+  if(typeof v==="number") return isFinite(v)?v:0;
+  if(v===null||typeof v!=="object") return v;
+  if(Array.isArray(v)) return v.map(function(x){
+    var c=sanitizeForFirestore(x);
+    return Array.isArray(c)?{__arr:c}:c;
+  });
+  var o={};
+  Object.keys(v).forEach(function(k){
+    if(v[k]===undefined||typeof v[k]==="function") return;
+    var kk=(k===""||/^__.*__$/.test(k))?("_k"+k):k;
+    o[kk]=sanitizeForFirestore(v[k]);
+  });
+  return o;
 }
 function markDirtyQuiet(){
   localDirty=true;
@@ -2469,6 +2495,9 @@ function setSyncState(state, text){
 
 function forceSyncNow(){
   if(appLocked){ location.reload(); return; }
+  if(lastSyncError && syncState==="error"){
+    alert("Текст помилки (надішліть його Claude):\n\n"+lastSyncError+"\n\nПісля OK буде ще одна спроба зберегти.");
+  }
   if(!cloudUser||!cloudDb){ alert("Увійдіть через Google, щоб зберегти в хмару."); return; }
   pushCloudState(true);
 }
