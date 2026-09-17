@@ -1767,14 +1767,6 @@ var items=[{id:Date.now(),productId:"",qty:1,customPrice:""}];
 var cloudApp=null, cloudDb=null, cloudAuth=null, cloudUser=null, cloudUnsub=null;
 var cloudReady=false, cloudApplyingRemote=false, cloudPushTimer=null;
 var cloudDocPath={collection:"shared",doc:"main"};
-var lastPushedRevision=null, lastSeenRemoteRevision=null;
-// Revisions written BY THIS CLIENT. A snapshot carrying any of these must never
-// be applied back onto local state — that was the silent rollback bug.
-var myRevisions=[];
-var inFlightPushes=0;      // set() calls issued but not yet acknowledged
-var localDirty=false;      // local edits not yet confirmed by the server
-var syncState="idle";
-
 // ============================================================
 // PERSISTENCE
 // ============================================================
@@ -1839,15 +1831,6 @@ function load(){
     journal=[]; warehouseStock={}; rawStock={}; receiveHistory=[];
     retailStock={}; salesReports=[];
   }
-}
-function save(){
-  try{ saveLocal(); }
-  catch(e){
-    console.error("localStorage save failed:",e);
-    setSyncState("error","⚠️ Немає місця в пам'яті браузера. Натисніть тут.");
-  }
-  markDirty();
-  scheduleCloudPush();
 }
 function saveLocal(){
   localStorage.setItem("atik5_products",JSON.stringify(products));
@@ -2159,49 +2142,170 @@ function getCloudDocRef(){
   return cloudDb.collection(cloudDocPath.collection).doc(cloudDocPath.doc);
 }
 
+// ============================================================
+// SYNC ENGINE v3
+// ------------------------------------------------------------
+// Principles (each one closes a real data-loss scenario):
+//  1. Every write is a Firestore TRANSACTION: read server → 3-way merge → write.
+//     A device can never overwrite records it has not seen.
+//  2. 3-way merge uses a BASE = last state known to be on the server.
+//     This tells "added" from "deleted" and "changed here" from "changed there",
+//     so deletions stick, edits on different devices both survive, and stock
+//     counters (qty/sticks) add up instead of overwriting each other.
+//  3. The "unsynced" flag and the base survive app restarts (localStorage).
+//  4. Snapshots from the local cache are never applied — only server truth.
+//  5. Only one push at a time; revisions already seen are never re-applied.
+//  6. Only one open tab/window may edit (others are locked).
+//  7. Once a day a restore point is written to shared/main_history/{date}.
+// ============================================================
+var SYNC_SCHEMA=3;
+var syncBase=null, syncBaseRev=null;
+var localDirty=false, editSeq=0;
+var pushing=false, pushAgain=false, remoteWhilePushing=false;
+var seenRevs=[];
+var appLocked=false;
+try{
+  localDirty=localStorage.getItem("atik5_dirty")==="1";
+  var _sb=localStorage.getItem("atik5_base");
+  if(_sb){ var _sbo=JSON.parse(_sb); syncBase=_sbo.state||null; syncBaseRev=_sbo.rev||null; }
+}catch(e){ syncBase=null; syncBaseRev=null; }
+if(syncBaseRev) seenRevs.push(syncBaseRev);
+
+function rememberRev(r){
+  if(!r||seenRevs.indexOf(r)>=0)return;
+  seenRevs.push(r); if(seenRevs.length>100) seenRevs=seenRevs.slice(-100);
+}
+function syncClone(o){ return o==null?o:JSON.parse(JSON.stringify(o)); }
+function stableStr(v){
+  if(v===undefined) return "~u";
+  if(v===null||typeof v!=="object") return JSON.stringify(v);
+  if(Array.isArray(v)) return "["+v.map(stableStr).join(",")+"]";
+  return "{"+Object.keys(v).sort().filter(function(k){return v[k]!==undefined;})
+    .map(function(k){return JSON.stringify(k)+":"+stableStr(v[k]);}).join(",")+"}";
+}
+function _isObj(v){ return !!v&&typeof v==="object"&&!Array.isArray(v); }
+function _isIdArr(a){
+  if(!Array.isArray(a))return false;
+  var seen=Object.create(null);
+  for(var i=0;i<a.length;i++){
+    var x=a[i]; if(!_isObj(x)||x.id==null||seen[x.id])return false; seen[x.id]=1;
+  }
+  return true;
+}
+var MERGE_COUNTER_KEYS={qty:1,sticks:1};
+var _mergeNoBase=false;
+
+function merge3(b,l,r,key,depth){
+  var sl=stableStr(l), sr=stableStr(r);
+  if(sl===sr) return l;
+  var sb=stableStr(b);
+  if(sl===sb) return r;
+  if(sr===sb) return l;
+  // changed on both sides
+  if(MERGE_COUNTER_KEYS[key] && typeof l==="number" && typeof r==="number" && typeof b==="number")
+    return l+r-b;
+  if(Array.isArray(l)&&Array.isArray(r)){
+    if(depth===0 && _isIdArr(l) && _isIdArr(r) && (b==null||_isIdArr(b)))
+      return mergeIdArr(b||[],l,r,depth);
+    return _mergeNoBase?r:l;
+  }
+  if(_isObj(l)&&_isObj(r)) return mergeObj(_isObj(b)?b:{},l,r,depth);
+  return _mergeNoBase?r:l;
+}
+function mergeObj(b,l,r,depth){
+  var out={}, has=Object.prototype.hasOwnProperty;
+  function one(k){
+    if(has.call(out,k))return;
+    var hb=has.call(b,k), hl=has.call(l,k), hr=has.call(r,k);
+    if(hl&&hr){ out[k]=merge3(b[k],l[k],r[k],k,depth+1); return; }
+    if(hl){ if(hb&&stableStr(l[k])===stableStr(b[k]))return; out[k]=l[k]; return; } // deleted remotely
+    if(hr){ if(hb&&stableStr(r[k])===stableStr(b[k]))return; out[k]=r[k]; }          // deleted locally
+  }
+  Object.keys(l).forEach(one); Object.keys(r).forEach(one);
+  return out;
+}
+// Lists of records with ids (journal, receiveHistory, salesReports, buyers…).
+// Order: brand-new local records first (lists are newest-first), then remote order.
+function mergeIdArr(b,l,r,depth){
+  function ix(a){ var m=Object.create(null); a.forEach(function(x){m[x.id]=x;}); return m; }
+  var bm=ix(b), lm=ix(l), rm=ix(r), out=[], done=Object.create(null);
+  function one(id){
+    if(done[id])return; done[id]=1;
+    var hb=id in bm, hl=id in lm, hr=id in rm;
+    if(hl&&hr){ out.push(merge3(bm[id],lm[id],rm[id],null,depth+1)); return; }
+    if(hl){ if(hb&&stableStr(lm[id])===stableStr(bm[id]))return; out.push(lm[id]); return; }
+    if(hr){ if(hb&&stableStr(rm[id])===stableStr(bm[id]))return; out.push(rm[id]); }
+  }
+  l.forEach(function(x){ if(!(x.id in bm)&&!(x.id in rm)) one(x.id); });
+  r.forEach(function(x){ one(x.id); });
+  l.forEach(function(x){ one(x.id); });
+  return out;
+}
+// base may be null (device never synced with v3): then records are united and
+// every other conflict is resolved in favour of the server.
+function mergeStates(base, local, remote){
+  _mergeNoBase=!base;
+  try{ return mergeObj(base||{}, local||{}, remote||{}, -1); }
+  finally{ _mergeNoBase=false; }
+}
+
+
+function setSyncBase(state, rev){
+  syncBase=syncClone(state); syncBaseRev=rev||null; rememberRev(rev);
+  try{ localStorage.setItem("atik5_base", JSON.stringify({rev:syncBaseRev, state:syncBase})); }
+  catch(e){
+    // No room for the base copy: keep it in memory only and drop the stale one.
+    try{ localStorage.removeItem("atik5_base"); }catch(e2){}
+    console.warn("base not persisted:", e);
+  }
+}
+function markDirty(){
+  localDirty=true; editSeq++;
+  try{ localStorage.setItem("atik5_dirty","1"); }catch(e){}
+  if(cloudReady&&cloudUser) setSyncState("pending","⏳ Зберігаю…");
+}
+function clearDirty(){
+  localDirty=false;
+  try{ localStorage.removeItem("atik5_dirty"); }catch(e){}
+}
+function saveLocalSafe(){
+  try{ saveLocal(); return true; }
+  catch(e){
+    console.error("localStorage save failed:",e);
+    setSyncState("error","⚠️ Немає місця в пам'яті браузера. Натисніть тут.");
+    return false;
+  }
+}
+function save(){
+  if(appLocked){ alert("Застосунок відкрито в іншій вкладці — зміни тут не зберігаються."); return; }
+  saveLocalSafe();
+  if(cloudApplyingRemote) return;   // re-render during a cloud update is not a user edit
+  markDirty();
+  scheduleCloudPush();
+}
+function applyStateLocally(state){
+  cloudApplyingRemote=true;
+  try{
+    applyAppState(syncClone(state));
+    saveLocalSafe();
+    try{ rerenderAfterStateChange(); }catch(e){ console.error(e); }
+  } finally { cloudApplyingRemote=false; }
+}
+
 function subscribeToCloudState(){
   if(!cloudDb||!cloudUser)return;
   updateCloudStatus("Підключення до спільної бази...");
-  cloudUnsub=getCloudDocRef().onSnapshot(function(snap){
-    // Local echo of our own pending write — nothing to learn from it.
-    if(snap.metadata && snap.metadata.hasPendingWrites) return;
-
+  cloudUnsub=getCloudDocRef().onSnapshot({includeMetadataChanges:false}, function(snap){
+    var md=snap.metadata||{};
+    if(md.hasPendingWrites) return;
+    if(md.fromCache) return;              // only server truth is ever applied
     if(!snap.exists){
       updateCloudStatus("Спільна база порожня. Завантажую ваші поточні дані...");
       pushCloudState(true);
       return;
     }
-    var data=snap.data()||{};
-
-    // Our own revision coming back from the server. NEVER re-apply it:
-    // a late acknowledgement of an older push used to overwrite newer local state.
-    if(data.revision && myRevisions.indexOf(data.revision)>=0){
-      lastSeenRemoteRevision=data.revision;
-      if(data.revision===lastPushedRevision && inFlightPushes===0){
-        localDirty=false;
-        setSyncState("ok","✔ Збережено в хмарі");
-      }
-      return;
-    }
-
-    // Remote change arrived while we still hold unsaved local work.
-    // Merge instead of overwriting, then push the union back.
-    if(localDirty || inFlightPushes>0 || cloudPushTimer){
-      mergeRemoteState(data.state||{});
-      rerenderAfterStateChange();
-      clearTimeout(cloudPushTimer); cloudPushTimer=null;
-      pushCloudState(false);
-      return;
-    }
-
-    cloudApplyingRemote=true;
-    applyAppState(data.state||{});
-    try{ saveLocal(); }catch(e){ console.error(e); }
-    rerenderAfterStateChange();
-    cloudApplyingRemote=false;
-    lastSeenRemoteRevision=data.revision||null;
-    var when=data.updatedAt&&data.updatedAt.toDate?data.updatedAt.toDate().toLocaleString('uk-UA'):"щойно";
-    updateCloudStatus("Оновлено зі спільної бази: "+when);
+    if(pushing){ remoteWhilePushing=true; return; }  // re-checked when the push ends
+    processRemote(snap.data()||{});
   }, function(err){
     console.error(err);
     updateCloudStatus("Помилка читання Firestore: "+err.message, true);
@@ -2209,51 +2313,145 @@ function subscribeToCloudState(){
   });
 }
 
-// Union two states without losing records from either side.
-// Local always wins on conflicts; remote-only records are added back in.
-function mergeRemoteState(remote){
-  if(!remote)return;
-  function unionById(localArr, remoteArr){
-    if(!remoteArr||!remoteArr.length) return localArr;
-    var seen={}; localArr.forEach(function(x){ if(x&&x.id) seen[x.id]=1; });
-    var extra=remoteArr.filter(function(x){ return x&&x.id&&!seen[x.id]; });
-    return localArr.concat(extra);
+function processRemote(d){
+  if(!d)return;
+  var rev=d.revision||null;
+  if(rev && seenRevs.indexOf(rev)>=0) return;   // current or older state — never roll back
+  if(localDirty || cloudPushTimer || pushing){
+    // Unsynced local work: the push transaction merges the server state in.
+    clearTimeout(cloudPushTimer); cloudPushTimer=null;
+    pushCloudState(false);
+    return;
   }
-  journal=unionById(journal, remote.journal);
-  journal.sort(function(a,b){ return String(b.savedAt||"").localeCompare(String(a.savedAt||"")); });
-  receiveHistory=unionById(receiveHistory, remote.receiveHistory);
-  salesReports =unionById(salesReports,  remote.salesReports);
-  buyers  =unionById(buyers,   remote.buyers);
-  products=unionById(products, remote.products);
-  suppliers=unionById(suppliers, remote.suppliers);
-  try{ saveLocal(); }catch(e){ console.error(e); }
+  applyStateLocally(d.state||{});
+  setSyncBase(collectAppState(), rev);
+  var when=d.updatedAt&&d.updatedAt.toDate?d.updatedAt.toDate().toLocaleString('uk-UA'):"щойно";
+  var who=d.updatedBy&&(d.updatedBy.name||d.updatedBy.email);
+  updateCloudStatus("Оновлено зі спільної бази: "+when+(who?" ("+who+")":""));
 }
 
 function scheduleCloudPush(){
   if(!cloudReady||!cloudUser||cloudApplyingRemote)return;
   clearTimeout(cloudPushTimer);
-  // 200ms instead of 800ms — the window in which a closed tab loses data.
-  cloudPushTimer=setTimeout(function(){ cloudPushTimer=null; pushCloudState(false); }, 200);
+  cloudPushTimer=setTimeout(function(){ cloudPushTimer=null; pushCloudState(false); }, 300);
 }
 
-function markDirty(){
+function pushCloudState(isManual){
+  if(!cloudReady||!cloudUser||!cloudDb||appLocked)return;
+  if(pushing){ pushAgain=true; return; }
+  clearTimeout(cloudPushTimer); cloudPushTimer=null;
+  pushing=true; pushAgain=false; remoteWhilePushing=false;
+  var revision='rev_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
+  var seqAtStart=editSeq;
+  var result=null;
+  var ref=getCloudDocRef();
+  updateCloudStatus(isManual?"Синхронізую...":"Зберігаю в хмару...");
+  setSyncState("pending","⏳ Зберігаю…");
+
+  cloudDb.runTransaction(function(tx){
+    return tx.get(ref).then(function(snap){
+      var local=syncClone(collectAppState());     // fresh on every retry
+      var out=local, merged=false, remoteRev=null;
+      if(snap.exists){
+        var d=snap.data()||{};
+        remoteRev=d.revision||null;
+        if(remoteRev!==syncBaseRev){ out=mergeStates(syncBase, local, d.state||{}); merged=true; }
+      }
+      var bytes=new Blob([JSON.stringify(out)]).size;
+      if(bytes>1000000){
+        var e=new Error("Дані ("+Math.round(bytes/1024)+" KB) перевищують ліміт Firestore 1 MB");
+        e.code="atik/too-big"; e.kb=Math.round(bytes/1024); throw e;
+      }
+      tx.set(ref,{
+        schema:SYNC_SCHEMA,
+        revision:revision,
+        prevRevision:remoteRev,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedBy:{ uid:cloudUser.uid, email:cloudUser.email||null, name:cloudUser.displayName||null },
+        state:out
+      });
+      result={local:local, out:out, merged:merged, remoteRev:remoteRev, kb:Math.round(bytes/1024)};
+    });
+  }).then(function(){
+    rememberRev(result.remoteRev);
+    var edited=editSeq!==seqAtStart;
+    if(result.merged){
+      var st=result.out;
+      // Edits made while the push was in flight are layered on top.
+      if(edited) st=mergeStates(result.local, syncClone(collectAppState()), result.out);
+      applyStateLocally(st);
+      warnDuplicateNumbers();
+    }
+    setSyncBase(result.out, revision);
+    pushing=false;
+    if(edited || pushAgain){ markDirtyQuiet(); scheduleCloudPush(); }
+    else { clearDirty(); setSyncState("ok","✔ Збережено в хмарі"); }
+    updateCloudStatus("Синхронізовано ✔ · розмір бази "+result.kb+" KB з 1024"+(result.kb>800?" ⚠️ близько до ліміту":""), result.kb>800);
+    writeDailyBackup(result.out, revision);
+    if(remoteWhilePushing && !edited && !pushAgain){
+      remoteWhilePushing=false;
+      ref.get({source:"server"}).then(function(s){ if(s.exists && !pushing) processRemote(s.data()); })
+        .catch(function(e){ console.warn(e); });
+    }
+  }).catch(function(err){
+    pushing=false;
+    console.error(err);
+    // Dirty flag stays set (in localStorage too): retried by the timer and on
+    // the next launch the records are merged, never overwritten.
+    updateCloudStatus("Помилка запису Firestore: "+err.message, true);
+    setSyncState("error", err.code==="atik/too-big"
+      ? "⚠️ НЕ ЗБЕРЕЖЕНО: база завелика ("+err.kb+" KB). Потрібна архівація."
+      : (err.code==="permission-denied"
+          ? "⚠️ НЕ ЗБЕРЕЖЕНО: немає доступу (перевірте акаунт / оновіть застосунок)."
+          : "⚠️ НЕ ЗБЕРЕЖЕНО в хмарі. Натисніть, щоб повторити."));
+  });
+}
+function markDirtyQuiet(){
   localDirty=true;
-  if(cloudReady&&cloudUser) setSyncState("pending","⏳ Зберігаю…");
+  try{ localStorage.setItem("atik5_dirty","1"); }catch(e){}
 }
 
-var _sbShown=false, _sbDelayT=null, _sbHideT=null;
+// Two devices offline can issue the same number — both documents are kept,
+// but the user must know so one of them can be renumbered.
+function warnDuplicateNumbers(){
+  try{
+    var seen={}, dups=[];
+    journal.forEach(function(j){
+      var k=(j.docType||"")+"#"+String(j.invoiceNum||"").trim();
+      if(!j.invoiceNum)return;
+      if(seen[k] && dups.indexOf(j.invoiceNum)<0) dups.push(j.invoiceNum);
+      seen[k]=1;
+    });
+    if(dups.length && typeof addToast==="function")
+      addToast("Однакові номери документів після синхронізації: "+dups.join(", ")+". Перевірте журнал.","warning");
+  }catch(e){}
+}
+
+// One restore point per day in shared/main_history/{YYYY-MM-DD}.
+function writeDailyBackup(state, revision){
+  try{
+    var day=new Date().toISOString().slice(0,10);
+    if(localStorage.getItem("atik5_lastbackup")===day) return;
+    cloudDb.collection(cloudDocPath.collection+"_history").doc(day).set({
+      schema:SYNC_SCHEMA, revision:revision,
+      savedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      savedBy: cloudUser&&(cloudUser.email||cloudUser.uid)||null,
+      state: state
+    }).then(function(){
+      try{ localStorage.setItem("atik5_lastbackup",day); }catch(e){}
+    }).catch(function(e){ console.warn("daily backup failed:", e&&e.code); });
+  }catch(e){ console.warn(e); }
+}
+
+var _sbShown=false, _sbDelayT=null, _sbHideT=null, syncState="idle";
 function setSyncState(state, text){
   syncState=state;
   var b=document.getElementById("sync-banner");
   var t=document.getElementById("sync-banner-text");
   if(!b||!t)return;
   clearTimeout(_sbDelayT); clearTimeout(_sbHideT);
-
-  if(state==="error"){
-    t.textContent=text; b.className="sb-error"; _sbShown=true; return;
-  }
+  if(state==="error"){ t.textContent=text; b.className="sb-error"; _sbShown=true; return; }
   if(state==="pending"){
-    // Stay silent for a normal fast save; only warn if it drags on.
     _sbDelayT=setTimeout(function(){
       if(syncState!=="pending")return;
       t.textContent=text||"⏳ Зберігаю…"; b.className="sb-pending"; _sbShown=true;
@@ -2261,75 +2459,71 @@ function setSyncState(state, text){
     return;
   }
   if(state==="ok"){
-    if(!_sbShown){ b.className=""; return; }   // nothing was shown, stay quiet
+    if(!_sbShown){ b.className=""; return; }
     t.textContent=text||"✔ Збережено в хмарі"; b.className="sb-ok";
-    _sbHideT=setTimeout(function(){
-      if(syncState==="ok"){ b.className=""; _sbShown=false; }
-    },2000);
+    _sbHideT=setTimeout(function(){ if(syncState==="ok"){ b.className=""; _sbShown=false; } },2000);
     return;
   }
   b.className=""; _sbShown=false;
 }
 
-// Called when the banner is tapped — force an immediate write attempt.
 function forceSyncNow(){
+  if(appLocked){ location.reload(); return; }
   if(!cloudUser||!cloudDb){ alert("Увійдіть через Google, щоб зберегти в хмару."); return; }
-  clearTimeout(cloudPushTimer); cloudPushTimer=null;
   pushCloudState(true);
 }
-
 function manualCloudSync(){
   if(!cloudUser){alert("Спочатку увійдіть через Google");return;}
   if(!cloudDb){alert("Firebase не підключено");return;}
   pushCloudState(true);
 }
 
-function pushCloudState(isManual){
-  if(!cloudReady||!cloudUser||!cloudDb||cloudApplyingRemote)return;
-  var revision='rev_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
-  lastPushedRevision=revision;
-  myRevisions.push(revision);
-  if(myRevisions.length>40) myRevisions=myRevisions.slice(-40);
-  inFlightPushes++;
-  updateCloudStatus(isManual?"Синхронізую...":"Зберігаю в хмару...");
-  setSyncState("pending","⏳ Зберігаю…");
-  // No {merge:true}: we always write the complete state, and merge kept
-  // deleted map keys (retailStock/rawStock) alive on the server forever.
-  getCloudDocRef().set({
-    revision:revision,
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-    updatedBy:{ uid:cloudUser.uid, email:cloudUser.email||null, name:cloudUser.displayName||null },
-    state:collectAppState()
-  }).then(function(){
-    inFlightPushes--;
-    if(inFlightPushes<=0){ inFlightPushes=0; localDirty=false; setSyncState("ok","✔ Збережено в хмарі"); }
-    updateCloudStatus("Синхронізовано ✔");
-  }).catch(function(err){
-    inFlightPushes--; if(inFlightPushes<0) inFlightPushes=0;
-    console.error(err);
-    updateCloudStatus("Помилка запису Firestore: "+err.message, true);
-    setSyncState("error","⚠️ НЕ ЗБЕРЕЖЕНО в хмарі. Натисніть, щоб повторити.");
-  });
-}
+// Safety net: while something is unsynced, retry every 20 s.
+setInterval(function(){
+  if(localDirty && !pushing && !cloudPushTimer && cloudReady && cloudUser && cloudDb
+     && navigator.onLine!==false && document.visibilityState==="visible"){
+    pushCloudState(false);
+  }
+}, 20000);
 
-// Flush before the page can be frozen or killed (mobile backgrounding,
-// tab close, PWA switch). Without this, a queued write simply died.
 function flushBeforeExit(){
+  if(appLocked) return;
   if(!localDirty && !cloudPushTimer) return;
-  clearTimeout(cloudPushTimer); cloudPushTimer=null;
-  try{ saveLocal(); }catch(e){}
+  saveLocalSafe();
   pushCloudState(false);
 }
 window.addEventListener("pagehide", flushBeforeExit);
 window.addEventListener("beforeunload", function(e){
   flushBeforeExit();
-  if(localDirty||inFlightPushes>0){ e.preventDefault(); e.returnValue=""; return ""; }
+  if(!appLocked && (localDirty||pushing)){ e.preventDefault(); e.returnValue=""; return ""; }
 });
 document.addEventListener("visibilitychange", function(){
   if(document.visibilityState==="hidden") flushBeforeExit();
   else if(localDirty) scheduleCloudPush();
 });
-window.addEventListener("online", function(){ if(localDirty) forceSyncNow(); });
+window.addEventListener("online", function(){ if(localDirty) pushCloudState(false); });
+
+// Single editing window. Two open tabs each keep their own copy in memory
+// and overwrite each other's localStorage — so the newest tab wins, older ones lock.
+(function(){
+  if(typeof BroadcastChannel==="undefined") return;
+  var ch, me=Math.random().toString(36).slice(2);
+  try{ ch=new BroadcastChannel("atik5_tabs"); }catch(e){ return; }
+  ch.onmessage=function(ev){
+    var m=ev.data||{};
+    if(m.type==="hello" && m.id!==me && !appLocked){
+      flushBeforeExit();
+      appLocked=true;
+      if(cloudUnsub){ try{cloudUnsub();}catch(e){} cloudUnsub=null; }
+      var o=document.createElement("div");
+      o.style.cssText="position:fixed;inset:0;z-index:100000;background:rgba(20,30,20,.92);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;font-size:15px";
+      o.innerHTML="<div>Застосунок відкрито в іншій вкладці або вікні.<br>Щоб не втратити дані, працюйте лише в одному.</div>"+
+        "<button style='padding:10px 18px;border-radius:8px;border:none;font-size:14px' onclick='location.reload()'>Працювати тут</button>";
+      document.body.appendChild(o);
+    }
+  };
+  ch.postMessage({type:"hello", id:me});
+})();
 
 // ============================================================
 // UTILS
@@ -2713,8 +2907,12 @@ function loadOpexForMonth(){
   updateOpexTotal();
 }
 function saveOpexForMonth(){
-  opexStore[getOpexMonth()]=getOpexBreakdown();
-  localStorage.setItem('atik5_opex',JSON.stringify(opexStore));
+  var m=getOpexMonth(), nv=getOpexBreakdown();
+  if(stableStr(opexStore[m]||null)===stableStr(nv)) return;   // unchanged — not an edit
+  var allZero=Object.keys(nv).every(function(k){return !nv[k];});
+  if(!opexStore[m] && allZero) return;
+  opexStore[m]=nv;
+  save();   // previously OPEX never reached the cloud
 }
 
 // ── Фіксована собівартість (підставки та інші) ───────────────
@@ -5695,8 +5893,7 @@ function loadCogsPrices() {
   }
 }
 function saveCogsPrices() {
-  localStorage.setItem("atik5_matprices", JSON.stringify(matPrices));
-  localStorage.setItem("atik5_bom",       JSON.stringify(bomData));
+  save();   // previously prices/BOM were saved only on this device
 }
 
 
