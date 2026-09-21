@@ -691,6 +691,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <button class="btn btn-sm" id="btn-signin" onclick="cloudSignIn()" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);font-size:11px;padding:5px 10px;white-space:nowrap;flex-shrink:0;cursor:pointer;">Google →</button>
     <button class="btn btn-sm" id="btn-signout" onclick="cloudSignOut()" style="display:none;background:rgba(255,255,255,0.12);color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.2);font-size:11px;padding:5px 10px;white-space:nowrap;flex-shrink:0;cursor:pointer;">Вийти</button>
     <button class="btn btn-sm" id="btn-cloud-sync" onclick="manualCloudSync()" style="display:none;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);font-size:11px;padding:5px 10px;position:relative;z-index:200;pointer-events:all;cursor:pointer;">↻ Sync</button>
+    <button class="btn btn-sm" id="btn-cloud-recover" onclick="recoverFromBackups()" title="Знайти й повернути втрачені документи з резервних копій" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);font-size:11px;padding:5px 10px;position:relative;z-index:200;pointer-events:all;cursor:pointer;">🛟 Відновити</button>
   </div>
 </div>
 
@@ -2330,7 +2331,17 @@ function processRemote(d){
     pushCloudState(false);
     return;
   }
-  applyStateLocally(d.state||{});
+  var incoming=d.state||{};
+  var cur=syncClone(collectAppState());
+  if(!(d.schema>=SYNC_SCHEMA) || countLostRecords(cur, incoming)>MASS_DELETE_LIMIT){
+    // Suspicious update (old app version or many documents vanishing at once):
+    // don't apply it — let the push transaction unite the records and heal the server.
+    console.warn("Suspicious remote state ignored, healing", rev);
+    markDirtyQuiet();
+    pushCloudState(false);
+    return;
+  }
+  applyStateLocally(incoming);
   setSyncBase(collectAppState(), rev);
   var when=d.updatedAt&&d.updatedAt.toDate?d.updatedAt.toDate().toLocaleString('uk-UA'):"щойно";
   var who=d.updatedBy&&(d.updatedBy.name||d.updatedBy.email);
@@ -2358,11 +2369,22 @@ function pushCloudState(isManual){
   cloudDb.runTransaction(function(tx){
     return tx.get(ref).then(function(snap){
       var local=syncClone(collectAppState());     // fresh on every retry
-      var out=local, merged=false, remoteRev=null;
+      var out=local, merged=false, remoteRev=null, legacyHealed=false;
       if(snap.exists){
         var d=snap.data()||{};
         remoteRev=d.revision||null;
-        if(remoteRev!==syncBaseRev){ out=mergeStates(syncBase, local, d.state||{}); merged=true; }
+        if(remoteRev!==syncBaseRev){
+          if(!(d.schema>=SYNC_SCHEMA)){
+            // Written by an OLD version of the app (stale phone/tab): its
+            // deletions can't be trusted — unite records, keep our values.
+            out=mergeStates(null, d.state||{}, local);
+            legacyHealed=true;
+          } else {
+            out=mergeStates(syncBase, local, d.state||{});
+          }
+          out=guardMassDeletion(local, out);
+          merged=true;
+        }
       }
       out=sanitizeForFirestore(out);
       var bytes=new Blob([JSON.stringify(out)]).size;
@@ -2378,7 +2400,7 @@ function pushCloudState(isManual){
         updatedBy:{ uid:cloudUser.uid, email:cloudUser.email||null, name:cloudUser.displayName||null },
         state:out
       });
-      result={local:local, out:out, merged:merged, remoteRev:remoteRev, kb:Math.round(bytes/1024)};
+      result={local:local, out:out, merged:merged, remoteRev:remoteRev, kb:Math.round(bytes/1024), healed:legacyHealed};
     });
   }).then(function(){
     rememberRev(result.remoteRev);
@@ -2389,6 +2411,8 @@ function pushCloudState(isManual){
       if(edited) st=mergeStates(result.local, syncClone(collectAppState()), result.out);
       applyStateLocally(st);
       warnDuplicateNumbers();
+      if(result.healed && typeof addToast==="function")
+        addToast("Стара версія застосунку на іншому пристрої намагалась перезаписати дані — документи збережено","warning","Оновіть застосунок на всіх телефонах");
     }
     setSyncBase(result.out, revision);
     pushing=false;
@@ -2437,6 +2461,62 @@ function markDirtyQuiet(){
   try{ localStorage.setItem("atik5_dirty","1"); }catch(e){}
 }
 
+var MASS_DELETE_LIMIT=3, allowBulkDelete=false;
+var RECORD_LISTS=["journal","receiveHistory","salesReports"];
+function countLostRecords(from, to){
+  var n=0;
+  RECORD_LISTS.forEach(function(k){
+    var have={}; (to&&to[k]||[]).forEach(function(x){ if(x&&x.id!=null) have[x.id]=1; });
+    (from&&from[k]||[]).forEach(function(x){ if(x&&x.id!=null&&!have[x.id]) n++; });
+  });
+  return n;
+}
+// If a merge would remove more than a few documents at once, keep them.
+// Real deletions happen one at a time; bulk loss is always a bug.
+function guardMassDeletion(local, out){
+  if(allowBulkDelete) return out;
+  if(countLostRecords(local, out)<=MASS_DELETE_LIMIT) return out;
+  console.warn("Mass deletion blocked");
+  var fixed=syncClone(out);
+  RECORD_LISTS.forEach(function(k){
+    var have={}; (fixed[k]||[]).forEach(function(x){ if(x&&x.id!=null) have[x.id]=1; });
+    (local[k]||[]).forEach(function(x){ if(x&&x.id!=null&&!have[x.id]){ (fixed[k]=fixed[k]||[]).push(x); } });
+  });
+  return fixed;
+}
+
+// Recover documents from all cloud restore points (only ADDS missing ones).
+function recoverFromBackups(){
+  if(!cloudUser||!cloudDb){ alert("Спочатку увійдіть через Google."); return; }
+  updateCloudStatus("Шукаю документи в резервних копіях...");
+  cloudDb.collection(cloudDocPath.collection+"_history").get().then(function(qs){
+    var cur=collectAppState(), found={}, names={journal:"документів (накладні/рахунки)",receiveHistory:"надходжень",salesReports:"звітів продажів"};
+    RECORD_LISTS.forEach(function(k){
+      var have={}; (cur[k]||[]).forEach(function(x){ have[x.id]=1; });
+      found[k]=[];
+      qs.forEach(function(doc){
+        var st=(doc.data()||{}).state||{};
+        (st[k]||[]).forEach(function(x){ if(x&&x.id!=null&&!have[x.id]){ have[x.id]=1; found[k].push(x); } });
+      });
+    });
+    var total=found.journal.length+found.receiveHistory.length+found.salesReports.length;
+    if(!total){ alert("Резервних копій: "+qs.size+". Втрачених документів не знайдено — усе на місці."); updateCloudStatus("Перевірено резервні копії: втрат немає"); return; }
+    var lines=RECORD_LISTS.filter(function(k){return found[k].length;}).map(function(k){ return "• "+found[k].length+" "+names[k]; });
+    var nums=found.journal.slice(0,30).map(function(j){ return (j.invoiceNum||"?")+" від "+(j.invoiceDate||"?"); });
+    if(!confirm("Знайдено в резервних копіях, але немає зараз:\n"+lines.join("\n")+
+      (nums.length?"\n\n"+nums.join("\n")+(found.journal.length>30?"\n…":""):"")+
+      "\n\nПовернути їх? (Якщо серед них є документи, які ви видаляли навмисно — видаліть їх знову після відновлення.)")) return;
+    RECORD_LISTS.forEach(function(k){
+      var list=k==="journal"?journal:k==="receiveHistory"?receiveHistory:salesReports;
+      found[k].forEach(function(x){ list.push(x); });
+    });
+    journal.sort(function(a,b){ return String(b.invoiceDate||"").localeCompare(String(a.invoiceDate||"")); });
+    save();
+    try{ rerenderAfterStateChange(); }catch(e){}
+    alert("Відновлено: "+total+". Перевірте журнал.\nЗалишки на складі не змінювались — за потреби скоригуйте їх вручну.");
+  }).catch(function(e){ alert("Не вдалося прочитати резервні копії: "+e.message); });
+}
+
 // Two devices offline can issue the same number — both documents are kept,
 // but the user must know so one of them can be renumbered.
 function warnDuplicateNumbers(){
@@ -2456,7 +2536,7 @@ function warnDuplicateNumbers(){
 // One restore point per day in shared/main_history/{YYYY-MM-DD}.
 function writeDailyBackup(state, revision){
   try{
-    var day=new Date().toISOString().slice(0,10);
+    var day=new Date().toISOString().slice(0,13).replace("T","_");   // YYYY-MM-DD_HH
     if(localStorage.getItem("atik5_lastbackup")===day) return;
     cloudDb.collection(cloudDocPath.collection+"_history").doc(day).set({
       schema:SYNC_SCHEMA, revision:revision,
@@ -5592,7 +5672,7 @@ function mergeImportBackup(input){
   reader.readAsText(file);
 }
 
-function clearJournal(){if(!confirm("Очистити журнал?"))return;journal=[];save();renderJournal();alert("Журнал очищено");}
+function clearJournal(){if(!confirm("Очистити журнал?"))return;journal=[];allowBulkDelete=true;setTimeout(function(){allowBulkDelete=false;},60000);save();renderJournal();alert("Журнал очищено");}
 function resetAll(){if(!confirm("Скинути ВСІ дані?"))return;if(!confirm("Підтвердіть!"))return;localStorage.clear();location.reload();}
 // ============================================================
 // MODAL
