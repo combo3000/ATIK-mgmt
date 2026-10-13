@@ -267,13 +267,28 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--paper);color:var(--
 @media(max-width:640px){
   .hdr-logo{padding:0 12px;font-size:11px}
   .hnav{padding:0 12px;font-size:10px}
-  .prow-top{padding:6px 12px 6px 8px}
-  .thumb{width:24px;margin-right:8px}
+  /* Row → 2 lines: [thumb | name | price ▾] / [thumb | 20шт 40шт] */
+  .prow-top{display:grid;grid-template-columns:auto minmax(0,1fr) auto;
+    grid-template-areas:"thumb name right" "thumb ctrl ctrl";
+    column-gap:10px;row-gap:8px;align-items:center;padding:10px 12px 10px 10px}
+  .thumb{grid-area:thumb;width:36px;height:auto;min-height:56px;align-self:stretch;margin-right:0}
+  .prow-name{grid-area:name;padding-right:0}
+  .p-en{font-size:12.5px;white-space:normal}
+  .prow-right{grid-area:right;gap:6px}
+  .prow-sum{min-width:0}
+  .prow-controls{grid-area:ctrl;margin-right:0;flex-wrap:wrap}
+  .qc-btn{width:30px;height:32px;font-size:16px}
+  .qc-inp{width:30px;height:32px}
+  .prow-body{padding:0 12px 14px 56px}
   .frow{grid-template-columns:1fr}
   .cont-wrap,.terms-wrap{padding-left:14px;padding-right:14px}
-  .prow-controls{gap:4px}
-  .qc-lbl{padding:0 4px;font-size:8px}
+  .prow-controls{gap:8px}
+  .qc-lbl{padding:0 6px;font-size:9px}
   .share-actions{flex-direction:column}
+}
+@media(max-width:400px){
+  .hdr-logo{padding:0 10px;font-size:10px;letter-spacing:.06em}
+  .hnav{padding:0 8px;font-size:9.5px;letter-spacing:.08em;flex:1 1 auto}
 }
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
