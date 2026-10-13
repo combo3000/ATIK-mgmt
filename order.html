@@ -382,7 +382,7 @@ window.ATIK_FIREBASE_CONFIG = {
     <div class="field"><label>Коментар</label><textarea id="f-nt" placeholder="Побажання, питання…"></textarea></div>
   </div>
   <button class="sbtn" onclick="submitOrder()">Надіслати замовлення →</button>
-  <p class="snote">Мін. замовлення 10 000 грн · знижка −30% від ціни каталогу</p>
+  <p class="snote">Мін. замовлення 5 000 грн · знижка −40% від ціни каталогу</p>
 </div>
 </div>
 
@@ -393,8 +393,8 @@ window.ATIK_FIREBASE_CONFIG = {
   <div class="tsec">
     <div class="tsttl">Ціноутворення</div>
     <div class="trow"><span class="tkey">Ціна в каталозі</span><span class="tval">Роздрібна ціна полиці</span></div>
-    <div class="trow"><span class="tkey">Оптова знижка</span><span class="tval"><strong>−30%</strong> для всіх партнерів</span></div>
-    <div class="trow"><span class="tkey">Мін. замовлення</span><span class="tval"><strong>10 000 грн</strong> за оптовою ціною</span></div>
+    <div class="trow"><span class="tkey">Оптова знижка</span><span class="tval"><strong>−40%</strong> для всіх партнерів</span></div>
+    <div class="trow"><span class="tkey">Мін. замовлення</span><span class="tval"><strong>5 000 грн</strong> за оптовою ціною</span></div>
   </div>
   <div class="tsec">
     <div class="tsttl">Оплата та доставка</div>
@@ -427,7 +427,7 @@ window.ATIK_FIREBASE_CONFIG = {
   <div class="sfooter-right">
     <button class="share-btn" onclick="openShare()">Поділитись ↗</button>
     <div class="sval-wrap">
-      <span class="sval-lbl">До оплати −30%</span>
+      <span class="sval-lbl">До оплати −40%</span>
       <div style="display:flex;align-items:baseline;gap:6px">
         <span class="sfull" id="sfull"></span>
         <span class="sdisc-lbl" id="sdisc-lbl"></span>
@@ -516,21 +516,21 @@ const PRODUCTS = [
 ];
 
 const STANDS = [
-  { id:"stand_round",    en:"Anumo Round",     ua:"Підставка кругла",   notes:"кераміка · Anumo · 9 см",  tags:["Anumo","кераміка"], price:225 },
-  { id:"stand_long",     en:"Anumo Long",      ua:"Підставка довга",    notes:"кераміка · Anumo · 22 см", tags:["Anumo","кераміка"], price:310 },
-  { id:"stand_tri",      en:"Anumo Triangle",  ua:"Підставка трикутна", notes:"кераміка · Anumo",          tags:["Anumo","кераміка"], price:475 },
-  { id:"sofika_beige",   en:"Sofika Beige",    ua:"Sofika бежева",      notes:"авторська кераміка · Sofika",tags:["Sofika","кераміка"], price:650 },
-  { id:"sofika_green",   en:"Sofika Green",    ua:"Sofika зелена",      notes:"авторська кераміка · Sofika",tags:["Sofika","кераміка"], price:650 },
-  { id:"sofika_spotted", en:"Sofika Spotted",  ua:"Sofika плямиста",    notes:"авторська кераміка · Sofika",tags:["Sofika","кераміка"], price:650 },
-  { id:"sofika_brown",   en:"Sofika Brown",    ua:"Sofika коричнева",   notes:"авторська кераміка · Sofika",tags:["Sofika","кераміка"], price:650 },
+  { id:"stand_round",    en:"Anumo Round",     ua:"Підставка кругла",   notes:"кераміка · Anumo · 9 см",  tags:["Anumo","кераміка"], price:400 },
+  { id:"stand_long",     en:"Anumo Long",      ua:"Підставка довга",    notes:"кераміка · Anumo · 22 см", tags:["Anumo","кераміка"], price:850 },
+  { id:"stand_bigcircle",en:"Anumo Big Circle",ua:"Підставка велика кругла", notes:"кераміка · Anumo",     tags:["Anumo","кераміка"], price:1200 },
+  { id:"sofika_beige",   en:"Sofika Beige",    ua:"Sofika бежева",      notes:"авторська кераміка · Sofika",tags:["Sofika","кераміка"], price:1400 },
+  { id:"sofika_green",   en:"Sofika Green",    ua:"Sofika зелена",      notes:"авторська кераміка · Sofika",tags:["Sofika","кераміка"], price:1400 },
+  { id:"sofika_spotted", en:"Sofika Spotted",  ua:"Sofika плямиста",    notes:"авторська кераміка · Sofika",tags:["Sofika","кераміка"], price:1400 },
+  { id:"sofika_brown",   en:"Sofika Brown",    ua:"Sofika коричнева",   notes:"авторська кераміка · Sofika",tags:["Sofika","кераміка"], price:1400 },
 ];
 
 const PRICES = {};
 PRODUCTS.forEach(p => { PRICES[p.id+"20"]=p.p20; PRICES[p.id+"40"]=p.p40; });
 STANDS.forEach(s => { PRICES[s.id]=s.price; });
 
-const MIN_ORDER = 10000;
-const DISCOUNT  = 0.70; // pay 70%
+const MIN_ORDER = 5000;
+const DISCOUNT  = 0.60; // pay 60% (−40%)
 
 let order = {}, curColl = "all";
 let displayedDiscTotal = 0; // for ticker
@@ -847,7 +847,7 @@ function buildRecap() {
     <div class="recap-total">
       <span style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)">Прайс</span>
       <span style="font-size:14px;color:var(--ink3);text-decoration:line-through">${t.toLocaleString('uk-UA')} ₴</span>
-      <span style="font-size:11px;color:var(--green);font-weight:700">−30%</span>
+      <span style="font-size:11px;color:var(--green);font-weight:700">−40%</span>
       <span style="font-size:22px;font-weight:700;color:var(--ink)">${disc.toLocaleString('uk-UA')} ₴</span>
     </div>`;
 }
@@ -867,7 +867,7 @@ function buildOrderText() {
   });
   lines.push('');
   lines.push(`Прайс: ${t.toLocaleString('uk-UA')} ₴`);
-  lines.push(`До оплати (−30%): ${disc.toLocaleString('uk-UA')} ₴`);
+  lines.push(`До оплати (−40%): ${disc.toLocaleString('uk-UA')} ₴`);
   return lines.join('\n');
 }
 function openShare()    { document.getElementById('share-panel').classList.add('on'); document.getElementById('share-overlay').classList.add('on'); }
@@ -947,7 +947,7 @@ function submitOrder() {
   all.forEach(({id,lb})=>{const q=order[id]||0;if(!q)return;
     recap+=`${lb} × ${q} = ${(q*(PRICES[id]||0)).toLocaleString('uk-UA')} ₴<br>`;
   });
-  recap+=`<br><strong>До оплати: ${disc.toLocaleString('uk-UA')} ₴</strong> (прайс ${t.toLocaleString('uk-UA')} − 30%)`;
+  recap+=`<br><strong>До оплати: ${disc.toLocaleString('uk-UA')} ₴</strong> (прайс ${t.toLocaleString('uk-UA')} − 40%)`;
   document.getElementById('suc-recap').innerHTML = recap;
 
   saveLastOrder();
