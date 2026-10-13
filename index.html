@@ -1614,13 +1614,13 @@ const DEFAULT_PRODUCTS=[
   {id:"agarwood40",     name:"Палички ароматичні Agarwood, Агарове дерево 40шт, All trees I know",       shelf:800, price:480,unit:"шт.",pack:40,group:"tube40"},
   {id:"frankincense40", name:"Палички ароматичні Frankincense, Ладан 40шт, All trees I know",            shelf:1000,price:700,unit:"шт.",pack:40,group:"tube40"},
   {id:"gardentree40",   name:"Палички ароматичні Garden Tree, Садове дерево 40шт, All trees I know",     shelf:800, price:560,unit:"шт.",pack:40,group:"tube40"},
-  {id:"stand_round",    name:'Підставка "ATIK&Anumo" Атік енд Анума кругла, All trees I know',           shelf:350, price:225,unit:"шт.",pack:null,group:"stand"},
-  {id:"stand_long",     name:'Підставка "ATIK&Anumo" Атік енд Анума довга, All trees I know',            shelf:450, price:310,unit:"шт.",pack:null,group:"stand"},
+  {id:"stand_round",    name:'Підставка "ATIK&Anumo" Атік енд Анума кругла, All trees I know',           shelf:400, price:240,unit:"шт.",pack:null,group:"stand"},
+  {id:"stand_long",     name:'Підставка "ATIK&Anumo" Атік енд Анума довга, All trees I know',            shelf:850, price:510,unit:"шт.",pack:null,group:"stand"},
   {id:"stand_tri",      name:'Підставка "ATIK&Anumo" Атік енд Анума трикутна, All trees I know',         shelf:600, price:475,unit:"шт.",pack:null,group:"stand"},
-  {id:"sofika_beige",   name:'Підставка "ATIK&Sofika" Sofika бежева, All trees I know',                  shelf:650, price:650,unit:"шт.",pack:null,group:"stand"},
-  {id:"sofika_green",   name:'Підставка "ATIK&Sofika" Sofika зелена, All trees I know',                  shelf:650, price:650,unit:"шт.",pack:null,group:"stand"},
-  {id:"sofika_spotted", name:'Підставка "ATIK&Sofika" Sofika плямиста, All trees I know',                shelf:650, price:650,unit:"шт.",pack:null,group:"stand"},
-  {id:"sofika_brown",   name:'Підставка "ATIK&Sofika" Sofika коричнева, All trees I know',               shelf:650, price:650,unit:"шт.",pack:null,group:"stand"},
+  {id:"sofika_beige",   name:'Підставка "ATIK&Sofika" Sofika бежева, All trees I know',                  shelf:1400, price:840,unit:"шт.",pack:null,group:"stand"},
+  {id:"sofika_green",   name:'Підставка "ATIK&Sofika" Sofika зелена, All trees I know',                  shelf:1400, price:840,unit:"шт.",pack:null,group:"stand"},
+  {id:"sofika_spotted", name:'Підставка "ATIK&Sofika" Sofika плямиста, All trees I know',                shelf:1400, price:840,unit:"шт.",pack:null,group:"stand"},
+  {id:"sofika_brown",   name:'Підставка "ATIK&Sofika" Sofika коричнева, All trees I know',               shelf:1400, price:840,unit:"шт.",pack:null,group:"stand"},
   {id:"ref20_cherry",      name:"Палички ароматичні Cherry Bloom, Цвіт Вишні 20шт, Папір",     shelf:400,price:280,unit:"шт.",pack:20,group:"refill"},
   {id:"ref20_osmanthus",   name:"Палички ароматичні Osmanthus, Османтус 20шт, Папір",           shelf:400,price:280,unit:"шт.",pack:20,group:"refill"},
   {id:"ref20_camphor",     name:"Палички ароматичні Camphor Tree, Камфорне дерево 20шт, Папір", shelf:400,price:280,unit:"шт.",pack:20,group:"refill"},
@@ -1789,6 +1789,7 @@ function load(){
     var smp=localStorage.getItem("atik5_matprices");if(smp) matPrices=JSON.parse(smp);
     DEFAULT_BUYERS.forEach(function(d){if(!buyers.find(function(x){return x.id===d.id;})) buyers.push(Object.assign({},d));});
     DEFAULT_PRODUCTS.forEach(function(d){if(!products.find(function(x){return x.id===d.id;})) products.push(Object.assign({},d));});
+    if(applyCatalogPatch202610()) localStorage.setItem("atik5_products",JSON.stringify(products));
     // Ensure all suppliers have aromas field
     suppliers.forEach(function(s){if(!s.aromas)s.aromas=[];});
     // Add missing default suppliers (yoko)
@@ -1974,6 +1975,29 @@ function collectAppState(){
   };
 }
 
+// ── One-time catalog patch (Oct 2026): new stand prices + Big Circle group fix.
+// Tagged per product so it runs once and never overrides later manual edits.
+var CATALOG_PATCH_202610={
+  stand_round:{shelf:400}, stand_long:{shelf:850},
+  c_kmgfu11oc:{shelf:1200, group:"stand", pack:null},
+  sofika_beige:{shelf:1400}, sofika_green:{shelf:1400}, sofika_spotted:{shelf:1400}, sofika_brown:{shelf:1400}
+};
+function applyCatalogPatch202610(){
+  var changed=false;
+  (products||[]).forEach(function(p){
+    var fix=CATALOG_PATCH_202610[p.id];
+    if(!fix||p.patch202610) return;
+    p.shelf=fix.shelf;
+    p.price=Math.round(fix.shelf*0.6);
+    if(p.distributor!=null) p.distributor=Math.round(fix.shelf*0.5);
+    if("group" in fix) p.group=fix.group;
+    if("pack" in fix) p.pack=fix.pack;
+    p.patch202610=true;
+    changed=true;
+  });
+  return changed;
+}
+
 function applyAppState(data){
   if(!data)return;
   products=data.products||JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
@@ -2009,6 +2033,7 @@ function applyAppState(data){
   DEFAULT_BUYERS.forEach(function(d){if(!buyers.find(function(x){return x.id===d.id;})) buyers.push(Object.assign({},d));});
   DEFAULT_PRODUCTS.forEach(function(d){if(!products.find(function(x){return x.id===d.id;})) products.push(Object.assign({},d));});
   compactJournal();   // legacy entries pushed by an older client
+  if(applyCatalogPatch202610()) setTimeout(function(){ if(!appLocked) save(); },0);
 }
 
 function rerenderAfterStateChange(){
