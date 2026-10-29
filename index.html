@@ -2037,7 +2037,6 @@ function applyPricePatch(tag,map){
     p.shelf=shelf;
     p.price=Math.round(shelf*0.6);
     if(p.distributor!=null) p.distributor=Math.round(shelf*0.5);
-    if(!p.pricePatches) p.pricePatches={};
     p.pricePatches[tag]=true;
   });
   return true;
@@ -5518,6 +5517,7 @@ function saveProduct(){
       var old=products[idx];
       if((old.shelf||0)!==shelf){
         freezeJournalPrices();
+        if(old.distributor!=null) data.distributor=Math.round(shelf*0.5);
         data.priceHistory=(old.priceHistory||[]).concat([{shelf:old.shelf||0,until:new Date().toISOString().slice(0,10),tag:"manual"}]);
       }
       products[idx]=Object.assign({},old,data);
@@ -5527,6 +5527,7 @@ function saveProduct(){
 }
 function deleteProduct(id){
   if(!confirm("Видалити товар?"))return;
+  freezeJournalPrices();
   products=products.filter(function(p){return p.id!==id;});
   save();renderProductsList();
 }
