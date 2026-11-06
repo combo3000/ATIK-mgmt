@@ -839,7 +839,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       <label><input type="radio" name="doctype" value="invoice" checked onchange="onDocTypeChange()">📦 Видаткова накладна</label>
       <label><input type="radio" name="doctype" value="bill" onchange="onDocTypeChange()">🧾 Рахунок</label>
     </div>
-    <div id="stock-note" class="hint" style="display:none">ℹ️ Рахунок не списує товар зі складу. Для списання використайте «Видаткова накладна».</div>
+    <div id="edit-banner" class="hint" style="display:none;border-left:3px solid var(--cedar);background:#fff8e6"></div>
+    <div id="stock-note" class="hint" style="display:none"></div>
     <div class="row">
       <div class="field" style="flex:0 0 130px"><label>№ документа</label><input id="inv-num" type="text" value="1" oninput="onFormFieldChange()"></div>
       <div class="field" style="flex:0 0 160px"><label>Дата</label><input id="inv-date" type="date" onchange="onFormFieldChange()"></div>
@@ -1266,13 +1267,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
         Додати точку
       </button>
       <button class="btn btn-moss btn-sm" onclick="openSalesReportModal()" style="color:#fff;">
-        ✏️ Ввести продажі
+        🧾 Продажі → рахунок
       </button>
     </div>
   </div>
   <div id="retail-store-grid" style="margin-bottom:20px;"></div>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
-    <div style="font-size:13px;font-weight:600;color:var(--ink);">Історія звітів</div>
+    <div style="font-size:13px;font-weight:600;color:var(--ink);">Рух товару на точках</div>
     <select id="retail-history-filter" onchange="renderRetailHistory()" style="padding:5px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);">
       <option value="">Всі точки</option>
     </select>
@@ -1556,7 +1557,7 @@ service cloud.firestore {
 <div class="modal-overlay" id="modal-sales">
   <div class="modal" style="max-width:680px">
     <div class="modal-header">
-      <h3>✏️ Ввести продажі на точці</h3>
+      <h3>🧾 Продажі точки → рахунок</h3>
       <button class="modal-close" onclick="closeModal('modal-sales')">×</button>
     </div>
     <div class="row">
@@ -1565,7 +1566,7 @@ service cloud.firestore {
     </div>
     <div id="sales-items-list"></div>
     <div style="display:flex;gap:10px;margin-top:14px">
-      <button class="btn btn-moss" onclick="saveSalesReport()">💾 Зберегти та списати</button>
+      <button class="btn btn-moss" onclick="saveSalesReport()">🧾 Сформувати рахунок</button>
       <button class="btn btn-gray" onclick="closeModal('modal-sales')">Скасувати</button>
     </div>
   </div>
@@ -1695,6 +1696,8 @@ var receiveHistory=[];
 var retailStock={};
 // salesReports: [{id,buyerId,buyerName,month,items,savedAt}]
 var salesReports=[];
+// retailMoves: [{id,buyerId,type:"adjust"|"return",reason,note,date,items:[{productId,name,delta}],savedAt}]
+var retailMoves=[];
 // suppliers: [{id, name, aromas:[aromaId,...], custom}]
 var suppliers=[
   {id:"yasuhito", name:"B-Faith (Yasuhito)",          aromas:["osmanthus","cherry","sandalwood","camphor"], custom:false},
@@ -1772,6 +1775,10 @@ function setChartMode(m){
   renderMonthlyChart();
 }
 var items=[{id:Date.now(),productId:"",qty:1,customPrice:""}];
+// Document being edited from the journal (null = new document)
+var editingDocId=null;
+// Month of a point's sales report the bill in the form is based on
+var pendingSalesMonth=null;
 
 // CLOUD STATE
 var cloudApp=null, cloudDb=null, cloudAuth=null, cloudUser=null, cloudUnsub=null;
@@ -1791,6 +1798,7 @@ function load(){
     var sh=localStorage.getItem("atik5_recv");     if(sh) receiveHistory=JSON.parse(sh);
     var srt=localStorage.getItem("atik5_retail");  if(srt) retailStock=JSON.parse(srt);
     var srp=localStorage.getItem("atik5_salesrep");if(srp) salesReports=JSON.parse(srp);
+    var srm=localStorage.getItem("atik5_retailmoves");if(srm) retailMoves=JSON.parse(srm);
     var ssu=localStorage.getItem("atik5_suppliers");if(ssu) suppliers=JSON.parse(ssu);
     var sox=localStorage.getItem("atik5_opex");if(sox) opexStore=JSON.parse(sox);
     var srr=localStorage.getItem("atik5_reorder");if(srr) reorderPoints=JSON.parse(srr);
@@ -1841,7 +1849,7 @@ function load(){
     products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
     buyers=JSON.parse(JSON.stringify(DEFAULT_BUYERS));
     journal=[]; warehouseStock={}; rawStock={}; receiveHistory=[];
-    retailStock={}; salesReports=[];
+    retailStock={}; salesReports=[]; retailMoves=[];
   }
 }
 function saveLocal(){
@@ -1854,6 +1862,7 @@ function saveLocal(){
   localStorage.setItem("atik5_recv",JSON.stringify(receiveHistory));
   localStorage.setItem("atik5_retail",JSON.stringify(retailStock));
   localStorage.setItem("atik5_salesrep",JSON.stringify(salesReports));
+  localStorage.setItem("atik5_retailmoves",JSON.stringify(retailMoves));
   localStorage.setItem("atik5_suppliers",JSON.stringify(suppliers));
   localStorage.setItem("atik5_opex",JSON.stringify(opexStore));
   localStorage.setItem("atik5_fixedcogs",JSON.stringify(fixedCogsMap));
@@ -1933,8 +1942,13 @@ function compactJournal(){
 // Returning a deleted document's materials to stock. Only amounts recorded at
 // issue time are given back — never a recomputed BOM estimate, which would
 // invent stock that was never actually taken.
-function restoreStockFromDoc(j){
-  if(!j||j.docType!=="invoice")return false;
+// keepNeg (used when editing): let a point's row go below zero for a moment, so
+// "take the old document off, put the new one on" nets out exactly instead of
+// losing whatever the point had already sold.
+function restoreStockFromDoc(j, keepNeg){
+  if(!j)return false;
+  if(j.docType==="bill") return restoreRetailFromBill(j);
+  if(j.docType!=="invoice")return false;
   var restored=false;
   if(j.stockUsed){
     Object.keys(j.stockUsed).forEach(function(k){
@@ -1946,7 +1960,16 @@ function restoreStockFromDoc(j){
     });
   }
   var bid=jBuyerId(j);
-  if(bid&&retailStock[bid]){
+  if(bid&&keepNeg){
+    if(!retailStock[bid])retailStock[bid]={};
+    (j.items||[]).forEach(function(it){
+      var pid=it.productId||it.id;
+      if(!retailStock[bid][pid])retailStock[bid][pid]={qty:0,name:it.name};
+      retailStock[bid][pid].qty=(retailStock[bid][pid].qty||0)-(it.qty||0);
+      restored=true;
+    });
+  }
+  else if(bid&&retailStock[bid]){
     (j.items||[]).forEach(function(it){
       var pid=it.productId||it.id;
       if(!retailStock[bid][pid])return;
@@ -1956,6 +1979,19 @@ function restoreStockFromDoc(j){
     });
   }
   return restored;
+}
+
+// Deleting a bill gives the point back exactly what that bill took off its shelf.
+function restoreRetailFromBill(j){
+  if(!j||!j.retailUsed)return false;
+  var bid=jBuyerId(j); if(!bid)return false;
+  if(!retailStock[bid])retailStock[bid]={};
+  Object.keys(j.retailUsed).forEach(function(pid){
+    var u=j.retailUsed[pid]; if(!u||!u.qty)return;
+    if(!retailStock[bid][pid])retailStock[bid][pid]={qty:0,name:u.name||pid};
+    retailStock[bid][pid].qty+=u.qty;
+  });
+  return true;
 }
 
 // Document numbering. Numbers are the one thing accountants actually check,
@@ -1979,7 +2015,7 @@ function collectAppState(){
   return {
     products:products, buyers:buyers, journal:journal, settings:settings,
     warehouseStock:warehouseStock, rawStock:rawStock, receiveHistory:receiveHistory,
-    retailStock:retailStock, salesReports:salesReports, suppliers:suppliers,
+    retailStock:retailStock, salesReports:salesReports, retailMoves:retailMoves, suppliers:suppliers,
     reorderPoints:reorderPoints, opexStore:opexStore,
     fixedCogsMap:fixedCogsMap, matPrices:matPrices, bomData:bomData
   };
@@ -2084,6 +2120,7 @@ function applyAppState(data){
     });
   });
   salesReports=data.salesReports||[];
+  retailMoves=data.retailMoves||[];
   if(data.suppliers)suppliers=data.suppliers;
   if(data.reorderPoints)reorderPoints=data.reorderPoints;
   if(data.opexStore)opexStore=data.opexStore;
@@ -2557,7 +2594,7 @@ function markDirtyQuiet(){
 }
 
 var MASS_DELETE_LIMIT=3, allowBulkDelete=false;
-var RECORD_LISTS=["journal","receiveHistory","salesReports"];
+var RECORD_LISTS=["journal","receiveHistory","salesReports","retailMoves"];
 function countLostRecords(from, to){
   var n=0;
   RECORD_LISTS.forEach(function(k){
@@ -2585,7 +2622,7 @@ function recoverFromBackups(){
   if(!cloudUser||!cloudDb){ alert("Спочатку увійдіть через Google."); return; }
   updateCloudStatus("Шукаю документи в резервних копіях...");
   cloudDb.collection(cloudDocPath.collection+"_history").get().then(function(qs){
-    var cur=collectAppState(), found={}, names={journal:"документів (накладні/рахунки)",receiveHistory:"надходжень",salesReports:"звітів продажів"};
+    var cur=collectAppState(), found={}, names={journal:"документів (накладні/рахунки)",receiveHistory:"надходжень",salesReports:"звітів продажів",retailMoves:"коригувань/повернень точок"};
     RECORD_LISTS.forEach(function(k){
       var have={}; (cur[k]||[]).forEach(function(x){ have[x.id]=1; });
       found[k]=[];
@@ -2594,7 +2631,7 @@ function recoverFromBackups(){
         (st[k]||[]).forEach(function(x){ if(x&&x.id!=null&&!have[x.id]){ have[x.id]=1; found[k].push(x); } });
       });
     });
-    var total=found.journal.length+found.receiveHistory.length+found.salesReports.length;
+    var total=found.journal.length+found.receiveHistory.length+found.salesReports.length+found.retailMoves.length;
     if(!total){ alert("Резервних копій: "+qs.size+". Втрачених документів не знайдено — усе на місці."); updateCloudStatus("Перевірено резервні копії: втрат немає"); return; }
     var lines=RECORD_LISTS.filter(function(k){return found[k].length;}).map(function(k){ return "• "+found[k].length+" "+names[k]; });
     var nums=found.journal.slice(0,30).map(function(j){ return (j.invoiceNum||"?")+" від "+(j.invoiceDate||"?"); });
@@ -2602,7 +2639,7 @@ function recoverFromBackups(){
       (nums.length?"\n\n"+nums.join("\n")+(found.journal.length>30?"\n…":""):"")+
       "\n\nПовернути їх? (Якщо серед них є документи, які ви видаляли навмисно — видаліть їх знову після відновлення.)")) return;
     RECORD_LISTS.forEach(function(k){
-      var list=k==="journal"?journal:k==="receiveHistory"?receiveHistory:salesReports;
+      var list=k==="journal"?journal:k==="receiveHistory"?receiveHistory:k==="retailMoves"?retailMoves:salesReports;
       found[k].forEach(function(x){ list.push(x); });
     });
     journal.sort(function(a,b){ return String(b.invoiceDate||"").localeCompare(String(a.invoiceDate||"")); });
@@ -3021,6 +3058,7 @@ function onBuyerChange(){
       +(b.address?"<div>"+esc(b.address)+"</div>":"")+(b.contract?"<div>Договір: "+esc(b.contract)+"</div>":"")
       +"<div>Отримувач: "+esc(b.receiver||"—")+"</div></div>";
   }
+  if(document.querySelector('input[name="doctype"]:checked')) onDocTypeChange();
 }
 function refreshPriceTypeBtns(){
   var active = getPriceType();
@@ -3330,7 +3368,70 @@ function updateOpexTotal(){
 }
 function onDocTypeChange(){
   var dt=document.querySelector('input[name="doctype"]:checked').value;
-  var sn=document.getElementById("stock-note"); if(sn)sn.style.display=dt==="bill"?"block":"none";
+  var sn=document.getElementById("stock-note");
+  if(sn){
+    var ctx=pointStockCtx();
+    if(dt!=="bill"){ sn.style.display="none"; }
+    else{
+      sn.style.display="block";
+      var n=ctx?Object.keys(ctx.stock).filter(function(k){return ctx.stock[k]>0;}).length:0;
+      sn.innerHTML=ctx
+        ? "ℹ️ Рахунок списує товар із залишку точки «"+esc(ctx.name)+"»."
+          +(n?' <button type="button" class="btn btn-sm" style="margin-left:6px;background:var(--moss4);color:var(--pine);border:1px solid var(--moss3)" onclick="fillFromPointStock()">📥 Підставити весь залишок ('+n+' поз.)</button>'
+             :' На точці зараз немає товару.')
+        : "ℹ️ Рахунок не списує товар зі складу сировини.";
+    }
+  }
+  try{ renderItems(); }catch(e){}
+}
+// Point stock as the bill in the form sees it. When editing a bill for the same
+// point, what that bill took is counted as still available.
+function pointStockCtx(){
+  var dtEl=document.querySelector('input[name="doctype"]:checked');
+  if(!dtEl||dtEl.value!=="bill")return null;
+  var sel=document.getElementById("buyer-select");
+  var b=sel&&buyers.find(function(x){return x.id===sel.value;});
+  if(!b||!b.isRetail)return null;
+  var st={}, rs=retailStock[b.id]||{};
+  Object.keys(rs).forEach(function(k){ st[k]=rs[k].qty||0; });
+  var ed=editingDocId&&journal.find(function(x){return x.id===editingDocId;});
+  if(ed&&ed.docType==="bill"&&jBuyerId(ed)===b.id&&ed.retailUsed){
+    Object.keys(ed.retailUsed).forEach(function(k){ st[k]=(st[k]||0)+(ed.retailUsed[k].qty||0); });
+  }
+  return {buyerId:b.id, name:b.retailName||b.name, stock:st};
+}
+function fillFromPointStock(){
+  var ctx=pointStockCtx(); if(!ctx)return;
+  var list=Object.keys(ctx.stock).filter(function(k){
+    return ctx.stock[k]>0&&products.find(function(p){return p.id===k;});
+  });
+  if(!list.length){alert("На точці немає товару");return;}
+  var has=items.some(function(i){return i.productId;});
+  if(has&&!confirm("Замінити товари у формі всім залишком точки?"))return;
+  var t=Date.now();
+  items=list.map(function(k,i){return {id:t+i,productId:k,qty:ctx.stock[k],customPrice:""};});
+  renderItems(); saveDraft();
+}
+function renderEditBanner(){
+  var el=document.getElementById("edit-banner"), btn=document.getElementById("btn-generate");
+  var g=editingDocId&&journal.find(function(x){return x.id===editingDocId;});
+  if(!g){ editingDocId=null; }
+  if(el){
+    if(g){
+      el.style.display="block";
+      el.innerHTML="✏️ Редагування: <strong>"+esc(docTitleStr(g))+"</strong> від "+esc(formatDate(g.invoiceDate))
+        +". Збереження замінить цей документ, залишки буде перераховано."
+        +' <button type="button" class="btn btn-gray btn-sm" style="margin-left:6px" onclick="cancelEdit()">✕ Скасувати редагування</button>';
+    } else el.style.display="none";
+  }
+  if(btn) btn.textContent=g?"💾 Зберегти зміни":"🌿 Згенерувати";
+}
+function cancelEdit(){
+  editingDocId=null; pendingSalesMonth=null;
+  items=[{id:Date.now(),productId:"",qty:1,customPrice:""}];
+  document.getElementById("inv-num").value=nextInvoiceNum();
+  document.getElementById("inv-date").value=new Date().toISOString().split("T")[0];
+  clearDraft(); renderEditBanner(); onDocTypeChange();
 }
 
 // ============================================================
@@ -3353,12 +3454,18 @@ function buildProductOptions(){
 function renderItems(){
   var container=document.getElementById("items-container");
   var opts=buildProductOptions();
+  var _pctx=pointStockCtx();
   container.innerHTML=items.map(function(item){
     var price=getItemPrice(item),sum=price*item.qty;
     var prod=products.find(function(p){return p.id===item.productId;});
     var ph=prod?calcPrice(itemBase(item,prod)):"ціна";
     var stockBadge="";
-    if(item.productId){
+    if(item.productId&&_pctx){
+      var _have=_pctx.stock[item.productId]||0, _over=item.qty>_have;
+      stockBadge="<span style=\"font-size:10px;margin-left:6px;color:"+(_over?"var(--red)":"var(--moss)")+"\">"
+        +(_over?"⚠ ":"")+"на точці: "+_have+"</span>";
+    }
+    else if(item.productId){
       var _aid=PRODUCT_AROMA[item.productId];
       if(_aid){
         var _rk="sticks_"+_aid;
@@ -3479,8 +3586,11 @@ function generate(){
   var buyer=buyers.find(function(b){return b.id===sel.value;});
   if(!buyer){alert("Оберіть покупця");return;}
   var dt=document.querySelector('input[name="doctype"]:checked').value;
+  var _edit=editingDocId?journal.find(function(x){return x.id===editingDocId;}):null;
+  if(editingDocId&&!_edit){editingDocId=null;renderEditBanner();}
   var _num=document.getElementById("inv-num").value;
-  if(invoiceNumExists(_num)&&!confirm("Документ №"+_num+" вже є в журналі.\nВсе одно створити дублікат номера?"))return;
+  var _numTaken=journal.some(function(j){return (!_edit||j.id!==_edit.id)&&String(j.invoiceNum||"").trim()===String(_num||"").trim();});
+  if(_numTaken&&!confirm("Документ №"+_num+" вже є в журналі.\nВсе одно створити дублікат номера?"))return;
   var total=getTotal();
 var priceLabel={
   "shelf":"Полиця (100%)",
@@ -3488,8 +3598,21 @@ var priceLabel={
   "opt":"Викуп (60%)"
 }[getPriceType()]||"";
 
+  // Editing: take the old document's effect off the stock first, so checks and
+  // deductions below see the stock as if it had never been issued. If the user
+  // cancels at a warning, the snapshot puts everything back untouched.
+  var _snap=null;
+  var _rollback=function(){ if(_snap){ rawStock=_snap.raw; retailStock=_snap.retail; } };
+  // Invoices made before the stockUsed ledger did take materials but don't say
+  // how much — re-deducting on edit would take them twice, so skip.
+  var _skipRaw=!!(_edit&&_edit.docType==="invoice"&&!_edit.stockUsed);
+  if(_edit){
+    _snap={raw:deepClone(rawStock),retail:deepClone(retailStock)};
+    restoreStockFromDoc(_edit,true);
+  }
+
   // Check raw material availability (for invoices only)
-  if(dt==="invoice"){
+  if(dt==="invoice"&&!_skipRaw){
     var shortages=[];
     filled.forEach(function(i){
       var p=products.find(function(x){return x.id===i.productId;});
@@ -3509,8 +3632,20 @@ var priceLabel={
       }
     });
     if(shortages.length){
-      if(!confirm("⚠️ Недостатньо сировини:\n"+shortages.join("\n")+"\n\nПродовжити без списання?"))return;
+      if(!confirm("⚠️ Недостатньо сировини:\n"+shortages.join("\n")+"\n\nПродовжити без списання?")){_rollback();return;}
     }
+  }
+
+  // Bill = sale from the point's shelf: warn if the point has less than billed
+  if(dt==="bill"&&buyer.isRetail){
+    var rs=retailStock[buyer.id]||{}, short=[];
+    filled.forEach(function(i){
+      var p=products.find(function(x){return x.id===i.productId;});
+      var have=(rs[i.productId]&&rs[i.productId].qty)||0;
+      if(have<i.qty) short.push(shortName(p?p.name:i.productId)+": у рахунку "+i.qty+", на точці "+Math.max(0,have));
+    });
+    if(short.length&&!confirm("⚠️ На точці «"+(buyer.retailName||buyer.name)+"» недостатньо товару:\n"+short.join("\n")
+      +"\n\nПродовжити? Залишок по цих позиціях стане 0.")){_rollback();return;}
   }
 
   showLoader();
@@ -3529,9 +3664,18 @@ var priceLabel={
     };
 
     // AUTO DEDUCT from rawStock directly (invoices only, no assembly step)
+    if(_edit){
+      g.id=_edit.id;
+      g.status=_edit.status||"created";
+      if(_edit.savedAt) g.savedAt=_edit.savedAt;
+      g.editedAt=new Date().toISOString();
+      if(_edit.salesMonth&&dt==="bill") g.salesMonth=_edit.salesMonth;
+    }
+    if(pendingSalesMonth&&dt==="bill") g.salesMonth=pendingSalesMonth;
+
     if(dt==="invoice"){
       var _led={};
-      deductRawForItems(g.items,_led);
+      if(!_skipRaw) deductRawForItems(g.items,_led);
       if(Object.keys(_led).length) g.stockUsed=_led;
       // Update retail stock if buyer is a retail point
       if(buyer.isRetail){
@@ -3550,7 +3694,33 @@ var priceLabel={
       }
     }
 
-    journal.unshift(g);
+    // Bill → deduct from the point's stock. Ledger keeps the amount actually
+    // taken (never more than was there), so deletion returns exactly that.
+    if(dt==="bill"&&buyer.isRetail&&retailStock[buyer.id]){
+      var _rled={};
+      g.items.forEach(function(it){
+        var pid=it.productId||it.id, row=retailStock[buyer.id][pid];
+        if(!row)return;
+        var take=Math.min(row.qty||0,it.qty||0);
+        if(take<=0)return;
+        row.qty=(row.qty||0)-take;
+        _rled[pid]={qty:take,name:it.name};
+        if(row.qty<=0) delete retailStock[buyer.id][pid];
+      });
+      if(Object.keys(_rled).length) g.retailUsed=_rled;
+    }
+
+    if(_edit){
+      [jBuyerId(_edit),buyer.id].forEach(function(bid){
+        var rs=bid&&retailStock[bid]; if(!rs)return;
+        Object.keys(rs).forEach(function(k){ if((rs[k].qty||0)<=0) delete rs[k]; });
+      });
+    }
+    var _ix=_edit?journal.findIndex(function(x){return x.id===_edit.id;}):-1;
+    if(_ix>=0) journal[_ix]=g; else journal.unshift(g);
+    var _wasEdit=_ix>=0;
+    editingDocId=null; pendingSalesMonth=null; renderEditBanner();
+    if(_wasEdit) addToast("Документ №"+g.invoiceNum+" оновлено, залишки перераховано","success");
     if(settings.autoincrement){
       document.getElementById("inv-num").value=nextInvoiceNum();
     }
@@ -3978,11 +4148,12 @@ function deleteFromJournalById(id){
   var back=confirmStockReturn(j);
   journal=journal.filter(function(x){return x.id!==id;});
   save(); renderJournal(); renderRawMaterials(); renderRetailStoreGrid(); renderDashboard();
-  addToast("Документ видалено"+(back?" · сировину повернуто на склад":""),"info");
+  addToast("Документ видалено"+(back?(j.docType==="bill"?" · залишок точки відновлено":" · сировину повернуто на склад"):""),"info");
 }
 
 // Deleting an накладна used to leave the written-off sticks gone forever.
 function confirmStockReturn(j){
+  if(j&&j.docType==="bill") return restoreRetailFromBill(j);
   if(!j||j.docType!=="invoice")return false;
   if(!j.stockUsed){
     if(jBuyerId(j)&&retailStock[jBuyerId(j)]) return restoreStockFromDoc(j);
@@ -4048,7 +4219,7 @@ function deleteFromJournal(g){
   journal=journal.filter(function(j){return j.id!==g.id;});
   save();closeModal("modal-journal");renderJournal();
   renderRawMaterials(); renderRetailStoreGrid(); renderDashboard();
-  if(back) addToast("Сировину повернуто на склад","info");
+  if(back) addToast(g.docType==="bill"?"Залишок точки відновлено":"Сировину повернуто на склад","info");
 }
 function setStatus(id,status){
   var j=journal.find(function(x){return x.id===id;});
@@ -4072,7 +4243,8 @@ function loadFromJournal(g){
   if(dtEl)dtEl.checked=true;
   document.getElementById("inv-num").value=g.invoiceNum;
   document.getElementById("inv-date").value=g.invoiceDate;
-  onBuyerChange();onDocTypeChange();renderItems();
+  editingDocId=g.id; pendingSalesMonth=null;
+  onBuyerChange();onDocTypeChange();renderItems();renderEditBanner();
   closeModal("modal-journal");switchTab("docs");switchDocsSub("form");
 }
 function duplicateInvoice(g){
@@ -4085,8 +4257,9 @@ function duplicateInvoice(g){
   if(ptEl)ptEl.checked=true;
   var dtEl=document.querySelector('input[name="doctype"][value="'+(g.docType||"invoice")+'"]');
   if(dtEl)dtEl.checked=true;
-  document.getElementById("inv-num").value=(parseInt(g.invoiceNum)||0)+1;
+  document.getElementById("inv-num").value=nextInvoiceNum();
   document.getElementById("inv-date").value=new Date().toISOString().split("T")[0];
+  editingDocId=null; pendingSalesMonth=null; renderEditBanner();
   onBuyerChange();onDocTypeChange();renderItems();
   closeModal("modal-journal");switchTab("docs");switchDocsSub("form");
 }
@@ -4532,37 +4705,111 @@ function renderRetailTab(){
   sel.innerHTML='<option value="">Всі точки</option>'+buyers.filter(function(b){return b.isRetail;}).map(function(b){return '<option value="'+b.id+'"'+(b.id===cur?' selected':'')+'>'+esc(b.name)+'</option>';}).join("");
 }
 
+// ============================================================
+// RETAIL POINTS — stock, value, unpaid bills, movement history
+// ============================================================
+var RETAIL_REASONS=["Звірка з точкою","Брак / пошкодження","Тестер","Втрата","Помилка обліку","Інше"];
+function todayISO(){ return new Date().toISOString().split("T")[0]; }
+function dmy(s){ return String(s||"").replace(/^(\d{4})-(\d{2})-(\d{2}).*$/,"$3.$2.$1"); }
+// Consignment price (Реалізація 70%) — what the goods on a point are worth to us
+function pointPrice(pid){
+  var p=products.find(function(x){return x.id===pid;});
+  return p?Math.round((p.shelf||p.price||0)*0.70):0;
+}
+function pointStockTotals(bid){
+  var st=retailStock[bid]||{}, qty=0, value=0;
+  Object.keys(st).forEach(function(k){ var q=st[k].qty||0; if(q>0){ qty+=q; value+=q*pointPrice(k); } });
+  return {qty:qty, value:value};
+}
+function pointUnpaid(bid){
+  var now=new Date(), list=journal.filter(function(j){
+    return j.docType==="bill"&&jBuyerId(j)===bid&&(j.status||"created")!=="paid";
+  });
+  var sum=0, maxDays=0;
+  list.forEach(function(j){
+    sum+=j.total||0;
+    var d=Math.floor((now-new Date((j.invoiceDate||"")+"T12:00:00"))/86400000);
+    if(d>maxDays) maxDays=d;
+    j._days=d>0?d:0;
+  });
+  list.sort(function(a,b){return String(a.invoiceDate||"").localeCompare(String(b.invoiceDate||""));});
+  return {list:list, sum:sum, days:maxDays};
+}
+// One movement history for a point: накладні (+), рахунки (−, what they really
+// took), коригування/повернення (±) and old sales reports that used to deduct.
+function retailHistory(bid){
+  var out=[];
+  journal.forEach(function(j){
+    var b=jBuyerId(j); if(bid&&b!==bid)return;
+    if(j.docType==="invoice"){
+      var buyer=buyers.find(function(x){return x.id===b;}); if(!buyer||!buyer.isRetail)return;
+      out.push({buyerId:b,date:j.invoiceDate,sort:(j.invoiceDate||"")+(j.savedAt||""),icon:"📦",
+        label:"Накладна №"+j.invoiceNum,docId:j.id,
+        items:(j.items||[]).map(function(it){return {name:it.name,delta:it.qty||0};})});
+    } else if(j.docType==="bill"&&j.retailUsed){
+      out.push({buyerId:b,date:j.invoiceDate,sort:(j.invoiceDate||"")+(j.savedAt||""),icon:"🧾",
+        label:"Рахунок №"+j.invoiceNum+(j.salesMonth?" (продажі "+j.salesMonth+")":""),docId:j.id,
+        items:Object.keys(j.retailUsed).map(function(k){return {name:j.retailUsed[k].name||k,delta:-(j.retailUsed[k].qty||0)};})});
+    }
+  });
+  retailMoves.forEach(function(m){
+    if(bid&&m.buyerId!==bid)return;
+    var isRet=m.type==="return";
+    out.push({buyerId:m.buyerId,date:m.date,sort:(m.date||"")+(m.savedAt||""),icon:isRet?"↩":"✏️",
+      label:(isRet?"Повернення з точки":"Коригування — "+(m.reason||""))+(m.note?" · "+m.note:""),moveId:m.id,
+      items:(m.items||[]).map(function(it){return {name:it.name,delta:it.delta||0};})});
+  });
+  salesReports.forEach(function(r){
+    if(bid&&r.buyerId!==bid)return;
+    var d=(r.savedAt||"").slice(0,10);
+    out.push({buyerId:r.buyerId,date:d,sort:d+(r.savedAt||""),icon:"📊",
+      label:"Звіт продажів "+(r.month||"")+" (старий формат)",reportId:r.id,
+      items:(r.items||[]).map(function(it){return {name:it.name,delta:-(it.sold||0)};})});
+  });
+  out.sort(function(a,b){return b.sort.localeCompare(a.sort);});
+  return out;
+}
+function renderMoveRow(h,showPoint,ctxBid){
+  var tot=h.items.reduce(function(s,i){return s+i.delta;},0);
+  var pt=showPoint?buyers.find(function(x){return x.id===h.buyerId;}):null;
+  var act="";
+  if(h.moveId) act='<button class="btn btn-gray btn-sm" style="padding:2px 8px;font-size:11px" onclick="cancelRetailMove(\''+h.moveId+'\',\''+(ctxBid||"")+'\')">↶ Скасувати</button>';
+  else if(h.reportId&&showPoint) act='<button class="btn btn-danger btn-sm" style="padding:2px 8px;font-size:11px" onclick="deleteRetailReport(\''+h.reportId+'\')">× Видалити</button>';
+  return '<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px">'
+    +'<div><span style="color:var(--ink4)">'+esc(dmy(h.date))+'</span> '+h.icon+' <strong>'+esc(h.label)+'</strong>'
+    +(pt?' <span style="color:var(--ink3)">· '+esc(pt.retailName||pt.name)+'</span>':'')+'</div>'
+    +'<div style="display:flex;gap:8px;align-items:center;white-space:nowrap"><strong style="color:'+(tot>=0?'var(--moss)':'var(--red)')+'">'+(tot>0?'+':'')+tot+' шт.</strong>'+act+'</div></div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:4px">'
+    +h.items.filter(function(i){return i.delta;}).map(function(i){
+      var pos=i.delta>0;
+      return '<span style="background:'+(pos?'var(--moss4)':'var(--red2)')+';color:'+(pos?'var(--pine)':'var(--red)')+';border-radius:20px;padding:1px 8px;font-size:11px">'
+        +'<strong>'+(pos?'+':'')+i.delta+'</strong> '+esc(shortName(i.name||""))+'</span>';
+    }).join("")+'</div></div>';
+}
+
 function renderRetailStoreGrid(){
   var el=document.getElementById("retail-store-grid");
   if(!el)return;
   var stores=buyers.filter(function(b){return b.isRetail;});
-  // update meta
   var metaEl=document.getElementById("retail-meta");
-  if(metaEl) metaEl.textContent=stores.length+" активних точок";
+  if(metaEl){
+    var allVal=0, allDebt=0;
+    stores.forEach(function(b){ allVal+=pointStockTotals(b.id).value; allDebt+=pointUnpaid(b.id).sum; });
+    metaEl.textContent=stores.length+" активних точок · товару на точках ≈ "+fmt(allVal)+" ₴ · неоплачено "+fmt(allDebt)+" ₴";
+  }
   if(!stores.length){el.innerHTML='<div style="color:var(--ink3);font-size:13px;padding:20px 0;">Немає точок — додайте покупців з позначкою роздрібу</div>';return;}
+  var now=new Date(),thisMonth=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
   el.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:20px;">'
     +stores.map(function(b){
-      // Count stock on shelf
-      var salesForStore=salesReports.filter(function(r){return r.buyerId===b.id;});
-      var lastReport=salesForStore.sort(function(a,c){return(c.date||"").localeCompare(a.date||"");}).slice(0,1)[0];
-      var lastDate=lastReport?(lastReport.date||"").replace(/^(\d{4})-(\d{2})-(\d{2})$/,"$3.$2.$1"):"—";
-      var onShelf=0;
-      (lastReport&&lastReport.stockAfter||[]).forEach(function(s){onShelf+=s.qty||0;});
-      // Fallback: also count retailStock (from invoice deliveries)
-      if(onShelf===0&&retailStock[b.id]){
-        Object.keys(retailStock[b.id]).forEach(function(k){
-          onShelf+=(parseInt(retailStock[b.id][k].qty)||0);
-        });
-      }
-      var monthRevenue=0;
-      var now=new Date(),thisMonth=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
-      salesForStore.filter(function(r){return (r.date||"").startsWith(thisMonth);})
-        .forEach(function(r){
-          (r.items||[]).forEach(function(it){monthRevenue+=(it.qty||0)*(it.price||0);});
-        });
+      var t=pointStockTotals(b.id), up=pointUnpaid(b.id);
+      var bills=journal.filter(function(j){return j.docType==="bill"&&jBuyerId(j)===b.id;});
+      var monthBilled=bills.filter(function(j){return (j.invoiceDate||"").indexOf(thisMonth)===0;})
+        .reduce(function(s,j){return s+(j.total||0);},0);
+      var lastBill=bills.map(function(j){return j.invoiceDate||"";}).sort().pop();
       var city=b.address?(b.address.match(/м\.?\s*([^\s,]+)/)||[])[1]||"":"";
+      var debtCol=up.days>30?"var(--red)":"var(--cedar)";
       return '<div class="store-card-item" onclick="openRetailDetailModal(\''+b.id+'\')">'
-
         +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
           +'<div style="width:28px;height:28px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;">'
             +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><polyline points="16 21 16 7"/><path d="M6 7V5a2 2 0 014 0v2M14 7V5a2 2 0 00-4 0v2"/></svg>'
@@ -4573,106 +4820,139 @@ function renderRetailStoreGrid(){
           +'</div>'
         +'</div>'
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">'
-          +'<div><div style="font-size:10px;color:var(--ink3);">Виручка міс.</div>'
-            +'<div style="font-size:16px;font-weight:700;color:var(--pine);font-family:ui-monospace,monospace;">'+(monthRevenue>0?fmt(monthRevenue)+' ₴':'—')+'</div></div>'
+          +'<div><div style="font-size:10px;color:var(--ink3);">Рахунки за міс.</div>'
+            +'<div style="font-size:16px;font-weight:700;color:var(--pine);font-family:ui-monospace,monospace;">'+(monthBilled>0?fmt(monthBilled)+' ₴':'—')+'</div></div>'
           +'<div><div style="font-size:10px;color:var(--ink3);">На полиці</div>'
-            +'<div style="font-size:16px;font-weight:700;color:var(--ink);font-family:ui-monospace,monospace;">'+(onShelf>0?onShelf+' <span style="font-size:11px;font-weight:400;color:var(--ink3);">шт.</span>':'—')+'</div></div>'
+            +'<div style="font-size:16px;font-weight:700;color:var(--ink);font-family:ui-monospace,monospace;">'+(t.qty>0?t.qty+' <span style="font-size:11px;font-weight:400;color:var(--ink3);">шт.</span>':'—')+'</div>'
+            +(t.value>0?'<div style="font-size:10.5px;color:var(--ink3);">≈ '+fmt(t.value)+' ₴</div>':'')+'</div>'
         +'</div>'
         +'<div style="font-size:11px;color:var(--ink3);padding-top:8px;border-top:1px solid var(--border);">'
-          +'Останній звіт: <strong style="color:var(--ink);">'+esc(lastDate)+'</strong>'
+          +(up.list.length
+            ?'<div style="color:'+debtCol+';font-weight:600">Неоплачено: '+fmt(up.sum)+' ₴ · '+up.list.length+' рах. · до '+up.days+' дн.</div>'
+            :'<div>Неоплачених рахунків немає</div>')
+          +'Останній рахунок: <strong style="color:var(--ink);">'+(lastBill?esc(dmy(lastBill)):'—')+'</strong>'
         +'</div>'
       +'</div>';
     }).join("")
   +'</div>';
 }
 
-function openRetailDetailModal(buyerId, editMode){
+// mode: undefined (view) | "adjust" | "return"
+function openRetailDetailModal(buyerId, mode){
   var b=buyers.find(function(x){return x.id===buyerId;});
   if(!b) return;
-
-  // Always prune zeros before showing
+  if(mode===true) mode="adjust";
   if(!retailStock[buyerId]) retailStock[buyerId]={};
   Object.keys(retailStock[buyerId]).forEach(function(pid){
     if((retailStock[buyerId][pid].qty||0)<=0) delete retailStock[buyerId][pid];
   });
-
   var storeData=retailStock[buyerId];
   var entries=Object.keys(storeData).sort(function(a,b2){return (storeData[b2].qty||0)-(storeData[a].qty||0);});
-  var totalQty=entries.reduce(function(s,k){return s+(storeData[k].qty||0);},0);
-  var reports=salesReports.filter(function(r){return r.buyerId===buyerId;}).slice(0,12);
+  var t=pointStockTotals(buyerId), up=pointUnpaid(buyerId);
+  var cell='border:1px solid var(--border);padding:5px 8px';
+  var inp='width:70px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:13px;text-align:center';
 
-  // Stock section — view or edit mode
   var stockHtml;
-  if(editMode){
-    stockHtml='<div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Встановіть точні залишки. Порожнє поле або 0 — видалить позицію.</div>';
-    stockHtml+='<div id="retail-edit-rows">';
-    entries.forEach(function(k){
-      var row=storeData[k];
-      stockHtml+='<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">'
-        +'<span style="flex:1;font-size:12px">'+esc(shortName(row.name))+'</span>'
-        +'<input type="number" min="0" max="999" value="'+row.qty+'" data-pid="'+k+'" data-pname="'+esc(row.name)+'"'
-        +' style="width:70px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:13px;text-align:center">'
-        +'</div>';
-    });
-    stockHtml+='</div>';
+  if(mode==="adjust"){
+    stockHtml='<div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Вкажіть, скільки має бути на точці. Зміна запишеться в історію з причиною.</div>'
+      +'<div id="retail-edit-rows">'
+      +entries.map(function(k){
+        var row=storeData[k];
+        return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">'
+          +'<span style="flex:1;font-size:12px">'+esc(shortName(row.name))+'</span>'
+          +'<span style="font-size:11px;color:var(--ink4)">було '+row.qty+' →</span>'
+          +'<input type="number" min="0" value="'+row.qty+'" data-pid="'+esc(k)+'" data-pname="'+esc(row.name)+'" style="'+inp+'"></div>';
+      }).join("")
+      +'</div>'
+      +'<div style="display:flex;align-items:center;gap:8px;padding:8px 0">'
+      +'<select id="retail-add-pid" style="flex:1;padding:5px;font-size:12px;border:1px solid var(--border);border-radius:6px">'
+      +'<option value="">+ Додати товар, якого немає в списку…</option>'
+      +products.filter(function(p){return !storeData[p.id];}).map(function(p){return '<option value="'+esc(p.id)+'">'+esc(shortName(p.name))+'</option>';}).join("")
+      +'</select><input type="number" min="0" id="retail-add-qty" placeholder="шт." style="'+inp+'"></div>'
+      +'<div class="row" style="margin-top:6px">'
+      +'<div class="field"><label>Причина *</label><select id="retail-reason"><option value="">— оберіть —</option>'
+      +RETAIL_REASONS.map(function(r){return '<option>'+esc(r)+'</option>';}).join("")+'</select></div>'
+      +'<div class="field"><label>Коментар</label><input id="retail-note" type="text" placeholder="необов\'язково"></div></div>';
+  } else if(mode==="return"){
+    stockHtml=entries.length
+      ?'<div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Скільки точка повертає. Товар зніметься з залишку точки без рахунку.</div>'
+        +'<div id="retail-return-rows">'
+        +entries.map(function(k){
+          var row=storeData[k];
+          return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">'
+            +'<span style="flex:1;font-size:12px">'+esc(shortName(row.name))+'</span>'
+            +'<span style="font-size:11px;color:var(--ink4)">є '+row.qty+'</span>'
+            +'<input type="number" min="0" max="'+row.qty+'" value="0" data-pid="'+esc(k)+'" data-pname="'+esc(row.name)+'" style="'+inp+'"></div>';
+        }).join("")+'</div>'
+        +'<div class="field" style="margin-top:8px"><label>Коментар</label><input id="retail-note" type="text" placeholder="напр. закриття точки, обмін аромату"></div>'
+      :'<div style="color:var(--ink4);font-size:12px;padding:8px 0">Немає товарів на залишку</div>';
   } else {
     stockHtml=entries.length
       ? '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:4px">'
         +'<thead><tr style="background:var(--surface3)">'
-        +'<th style="border:1px solid var(--border);padding:5px 8px;text-align:left">Товар</th>'
-        +'<th style="border:1px solid var(--border);padding:5px 8px;text-align:center;width:80px">Залишок</th>'
+        +'<th style="'+cell+';text-align:left">Товар</th>'
+        +'<th style="'+cell+';text-align:center;width:80px">Залишок</th>'
+        +'<th style="'+cell+';text-align:right;width:90px">Сума</th>'
         +'</tr></thead><tbody>'
         +entries.map(function(k){
           var row=storeData[k];
           var cls=row.qty<3?"pill-low":"pill-ok";
-          return '<tr><td style="border:1px solid var(--border);padding:5px 8px">'+esc(shortName(row.name))+'</td>'
-            +'<td style="border:1px solid var(--border);padding:5px 8px;text-align:center">'
-            +'<span class="stock-pill '+cls+'">'+row.qty+' шт.</span></td></tr>';
+          return '<tr><td style="'+cell+'">'+esc(shortName(row.name))+'</td>'
+            +'<td style="'+cell+';text-align:center"><span class="stock-pill '+cls+'">'+row.qty+' шт.</span></td>'
+            +'<td style="'+cell+';text-align:right;color:var(--ink3)">'+fmt(row.qty*pointPrice(k))+' ₴</td></tr>';
         }).join("")
         +'</tbody></table>'
       : '<div style="color:var(--ink4);font-size:12px;padding:8px 0">Немає товарів на залишку</div>';
   }
 
-  var histHtml=reports.length
-    ? reports.map(function(r){
-        var total=r.items.reduce(function(s,i){return s+i.sold;},0);
-        return '<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">'
-          +'<div style="display:flex;justify-content:space-between;margin-bottom:4px">'
-          +'<strong>'+esc(r.month)+'</strong>'
-          +'<span style="color:var(--ink3)">'+total+' шт. продано</span></div>'
-          +'<div style="display:flex;flex-wrap:wrap;gap:4px">'
-          +r.items.map(function(i){
-            return '<span style="background:var(--moss4);color:var(--pine);border-radius:20px;padding:1px 8px;font-size:11px">'
-              +'<strong>'+i.sold+'</strong> '+esc(shortName(i.name))+'</span>';
-          }).join("")+'</div></div>';
+  var unpaidHtml=up.list.length
+    ? up.list.map(function(j){
+        return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">'
+          +'<div>Рахунок №'+esc(j.invoiceNum)+' від '+esc(dmy(j.invoiceDate))
+          +' <span style="color:'+(j._days>30?'var(--red)':'var(--ink3)')+'">· '+j._days+' дн.</span></div>'
+          +'<div style="display:flex;gap:8px;align-items:center"><strong>'+fmt(j.total)+' ₴</strong>'
+          +'<button class="btn btn-sm" style="background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;padding:2px 8px;font-size:11px" onclick="markBillPaid(\''+j.id+'\',\''+buyerId+'\')">✓ Оплачено</button></div></div>';
       }).join("")
-    : '<div style="color:var(--ink4);font-size:12px;padding:8px 0">Звітів ще немає</div>';
+    : '<div style="color:var(--ink4);font-size:12px;padding:6px 0">Неоплачених рахунків немає</div>';
+
+  var hist=retailHistory(buyerId);
+  var histHtml=hist.length
+    ? hist.slice(0,40).map(function(h){return renderMoveRow(h,false,buyerId);}).join("")
+      +(hist.length>40?'<div style="font-size:11px;color:var(--ink4);padding:6px 0">… ще '+(hist.length-40)+' записів у вкладці «Рух товару»</div>':'')
+    : '<div style="color:var(--ink4);font-size:12px;padding:8px 0">Руху ще не було</div>';
+
+  var head;
+  if(mode==="adjust"||mode==="return"){
+    head='<button class="btn btn-gray btn-sm" onclick="openRetailDetailModal(\''+buyerId+'\')">✕ Скасувати</button>';
+  } else {
+    head='<div style="display:flex;gap:6px;flex-wrap:wrap">'
+      +'<button class="btn btn-sm" style="background:var(--moss3);color:var(--pine)" onclick="openSalesReportModal(\''+buyerId+'\')">🧾 Продажі → рахунок</button>'
+      +'<button class="btn btn-gray btn-sm" onclick="openRetailDetailModal(\''+buyerId+'\',\'return\')">↩ Повернення</button>'
+      +'<button class="btn btn-gray btn-sm" onclick="openRetailDetailModal(\''+buyerId+'\',\'adjust\')">✏️ Коригувати</button></div>';
+  }
 
   var ex=document.getElementById("modal-retail-detail");if(ex)ex.remove();
   var m=document.createElement("div");
   m.id="modal-retail-detail";m.className="modal-overlay open";
-  m.innerHTML='<div class="modal" style="max-width:560px">'
+  m.innerHTML='<div class="modal" style="max-width:600px">'
     +'<div class="modal-header">'
     +'<h3>🏪 '+esc(b.retailName||b.name)+'</h3>'
     +'<button class="modal-close" onclick="document.getElementById(\'modal-retail-detail\').remove()">×</button>'
     +'</div>'
-    +'<div style="font-size:12px;color:var(--ink3);margin-bottom:14px">'+(b.fullName||b.name)+(b.address?' · '+esc(b.address):'')+'</div>'
-
-    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
-    +'<div style="font-weight:700;font-size:13px;color:var(--pine)">📦 Залишок ('+totalQty+' шт.)</div>'
-    +(editMode
-      ? '<button class="btn btn-gray btn-sm" onclick="openRetailDetailModal(\''+buyerId+'\')">✕ Скасувати</button>'
-      : '<button class="btn btn-sm" style="background:var(--moss3);color:var(--pine)" onclick="openRetailDetailModal(\''+buyerId+'\',true)">✏️ Коригувати</button>')
-    +'</div>'
+    +'<div style="font-size:12px;color:var(--ink3);margin-bottom:14px">'+esc(b.fullName||b.name)+(b.address?' · '+esc(b.address):'')+'</div>'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">'
+    +'<div style="font-weight:700;font-size:13px;color:var(--pine)">📦 '
+      +(mode==="adjust"?'Коригування залишку':mode==="return"?'Повернення з точки':'Залишок: '+t.qty+' шт. · ≈ '+fmt(t.value)+' ₴')
+    +'</div>'+head+'</div>'
+    +(mode?'':'<div style="font-size:10.5px;color:var(--ink4);margin:-4px 0 8px">Сума — за ціною реалізації (70% від полиці)</div>')
     +stockHtml
-
-    +(editMode
-      ? '<div style="margin-top:12px"><button class="btn btn-primary" onclick="saveRetailStockEdit(\''+buyerId+'\')">💾 Зберегти залишки</button></div>'
-      : '')
-
-    +'<div style="font-weight:700;font-size:13px;color:var(--pine);margin:14px 0 8px">📊 Історія продажів</div>'
-    +histHtml
-
+    +(mode==="adjust"?'<div style="margin-top:12px"><button class="btn btn-primary" onclick="saveRetailAdjust(\''+buyerId+'\')">💾 Зберегти коригування</button></div>':'')
+    +(mode==="return"&&entries.length?'<div style="margin-top:12px"><button class="btn btn-primary" onclick="saveRetailReturn(\''+buyerId+'\')">↩ Оформити повернення</button></div>':'')
+    +(mode?'':
+      '<div style="font-weight:700;font-size:13px;color:var(--pine);margin:16px 0 6px">💳 Неоплачені рахунки'+(up.list.length?' — '+fmt(up.sum)+' ₴':'')+'</div>'
+      +unpaidHtml
+      +'<div style="font-weight:700;font-size:13px;color:var(--pine);margin:16px 0 6px">📜 Рух товару</div>'
+      +histHtml)
     +'<div style="border-top:1px solid var(--border);margin-top:16px;padding-top:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">'
     +(b.custom
       ? '<button class="btn btn-danger btn-sm" onclick="confirmDeleteRetailPoint(\''+buyerId+'\')">🗑 Видалити точку</button>'
@@ -4683,20 +4963,74 @@ function openRetailDetailModal(buyerId, editMode){
   document.body.appendChild(m);
 }
 
-function saveRetailStockEdit(buyerId){
-  if(!retailStock[buyerId]) retailStock[buyerId]={};
-  // Remove all existing entries first
-  Object.keys(retailStock[buyerId]).forEach(function(k){ delete retailStock[buyerId][k]; });
-  // Apply edited values
-  document.querySelectorAll("#retail-edit-rows input[data-pid]").forEach(function(inp){
-    var qty=parseInt(inp.value)||0;
-    if(qty>0){
-      retailStock[buyerId][inp.dataset.pid]={qty:qty, name:inp.dataset.pname};
-    }
+// Applies a move's deltas to the point (sign -1 reverses it).
+function applyRetailMove(mv, sign){
+  var bid=mv.buyerId;
+  if(!retailStock[bid]) retailStock[bid]={};
+  (mv.items||[]).forEach(function(it){
+    var row=retailStock[bid][it.productId];
+    if(!row) row=retailStock[bid][it.productId]={qty:0,name:it.name};
+    row.qty=Math.max(0,(row.qty||0)+sign*(it.delta||0));
+    if(row.qty<=0) delete retailStock[bid][it.productId];
   });
+}
+function afterRetailChange(buyerId){
   save();
-  scheduleCloudPush();
-  openRetailDetailModal(buyerId); // back to view mode
+  try{ renderRetailTab(); }catch(e){}
+  try{ renderDashboard(); }catch(e){}
+  if(buyerId&&document.getElementById("modal-retail-detail")) openRetailDetailModal(buyerId);
+}
+function saveRetailAdjust(buyerId){
+  var reason=(document.getElementById("retail-reason")||{}).value;
+  if(!reason){alert("Оберіть причину коригування");return;}
+  var note=((document.getElementById("retail-note")||{}).value||"").trim();
+  var st=retailStock[buyerId]||{}, items=[];
+  document.querySelectorAll("#retail-edit-rows input[data-pid]").forEach(function(inp){
+    var pid=inp.dataset.pid, nq=Math.max(0,parseInt(inp.value)||0), was=(st[pid]&&st[pid].qty)||0;
+    if(nq!==was) items.push({productId:pid,name:inp.dataset.pname,delta:nq-was});
+  });
+  var apid=(document.getElementById("retail-add-pid")||{}).value, aq=parseInt((document.getElementById("retail-add-qty")||{}).value)||0;
+  if(apid&&aq>0){
+    var p=products.find(function(x){return x.id===apid;});
+    items.push({productId:apid,name:p?p.name:apid,delta:aq});
+  }
+  if(!items.length){alert("Змін немає");return;}
+  var mv={id:uid(),buyerId:buyerId,type:"adjust",reason:reason,note:note,date:todayISO(),items:items,savedAt:new Date().toISOString()};
+  applyRetailMove(mv,1);
+  retailMoves.unshift(mv);
+  afterRetailChange(buyerId);
+  addToast("Коригування збережено","success");
+}
+// Kept for old callers: plain edit now goes through the reasoned adjustment.
+function saveRetailStockEdit(buyerId){ saveRetailAdjust(buyerId); }
+function saveRetailReturn(buyerId){
+  var st=retailStock[buyerId]||{}, items=[];
+  document.querySelectorAll("#retail-return-rows input[data-pid]").forEach(function(inp){
+    var pid=inp.dataset.pid, have=(st[pid]&&st[pid].qty)||0, q=Math.min(have,Math.max(0,parseInt(inp.value)||0));
+    if(q>0) items.push({productId:pid,name:inp.dataset.pname,delta:-q});
+  });
+  if(!items.length){alert("Вкажіть, що повертається");return;}
+  var note=((document.getElementById("retail-note")||{}).value||"").trim();
+  var mv={id:uid(),buyerId:buyerId,type:"return",reason:"Повернення",note:note,date:todayISO(),items:items,savedAt:new Date().toISOString()};
+  applyRetailMove(mv,1);
+  retailMoves.unshift(mv);
+  afterRetailChange(buyerId);
+  addToast("Повернення оформлено: "+items.reduce(function(s,i){return s-i.delta;},0)+" шт.","success");
+}
+function cancelRetailMove(id, ctxBid){
+  var mv=retailMoves.find(function(x){return x.id===id;}); if(!mv)return;
+  if(!confirm("Скасувати цей запис? Залишок точки повернеться як було до нього."))return;
+  applyRetailMove(mv,-1);
+  retailMoves=retailMoves.filter(function(x){return x.id!==id;});
+  afterRetailChange(ctxBid||null);
+  addToast("Запис скасовано","info");
+}
+function markBillPaid(id, buyerId){
+  var j=journal.find(function(x){return x.id===id;}); if(!j)return;
+  j.status="paid";
+  try{ renderJournal(); }catch(e){}
+  afterRetailChange(buyerId);
+  addToast("Рахунок №"+j.invoiceNum+" → оплачено","success");
 }
 
 function confirmDeleteRetailPoint(buyerId){
@@ -4713,26 +5047,20 @@ function confirmDeleteRetailPoint(buyerId){
 
 function renderRetailHistory(){
   var bid=document.getElementById("retail-history-filter").value;
-  var list=bid?salesReports.filter(function(r){return r.buyerId===bid;}):salesReports;
   var el=document.getElementById("retail-history-list");
-  if(!list.length){el.innerHTML='<div class="empty-state"><div class="icon">📋</div>Звітів ще немає</div>';return;}
-  el.innerHTML=list.map(function(r){
-    var total=r.items.reduce(function(s,i){return s+i.sold;},0);
-    return '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);padding:12px 14px;margin-bottom:10px">'
-      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">'
-      +'<div><strong>'+esc(r.buyerName)+'</strong><span style="color:var(--ink4);font-size:11.5px;margin-left:8px">'+r.month+'</span></div>'
-      +'<div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:var(--ink3)">'+total+' шт. продано</span>'
-      +'<button class="btn btn-danger btn-sm" onclick="deleteRetailReport(\''+r.id+'\')">× Видалити</button></div></div>'
-      +'<div style="display:flex;flex-wrap:wrap;gap:6px">'
-      +r.items.map(function(i){return '<span style="background:var(--moss4);color:var(--pine);border-radius:20px;padding:2px 10px;font-size:11px"><strong>'+i.sold+'</strong> '+esc(shortName(i.name))+'</span>';}).join("")
-      +'</div></div>';
-  }).join("");
+  var list=retailHistory(bid||null);
+  if(!list.length){el.innerHTML='<div class="empty-state"><div class="icon">📋</div>Руху товару ще немає</div>';return;}
+  el.innerHTML='<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);padding:4px 14px">'
+    +list.slice(0,150).map(function(h){return renderMoveRow(h,true,null);}).join("")
+    +(list.length>150?'<div style="font-size:11px;color:var(--ink4);padding:8px 0">Показано 150 останніх із '+list.length+'. Оберіть точку, щоб звузити.</div>':'')
+    +'</div>';
 }
 function deleteRetailReport(id){
-  if(!confirm("Видалити звіт?"))return;
+  if(!confirm("Видалити старий звіт продажів?\nЗалишок точки не зміниться."))return;
   salesReports=salesReports.filter(function(r){return r.id!==id;});
   save();renderRetailHistory();
 }
+
 function openAddRetailModal(){
   var name=prompt("Назва точки роздрібу (як буде на картці):");
   if(!name)return;
@@ -4747,12 +5075,14 @@ function openAddRetailModal(){
 // ============================================================
 // SALES REPORT MODAL
 // ============================================================
-function openSalesReportModal(){
+function openSalesReportModal(preselect){
   var retBuyers=buyers.filter(function(b){return b.isRetail;});
   var sel=document.getElementById("sales-buyer-id");
   sel.innerHTML=retBuyers.map(function(b){return '<option value="'+b.id+'">'+esc(b.name)+'</option>';}).join("");
+  if(typeof preselect==="string"&&retBuyers.find(function(b){return b.id===preselect;})) sel.value=preselect;
   document.getElementById("sales-month").value=new Date().toISOString().substring(0,7);
   renderSalesReportItems();
+  var dm=document.getElementById("modal-retail-detail"); if(dm) dm.remove();
   document.getElementById("modal-sales").classList.add("open");
 }
 function renderSalesReportItems(){
@@ -4761,7 +5091,8 @@ function renderSalesReportItems(){
   var entries=Object.keys(storeData).map(function(k){return{id:k,qty:storeData[k].qty,name:storeData[k].name};}).filter(function(i){return i.qty>0;});
   var el=document.getElementById("sales-items-list");
   if(!entries.length){el.innerHTML='<div style="color:var(--ink4);font-size:12px;padding:12px">Немає товарів на залишку для цієї точки. Спочатку оформіть накладну для неї.</div>';return;}
-  el.innerHTML='<table style="width:100%;border-collapse:collapse;font-size:12px">'
+  el.innerHTML='<div style="font-size:11.5px;color:var(--ink3);margin-bottom:8px">Введіть продане за звітом точки. Буде сформовано рахунок за ціною реалізації — після збереження рахунок спише товар із залишку.</div>'
+    +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
     +'<thead><tr style="background:var(--surface3)">'
     +'<th style="border:1px solid var(--border);padding:5px 8px;text-align:left">Товар</th>'
     +'<th style="border:1px solid var(--border);padding:5px 8px;text-align:center;width:90px">Залишок</th>'
@@ -4771,47 +5102,40 @@ function renderSalesReportItems(){
       return '<tr><td style="border:1px solid var(--border);padding:5px 8px">'+esc(shortName(item.name))+'</td>'
         +'<td style="border:1px solid var(--border);padding:5px 8px;text-align:center;color:var(--moss);font-weight:700">'+item.qty+' шт.</td>'
         +'<td style="border:1px solid var(--border);padding:5px 8px;text-align:center">'
-        +'<input type="number" min="0" max="'+item.qty+'" value="0" data-pid="'+esc(item.id)+'" data-pname="'+item.name.replace(/"/g,"&quot;")
+        +'<input type="number" min="0" max="'+item.qty+'" value="0" data-pid="'+esc(item.id)+'" data-pname="'+esc(item.name)
         +'" style="width:72px;text-align:center;padding:4px 6px;border:1px solid var(--border2);border-radius:6px;font-family:inherit"></td></tr>';
     }).join("")
     +'</tbody></table>';
 }
+// The point's sales report becomes a bill in the form. The bill (once saved)
+// is what takes the goods off the point — the report itself changes nothing.
 function saveSalesReport(){
   var bid=document.getElementById("sales-buyer-id").value;
   var month=document.getElementById("sales-month").value;
   if(!bid||!month){alert("Оберіть точку та місяць");return;}
-
-  // Aggregate by productId — multiple rows with same pid get summed
-  var soldMap={};
+  var soldMap={}, order=[];
   document.querySelectorAll("#sales-items-list input[data-pid]").forEach(function(inp){
     var sold=parseInt(inp.value)||0;
     if(sold<=0) return;
     var pid=inp.dataset.pid;
-    if(!soldMap[pid]) soldMap[pid]={productId:pid,name:inp.dataset.pname,sold:0};
-    soldMap[pid].sold+=sold;
+    if(!products.find(function(p){return p.id===pid;})) return;
+    if(!soldMap[pid]){ soldMap[pid]=0; order.push(pid); }
+    soldMap[pid]+=sold;
   });
+  if(!order.length){alert("Введіть хоча б одну продану позицію");return;}
+  var t=Date.now();
+  items=order.map(function(pid,i){return {id:t+i,productId:pid,qty:soldMap[pid],customPrice:""};});
+  var bEl=document.querySelector('input[name="doctype"][value="bill"]'); if(bEl) bEl.checked=true;
+  var pEl=document.querySelector('input[name="pricetype"][value="real"]'); if(pEl) pEl.checked=true;
+  var sel=document.getElementById("buyer-select"); if(sel) sel.value=bid;
+  document.getElementById("inv-num").value=nextInvoiceNum();
+  document.getElementById("inv-date").value=todayISO();
+  editingDocId=null; pendingSalesMonth=month;
+  onBuyerChange(); refreshPriceTypeBtns(); onDocTypeChange(); renderItems(); renderEditBanner();
+  closeModal("modal-sales");
+  switchTab("docs"); switchDocsSub("form");
+  addToast("Рахунок підготовлено — перевірте і натисніть «Згенерувати»","info");
 
-  var reportItems=Object.keys(soldMap).map(function(k){return soldMap[k];});
-  if(!reportItems.length){alert("Введіть хоча б одну продану позицію");return;}
-
-  // Deduct from retail stock
-  reportItems.forEach(function(item){
-    if(retailStock[bid]&&retailStock[bid][item.productId]){
-      retailStock[bid][item.productId].qty=Math.max(0,retailStock[bid][item.productId].qty-item.sold);
-    }
-  });
-
-  // Clean up zero-qty entries to keep storage lean
-  if(retailStock[bid]){
-    Object.keys(retailStock[bid]).forEach(function(k){
-      if((retailStock[bid][k].qty||0)<=0) delete retailStock[bid][k];
-    });
-  }
-
-  var buyerObj=buyers.find(function(b){return b.id===bid;});
-  salesReports.unshift({id:uid(),buyerId:bid,buyerName:buyerObj&&buyerObj.name||bid,
-    month:month,items:reportItems,savedAt:new Date().toISOString()});
-  save();closeModal("modal-sales");renderRetailTab();alert("✅ Звіт збережено!");
 }
 
 // ============================================================
@@ -5580,7 +5904,7 @@ function printCatalogPDF(){
 function exportBackup(){
   var data={products:products,buyers:buyers,journal:journal,settings:settings,
     warehouseStock:warehouseStock,rawStock:rawStock,receiveHistory:receiveHistory,
-    retailStock:retailStock,salesReports:salesReports,suppliers:suppliers,exportedAt:new Date().toISOString(),version:"5.0"};
+    retailStock:retailStock,salesReports:salesReports,retailMoves:retailMoves,suppliers:suppliers,exportedAt:new Date().toISOString(),version:"5.0"};
   var blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   var url=URL.createObjectURL(blob);
   var a=document.createElement("a");a.href=url;
@@ -5602,6 +5926,7 @@ function importBackup(input){
       if(data.receiveHistory)receiveHistory=data.receiveHistory;
       if(data.retailStock)retailStock=data.retailStock;
       if(data.salesReports)salesReports=data.salesReports;
+      if(data.retailMoves)retailMoves=data.retailMoves;
       if(data.suppliers)suppliers=data.suppliers;
       save();location.reload();
     }catch(err){alert("Помилка: "+err.message);}
@@ -5744,7 +6069,8 @@ function mergeImportBackup(input){
           rawStock: mergePlainObject(rawStock, data.rawStock || {}),
           receiveHistory: mergeJournal(receiveHistory, data.receiveHistory || []),
           retailStock: mergePlainObject(retailStock, data.retailStock || {}),
-          salesReports: mergeJournal(salesReports, data.salesReports || [])
+          salesReports: mergeJournal(salesReports, data.salesReports || []),
+          retailMoves: mergeJournal(retailMoves, data.retailMoves || [])
         };
       }
       else if(data.products && data.buyers && (data.stock || data.stockReports || data.version === "4.0")){
