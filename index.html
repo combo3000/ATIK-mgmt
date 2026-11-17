@@ -1460,11 +1460,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
           <option value="month">Місяць</option><option value="quarter">Квартал</option><option value="year">Рік</option>
         </select>
       </div>
-      <div class="field" style="margin:0"><label>Що рахуємо</label>
-        <select id="goal-basis" onchange="saveSalesGoal()">
-          <option value="paid">Отримані оплати</option><option value="issued">Виставлені накладні</option>
-        </select>
-      </div>
     </div>
     <div id="goal-preview" style="padding:0 14px 12px;font-size:12px;color:var(--ink3);"></div>
   </div>
@@ -6234,7 +6229,8 @@ function renderGoalCard(elId){
       +'<div title="Скільки часу минуло" style="position:absolute;top:0;bottom:0;left:'+timePct+'%;width:2px;background:var(--ink3)"></div>'
     +'</div>'
     +'<div style="font-size:11.5px;color:var(--ink3)">Лишилось '+fmt(left)+' ₴ за '+daysLeft+' дн.'+(daysLeft>0&&left>0?' (≈ '+fmt(Math.ceil(left/daysLeft))+' ₴ на день)':'')
-      +(kinds?' · '+kinds:'')+' · '+(g.basis==="issued"?"рахуємо відвантаження":"рахуємо оплати")+'</div>'
+      +(kinds?' · '+kinds:'')+'</div>'
+    +'<div style="font-size:11.5px;color:var(--ink3);margin-top:2px">💰 Отримано оплат за '+periodName+': <strong style="color:var(--ink)">'+fmt(pr.paid)+' ₴</strong></div>'
   +'</div>';
 }
 
@@ -6295,7 +6291,7 @@ function buildWeeklyData(){
   var slow=Object.keys(stillCount).sort(function(a,c){return stillCount[c]-stillCount[a];}).slice(0,5).map(function(n){return {name:n,pointsWithoutSales:stillCount[n]};});
   return {
     period:{from:from,to:to},
-    goal:{amount:g.amount,period:g.period,basis:g.basis==="issued"?"відвантаження":"оплати",done:pr.done,pct:g.amount?Math.round(pr.done/g.amount*100):0,
+    goal:{amount:g.amount,period:g.period,basis:"продажі (накладні)",done:pr.done,paidInPeriod:pr.paid,pct:g.amount?Math.round(pr.done/g.amount*100):0,
       timeElapsedPct:Math.round(Math.min(1,Math.max(0,(now-start)/(end-start)))*100),daysLeft:Math.max(0,Math.ceil((end-now)/86400000)),byKind:pr.byKind},
     week:{paid:Math.round(paidWeek),payments:payments.slice(0,20),
       invoices:{count:docsW.filter(function(j){return j.docType==="invoice";}).length,sum:Math.round(docsW.filter(function(j){return j.docType==="invoice";}).reduce(function(s,j){return s+(j.total||0);},0))},
@@ -6633,7 +6629,7 @@ function copyRawOrder(i){
   (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){addToast("Лист скопійовано","success");}).catch(function(){prompt("Скопіюйте лист:",t);});
 }
 
-var DEFAULT_SALES_GOAL={amount:200000,period:"month",basis:"paid"};
+var DEFAULT_SALES_GOAL={amount:200000,period:"month"};
 function getSalesGoal(){ return Object.assign({},DEFAULT_SALES_GOAL,settings.salesGoal||{}); }
 function goalPeriodRange(period,now){
   now=now||new Date();
@@ -6645,43 +6641,39 @@ function goalPeriodRange(period,now){
   return {from:iso(from), to:iso(to)}; // [from, to)
 }
 // Progress toward the goal for the current period.
-// paid: payments dated in the period (+ legacy "оплачено" рахунки without records, by document date).
-// issued: totals of накладні dated in the period.
+// done (sales): totals of накладні dated in the period, the same way as «Виручка місяця» on the dashboard.
+// paid: payments received in the period (+ legacy "оплачено" рахунки without records, by document date). Shown as a second line.
 function salesGoalProgress(){
-  var g=getSalesGoal(), r=goalPeriodRange(g.period), sum=0;
+  var g=getSalesGoal(), r=goalPeriodRange(g.period), sum=0, paid=0;
   function inR(d){ return d&&d>=r.from&&d<r.to; }
   var byKind={points:0,d2c:0,other:0};
   journal.forEach(function(j){
-    var add=0;
-    if(g.basis==="issued"){ if(j.docType==="invoice"&&inR(j.invoiceDate)) add=j.total||0; }
-    else {
-      var p=docPayments(j);
-      if(p.length) p.forEach(function(x){ if(inR(x.date)) add+=parseFloat(x.amount)||0; });
-      else if(j.status==="paid"&&inR(j.invoiceDate)) add=j.total||0;
-    }
-    if(!add) return;
+    var p=docPayments(j);
+    if(p.length) p.forEach(function(x){ if(inR(x.date)) paid+=parseFloat(x.amount)||0; });
+    else if(j.docType!=="invoice"&&j.status==="paid"&&inR(j.invoiceDate)) paid+=j.total||0;
+    if(j.docType!=="invoice"||!inR(j.invoiceDate)) return;
+    var add=j.total||0; if(!add) return;
     sum+=add;
     var b=buyers.find(function(x){return x.id===jBuyerId(j);});
     byKind[b&&b.isD2C?"d2c":isPartnerPoint(b)?"points":"other"]+=add;
   });
   Object.keys(byKind).forEach(function(k){ byKind[k]=Math.round(byKind[k]); });
-  return {goal:g, range:r, done:Math.round(sum), byKind:byKind};
+  return {goal:g, range:r, done:Math.round(sum), paid:Math.round(paid), byKind:byKind};
 }
 function renderGoalSettings(){
   var g=getSalesGoal();
-  var a=document.getElementById("goal-amount"), p=document.getElementById("goal-period"), b=document.getElementById("goal-basis");
+  var a=document.getElementById("goal-amount"), p=document.getElementById("goal-period");
   if(!a) return;
-  a.value=g.amount; p.value=g.period; b.value=g.basis;
+  a.value=g.amount; p.value=g.period;
   var pr=salesGoalProgress(), pct=g.amount>0?Math.min(100,Math.round(pr.done/g.amount*100)):0;
   var el=document.getElementById("goal-preview");
-  if(el) el.innerHTML='Зараз: <strong style="color:var(--ink)">'+fmt(pr.done)+' ₴</strong> з '+fmt(g.amount)+' ₴ ('+pct+'%) · з '+pr.range.from;
+  if(el) el.innerHTML='Зараз: <strong style="color:var(--ink)">'+fmt(pr.done)+' ₴</strong> з '+fmt(g.amount)+' ₴ ('+pct+'%) · з '+pr.range.from+' · рахуємо накладні, як «Виручка місяця». Отримано оплат: '+fmt(pr.paid)+' ₴';
 }
 function saveSalesGoal(){
   var amt=parseFloat(document.getElementById("goal-amount").value);
   settings.salesGoal={
     amount:(amt>=0?amt:DEFAULT_SALES_GOAL.amount),
-    period:document.getElementById("goal-period").value||"month",
-    basis:document.getElementById("goal-basis").value||"paid"
+    period:document.getElementById("goal-period").value||"month"
   };
   save(); renderGoalSettings();
 }
