@@ -1240,7 +1240,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
       Оновити
     </button>
-    <button class="btn btn-gray btn-sm" onclick="openCustomers()" style="flex-shrink:0;">👥 Клієнти: кому пора докупити</button>
     <button class="btn btn-moss btn-sm" onclick="openQuickOrder()" style="color:#fff;">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       Швидке замовлення
@@ -1270,6 +1269,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Додати точку
       </button>
+      <button class="btn btn-gray btn-sm" onclick="openPartnerTodo()" id="partner-todo-btn">📋 На сьогодні</button>
       <button class="btn btn-moss btn-sm" onclick="openSalesReportModal()" style="color:#fff;">
         ✏️ Ввести продажі
       </button>
@@ -6244,6 +6244,7 @@ function renderPartnersOverview(){
   if(!list.length){ el.innerHTML=""; return; }
   list.sort(function(a,c){return c.score-a.score||c.debt-a.debt||c.soldPerMonth-a.soldPerMonth;});
   var cons=list.filter(function(x){return x.term==="consignment";}).length;
+  var tb=document.getElementById("partner-todo-btn"); if(tb){ var n=partnerTodoItems(list).length; tb.textContent="📋 На сьогодні"+(n?" ("+n+")":""); }
   var need=list.filter(function(x){return x.flags.some(function(f){return f.lvl>=2;});}).length;
   var th='style="border-bottom:1px solid var(--border);padding:6px 8px;text-align:left;font-size:11px;color:var(--ink3);font-weight:600;white-space:nowrap"';
   var td='style="border-bottom:1px solid var(--border);padding:6px 8px;vertical-align:top"';
@@ -6376,6 +6377,38 @@ function copyWeeklyReport(){
   (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){addToast("Звіт скопійовано","success");}).catch(function(){prompt("Скопіюйте звіт:",t);});
 }
 
+// ── «На сьогодні»: one line per thing to do with a point ───
+var TODO_FROM_FLAG={debt:"payment",report:"report",bill:"bill",restock:"restock",empty:"restock",reorder:"restock",tryNew:"tryNew"};
+function partnerTodoItems(stats){
+  var items=[];
+  (stats||allPartnerStats()).forEach(function(x){
+    x.flags.forEach(function(f){
+      var purpose=TODO_FROM_FLAG[f.k]; if(!purpose) return;
+      if(f.k==="empty"&&x.flags.some(function(g){return g.k==="restock";})) return; // one restock line is enough
+      items.push({x:x,flag:f,purpose:purpose,recent:x.lastMsg&&daysAgo(x.lastMsg.date)<=3});
+    });
+  });
+  return items.sort(function(a,b){ return (a.recent?1:0)-(b.recent?1:0)||b.flag.lvl-a.flag.lvl||b.x.debt-a.x.debt; });
+}
+function openPartnerTodo(){
+  var items=partnerTodoItems();
+  var body=items.length?'<div style="font-size:12px;color:var(--ink3);margin-bottom:8px">Що варто зробити з точками, від найважливішого. «Написати» відкриває готовий текст саме про цю справу.</div>'
+    +items.map(function(it){
+      var x=it.x, extra='';
+      if(it.flag.k==="bill"&&x.lastReport) extra='<button class="btn btn-gray btn-sm" onclick="document.getElementById(\'modal-ptodo\').remove();createBillFromSalesReport(\''+x.lastReport.id+'\')">🧾 Створити рахунок</button>';
+      if(it.flag.k==="report") extra='<button class="btn btn-gray btn-sm" onclick="document.getElementById(\'modal-ptodo\').remove();openSalesReportModal();var s=document.getElementById(\'sales-buyer-id\');s.value=\''+x.id+'\';renderSalesReportItems();">✏️ Внести звіт</button>';
+      var detail=it.flag.k==="restock"&&x.restock.length?x.restock.slice(0,4).map(function(r){return r.name+" +"+r.suggest;}).join(", "):"";
+      return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);'+(it.recent?'opacity:.55':'')+'">'
+        +'<div style="min-width:0"><div style="font-size:12.5px"><strong>'+esc(x.name)+'</strong> · <span style="'+(it.flag.lvl>=3?'color:var(--red);font-weight:600':'')+'">'+esc(it.flag.text)+'</span></div>'
+          +(detail?'<div style="font-size:11px;color:var(--ink3)">'+esc(detail)+'</div>':'')
+          +(it.recent?'<div style="font-size:10.5px;color:var(--ink4)">написали '+(daysAgo(x.lastMsg.date)===0?'сьогодні':daysAgo(x.lastMsg.date)+' дн. тому')+'</div>':'')+'</div>'
+        +'<div style="display:flex;gap:6px;flex-shrink:0">'+extra
+          +'<button class="btn btn-moss btn-sm" style="color:#fff" onclick="openPartnerMessage(\''+x.id+'\',\''+it.purpose+'\')">✍️ Написати</button></div></div>';
+    }).join("")
+    :'<div style="color:var(--moss);font-size:13px;padding:8px 0">✓ З точками все в порядку, справ на сьогодні немає.</div>';
+  maintModal("modal-ptodo","📋 На сьогодні: справи з точками",body,"");
+}
+
 // ── Message to a partner in one click ──────────────────────
 // A template is filled in instantly from the facts; «Переписати AI» rewrites it in the
 // owner's style. Nothing is sent from here: copy, open the chat, send, mark as sent.
@@ -6431,9 +6464,10 @@ function msgChatLink(b){
   if(c&&/^tel:/.test(c.href)){ var ph=c.href.slice(4); return {href:"viber://chat?number="+encodeURIComponent(ph),label:"Viber"}; }
   return c;
 }
-function openPartnerMessage(id){
+function openPartnerMessage(id,onlyPurpose){
   var b=buyers.find(function(x){return x.id===id;}); if(!b) return;
-  var x=partnerStats(b,networkBestSellers()), f=msgFacts(x), purposes=msgPurposesFor(x);
+  var x=partnerStats(b,networkBestSellers()), f=msgFacts(x), purposes=onlyPurpose?[onlyPurpose]:msgPurposesFor(x);
+  var tm=document.getElementById("modal-ptodo"); if(tm) tm.remove();
   var link=msgChatLink(b);
   var body='<div style="font-size:12px;color:var(--ink3);margin-bottom:8px">'+(x.term==="prepay"?"Передоплата":"Під реалізацію")
       +(b.contactName?' · '+esc(b.contactName):'')+(link?' · '+esc(link.label):'')+'</div>'
@@ -6490,185 +6524,6 @@ function pmMarkSent(){
   var m=document.getElementById("modal-pmsg"); if(m) m.remove();
   renderPartnersOverview();
   addToast("Позначено: написали «"+pm.x.name+"»","success","Це лише відмітка в ATIK, саме повідомлення надсилаєте ви");
-}
-
-// ── Site customers: who is due to buy again ────────────────
-// Sources: website / Instagram orders in Firestore `orders` (not wholesale form orders,
-// not declined) plus D2C документи whose note holds a phone number (quick orders).
-// One customer = one phone (last 9 digits), else the name.
-var REPEAT_DEFAULT_DAYS=45;
-var custState={list:[],loadedAt:null,filter:"due"};
-function phoneKey(s){ var d=String(s||"").replace(/\D/g,""); return d.length>=9?d.slice(-9):""; }
-function orderDateISO(o){ var c=o.createdAt; if(!c) return ""; if(c.toDate) return c.toDate().toISOString(); if(c.seconds) return new Date(c.seconds*1000).toISOString(); return String(c); }
-function buildCustomers(orders){
-  var map={}, seenOrderTails={};
-  function add(key,rec){
-    var c=map[key]||(map[key]={key:key,name:"",phone:"",city:"",nickname:"",sources:{},orders:[]});
-    if(rec.name&&!c.name) c.name=rec.name;
-    if(rec.phone&&!c.phone) c.phone=rec.phone;
-    if(rec.city&&!c.city) c.city=rec.city;
-    if(rec.nickname&&!c.nickname) c.nickname=rec.nickname;
-    if(rec.source) c.sources[rec.source]=1;
-    c.orders.push({date:rec.date,total:rec.total,items:rec.items||[]});
-  }
-  (orders||[]).forEach(function(o){
-    if(isPartnerOrder(o)||o.status==="declined") return;
-    var date=orderDateISO(o).slice(0,10); if(!date) return;
-    var name=String(o.contact||o.company||"").trim(), phone=String(o.phone||"").trim();
-    var key=phoneKey(phone)||(name?"n:"+name.toLowerCase():"")||(o.nickname?"ig:"+String(o.nickname).toLowerCase():"");
-    if(!key) return;
-    seenOrderTails[String(o._id||"").slice(-4)]=1;
-    var src=String(o.source||o.channel||"сайт").toLowerCase().indexOf("instagram")>=0?"Instagram":"сайт";
-    add(key,{name:name,phone:phone,city:String(o.address||"").split(",")[0].slice(0,40),nickname:o.nickname||"",source:src,date:date,
-      total:o.totalDiscounted||o.total||0,items:o.items||[]});
-  });
-  journal.forEach(function(j){
-    var b=buyers.find(function(x){return x.id===jBuyerId(j);});
-    if(!b||!b.isD2C||j.docType!=="invoice") return;
-    var note=String(j.note||""), m=note.match(/#(\w{4})\b/);
-    if(m&&seenOrderTails[m[1]]) return; // same order already counted from Firestore
-    var ph=(note.match(/\+?\d[\d\s()\-]{8,}\d/)||[])[0]; var key=phoneKey(ph); if(!key) return;
-    var name=note.replace(/Замовлення\s*#\w+/,"").split(/·|,|\n/).map(function(x){return x.trim();}).filter(function(x){return x&&!/\d{5,}/.test(x.replace(/\D/g,""));})[0]||"";
-    add(key,{name:name,phone:ph,source:b.id==="d2c_instagram"?"Instagram":"сайт",date:j.invoiceDate,total:j.total||0,
-      items:(j.items||[]).map(function(it){return {id:it.id,qty:it.qty};})});
-  });
-  var days=(settings.repeatDays>0?settings.repeatDays:REPEAT_DEFAULT_DAYS), contacts=settings.customerContacts||{};
-  return Object.keys(map).map(function(k){
-    var c=map[k];
-    c.orders.sort(function(a,b){return a.date.localeCompare(b.date);});
-    var last=c.orders[c.orders.length-1];
-    c.count=c.orders.length; c.spent=Math.round(c.orders.reduce(function(s,o){return s+(o.total||0);},0));
-    c.lastDate=last.date; c.firstDate=c.orders[0].date; c.daysSince=daysAgo(c.lastDate);
-    var gaps=[]; for(var i=1;i<c.orders.length;i++){ var g=(new Date(c.orders[i].date)-new Date(c.orders[i-1].date))/86400000; if(g>3) gaps.push(g); }
-    c.avgGap=gaps.length?Math.round(gaps.reduce(function(s,x){return s+x;},0)/gaps.length):null;
-    var fav={}; c.orders.forEach(function(o){ o.items.forEach(function(it){ var p=products.find(function(x){return x.id===it.id;}); var n=p?shortName(p.name):(it.name||it.id); if(n) fav[n]=(fav[n]||0)+(it.qty||1); }); });
-    c.favorite=Object.keys(fav).sort(function(a,b){return fav[b]-fav[a];}).slice(0,3);
-    // Due when the usual gap (theirs, or the default) has passed; lapsed after 2.5× that.
-    var due=Math.max(25,c.avgGap||days);
-    c.segment=c.daysSince<due?"recent":c.daysSince<due*2.5?"due":"lapsed";
-    c.contacted=contacts[k]||null;
-    return c;
-  }).sort(function(a,b){return a.daysSince-b.daysSince;});
-}
-function openCustomers(){
-  maintModal("modal-cust","👥 Клієнти сайту та Instagram",'<div id="cust-body">Завантажую замовлення…</div>',
-    '<button class="btn btn-gray btn-sm" onclick="loadCustomers(true)">Оновити</button>');
-  loadCustomers(false);
-}
-function loadCustomers(force){
-  if(!force&&custState.loadedAt&&Date.now()-custState.loadedAt<5*60000){ renderCustomers(); return; }
-  var done=function(orders){ custState.orders=orders; custState.list=buildCustomers(orders); custState.loadedAt=Date.now(); renderCustomers(); };
-  if(!cloudDb){ done([]); return; }
-  cloudDb.collection("orders").orderBy("createdAt","desc").limit(1000).get().then(function(snap){
-    var arr=[]; snap.forEach(function(d){arr.push(Object.assign({_id:d.id},d.data()));}); done(arr);
-  }).catch(function(e){ var el=document.getElementById("cust-body"); if(el) el.innerHTML='<span style="color:var(--red)">'+esc(e.message||String(e))+'</span>'; });
-}
-function setCustFilter(f){ custState.filter=f; renderCustomers(); }
-function saveRepeatSettings(){
-  var d=parseInt(document.getElementById("cust-days").value,10), promo=(document.getElementById("cust-promo").value||"").trim().slice(0,40);
-  settings.repeatDays=d>=14&&d<=365?d:REPEAT_DEFAULT_DAYS; settings.repeatPromo=promo; save();
-  custState.list=buildCustomers(custState.orders||[]); renderCustomers();
-}
-function renderCustomers(){
-  var el=document.getElementById("cust-body"); if(!el) return;
-  var all=custState.list, days=settings.repeatDays>0?settings.repeatDays:REPEAT_DEFAULT_DAYS;
-  if(!all.length){ el.innerHTML='<div style="color:var(--ink3);font-size:13px;padding:10px 0">Поки немає замовлень з контактами покупців.</div>'; return; }
-  var rep=all.filter(function(c){return c.count>1;}).length;
-  var cnt={due:0,lapsed:0,recent:0}; all.forEach(function(c){cnt[c.segment]++;});
-  var f=custState.filter, list=all.filter(function(c){return f==="all"||c.segment===f||(f==="repeat"&&c.count>1);});
-  if(f==="due"||f==="lapsed") list.sort(function(a,b){ return (a.contacted?1:0)-(b.contacted?1:0)||b.count-a.count||a.daysSince-b.daysSince; });
-  function tab(k,l){ return '<button class="btn btn-sm '+(f===k?'btn-moss':'btn-gray')+'" style="'+(f===k?'color:#fff':'')+'" onclick="setCustFilter(\''+k+'\')">'+l+'</button>'; }
-  var td='style="border-bottom:1px solid var(--border);padding:6px 8px;vertical-align:top"';
-  el.innerHTML='<div style="font-size:12.5px;margin-bottom:8px">Покупців: <strong>'+all.length+'</strong> · купували повторно: <strong>'+rep+'</strong> ('+Math.round(rep/all.length*100)+'%)</div>'
-    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'+tab("due","⏰ Пора докупити ("+cnt.due+")")+tab("lapsed","💤 Давно не купували ("+cnt.lapsed+")")+tab("recent","🆕 Нещодавно ("+cnt.recent+")")+tab("repeat","🔁 Постійні ("+rep+")")+tab("all","Усі")+'</div>'
-    +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:12px;margin-bottom:8px;color:var(--ink3)">'
-      +'<label style="display:inline-flex;gap:5px;align-items:center;margin:0;width:auto;font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink3)">Палички закінчуються через <input id="cust-days" type="number" min="14" max="365" value="'+days+'" style="width:60px;padding:3px 6px"> дн.</label>'
-      +'<label style="display:inline-flex;gap:5px;align-items:center;margin:0;width:auto;font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink3)">Промокод <input id="cust-promo" value="'+esc(settings.repeatPromo||"")+'" placeholder="необов\'язково" style="width:120px;padding:3px 6px"></label>'
-      +'<button class="btn btn-gray btn-sm" onclick="saveRepeatSettings()">Зберегти</button></div>'
-    +(list.length?'<table style="width:100%;border-collapse:collapse;font-size:12px"><tbody>'
-      +list.slice(0,150).map(function(c){
-        return '<tr><td '+td+'><strong>'+esc(c.name||c.nickname||c.phone||"Без імені")+'</strong>'
-            +'<div style="font-size:11px;color:var(--ink4)">'+esc([c.city,Object.keys(c.sources).join(", ")].filter(Boolean).join(" · "))+'</div></td>'
-          +'<td '+td+'>'+c.count+' зам.<div style="font-size:11px;color:var(--ink4);white-space:nowrap">'+fmt(c.spent)+' ₴</div></td>'
-          +'<td '+td+'>'+esc(formatDate(c.lastDate))+'<div style="font-size:11px;color:var(--ink4)">'+c.daysSince+' дн. тому'+(c.avgGap?' · зазвичай ~'+c.avgGap:'')+'</div></td>'
-          +'<td style="border-bottom:1px solid var(--border);padding:6px 8px;vertical-align:top;color:var(--ink3)">'+esc(c.favorite.join(", "))+'</td>'
-          +'<td style="border-bottom:1px solid var(--border);padding:6px 8px;vertical-align:top;text-align:right;white-space:nowrap">'
-            +'<button class="btn btn-moss btn-sm" style="color:#fff" onclick="openCustomerMessage(\''+esc(c.key)+'\')">✍️ Написати</button>'
-            +(c.contacted?'<div style="font-size:10.5px;color:var(--ink4);margin-top:3px">написали '+(daysAgo(c.contacted)===0?'сьогодні':daysAgo(c.contacted)+' дн. тому')+'</div>':'')+'</td></tr>';
-      }).join("")+'</tbody></table>'+(list.length>150?'<div style="font-size:11px;color:var(--ink4);margin-top:4px">Показано перші 150</div>':'')
-      :'<div style="color:var(--ink3);font-size:12.5px;padding:8px 0">У цьому списку нікого немає.</div>');
-}
-function customerChatLink(c){
-  var ph=String(c.phone||"").replace(/[^\d+]/g,"");
-  if(ph&&ph.charAt(0)!=="+") ph=(ph.length===10&&ph.charAt(0)==="0"?"+38":"+")+ph;
-  var ig=String(c.nickname||"").replace(/^@/,"").trim();
-  if(c.sources.Instagram&&ig) return {href:"https://instagram.com/"+ig,label:"Instagram"};
-  if(ph) return {href:"viber://chat?number="+encodeURIComponent(ph),label:"Viber",alt:{href:"https://t.me/"+ph,label:"Telegram"}};
-  if(ig) return {href:"https://instagram.com/"+ig,label:"Instagram"};
-  return null;
-}
-function customerTemplate(c,purpose,promo){
-  var fav=c.favorite.slice(0,2).join(" та ");
-  var t="Добрий день! Це All Trees I Know.";
-  if(purpose==="repeat") t+=" Минулого разу ви брали "+(fav||"наші палички")+", мабуть, вони вже закінчуються. Хочете поповнити запас?";
-  else if(purpose==="winback") t+=" Давно вас не чули і будемо раді знову бачити"+(fav?". Ваші "+fav+" чекають":"")+".";
-  else t+=" Дякуємо за замовлення, сподіваємось, аромати вам до душі!";
-  if(promo&&purpose!=="thanks") t+=" Для вас промокод "+promo+" на наступне замовлення.";
-  if(purpose!=="thanks") t+=" Замовити можна на alltreesiknow.com або просто відповіддю тут.";
-  return t;
-}
-function openCustomerMessage(key){
-  var c=custState.list.find(function(x){return x.key===key;}); if(!c) return;
-  var purpose=c.segment==="lapsed"?"winback":c.segment==="due"?"repeat":"thanks";
-  var link=customerChatLink(c), promo=settings.repeatPromo||"";
-  var opts=[["repeat","⏰ Пора докупити"],["winback","💤 Давно не купували"],["thanks","🙏 Подякувати"]];
-  var body='<div style="font-size:12px;color:var(--ink3);margin-bottom:8px">'+esc(c.name||"Без імені")+(c.phone?' · '+esc(c.phone):'')+' · '+c.count+' зам., останнє '+c.daysSince+' дн. тому</div>'
-    +'<div style="display:flex;gap:6px 14px;flex-wrap:wrap;margin-bottom:8px">'+opts.map(function(o){
-      return '<label style="font-size:12.5px;display:inline-flex;width:auto;gap:5px;align-items:center;cursor:pointer;margin:0;font-weight:400;color:var(--ink);text-transform:none;letter-spacing:0"><input type="radio" name="cm-purpose" style="width:auto;margin:0" value="'+o[0]+'"'+(o[0]===purpose?' checked':'')+' onchange="cmRefresh()">'+o[1]+'</label>';}).join("")+'</div>'
-    +'<textarea id="pm-text" rows="6" style="width:100%;box-sizing:border-box;font-family:inherit;font-size:13px;line-height:1.45;padding:8px 10px;border:1px solid var(--border2);border-radius:8px"></textarea>'
-    +'<details style="margin-top:8px;font-size:12px"><summary style="cursor:pointer;color:var(--ink3)">Мій стиль: приклади моїх повідомлень (для AI)</summary>'
-      +'<textarea id="pm-examples" rows="4" style="width:100%;box-sizing:border-box;font-family:inherit;font-size:12px;margin-top:6px;padding:6px 8px;border:1px solid var(--border2);border-radius:6px">'+esc(settings.messageExamples||"")+'</textarea></details>'
-    +'<div style="font-size:11.5px;color:var(--ink3);margin-top:6px">ℹ️ ATIK нічого не надсилає сам. Скопіюйте текст, надішліть у своєму месенджері, а тоді натисніть «Позначити як надіслане», щоб додаток запам\'ятав дату.</div>'
-    +'<div id="pm-status" style="font-size:12px;margin-top:6px"></div>';
-  var foot='<button class="btn btn-gray btn-sm" onclick="cmAiRewrite()">✨ Переписати AI</button>'
-    +(link&&link.alt?'<button class="btn btn-gray btn-sm" onclick="cmCopyOpen(true)">📋 Копіювати й відкрити '+link.alt.label+'</button>':'')
-    +'<button class="btn btn-gray btn-sm" onclick="cmCopyOpen(false)">📋 Копіювати'+(link?' й відкрити '+esc(link.label):'')+'</button>'
-    +'<button class="btn btn-moss btn-sm" style="color:#fff" onclick="cmMarkSent()">✓ Позначити як надіслане</button>';
-  maintModal("modal-cmsg","✍️ Повідомлення покупцю",body,foot);
-  window._cm={c:c,link:link,promo:promo};
-  document.getElementById("pm-text").value=customerTemplate(c,purpose,promo);
-}
-function cmPurpose(){ var r=document.querySelector('input[name="cm-purpose"]:checked'); return r?r.value:"repeat"; }
-function cmRefresh(){ var cm=window._cm; if(cm) document.getElementById("pm-text").value=customerTemplate(cm.c,cmPurpose(),cm.promo); }
-function cmAiRewrite(){
-  var cm=window._cm; if(!cm) return;
-  var ex=document.getElementById("pm-examples").value;
-  if(ex!==(settings.messageExamples||"")){ settings.messageExamples=ex.slice(0,6000); save(); }
-  pmStatus("🤖 AI пише…");
-  // Only the first name and what they bought go to AI: no phone, no address.
-  var first=String(cm.c.name||"").trim().split(/\s+/)[0]||"";
-  aiApi("/api/partner-message",{audience:"customer",point:{name:first||"покупець"},purposes:[cmPurpose()],
-    facts:{firstName:first,ordersCount:cm.c.count,daysSinceLastOrder:cm.c.daysSince,favorite:cm.c.favorite,promoCode:cm.promo||"",channel:cm.link?cm.link.label:""},
-    examples:ex,draft:document.getElementById("pm-text").value}).then(function(j){
-    document.getElementById("pm-text").value=j.text; pmStatus('<span style="color:var(--moss)">✓ Готово. Перевірте й відредагуйте за потреби.</span>');
-  }).catch(function(e){ pmStatus('<span style="color:var(--red)">'+esc(e.message||String(e))+'</span>'); });
-}
-function cmCopyOpen(alt){
-  var cm=window._cm; if(!cm) return;
-  var t=document.getElementById("pm-text").value, l=cm.link&&(alt?cm.link.alt:cm.link);
-  var open=function(){ if(l) window.open(l.href,"_blank","noopener"); };
-  (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){
-    pmStatus('<span style="color:var(--moss)">Скопійовано. Вставте в чат і надішліть, потім натисніть «Позначити як надіслане».</span>'); open();
-  }).catch(function(){ prompt("Скопіюйте текст:",t); open(); });
-}
-function cmMarkSent(){
-  var cm=window._cm; if(!cm) return;
-  var map=Object.assign({},settings.customerContacts||{}); map[cm.c.key]=todayISO();
-  var keys=Object.keys(map).sort(function(a,b){return String(map[b]).localeCompare(String(map[a]));}).slice(0,800);
-  settings.customerContacts={}; keys.forEach(function(k){settings.customerContacts[k]=map[k];});
-  save(); cm.c.contacted=todayISO();
-  var m=document.getElementById("modal-cmsg"); if(m) m.remove();
-  renderCustomers(); addToast("Позначено як надіслане","success");
 }
 
 // ── Raw sticks forecast: when to order from Japan ──────────
