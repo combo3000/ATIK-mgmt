@@ -843,7 +843,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <div class="row">
       <div class="field" style="flex:0 0 130px"><label>№ документа</label><input id="inv-num" type="text" value="1" oninput="onFormFieldChange()"></div>
       <div class="field" style="flex:0 0 160px"><label>Дата</label><input id="inv-date" type="date" onchange="onFormFieldChange()"></div>
-      <div class="field"><label>Покупець</label><select id="buyer-select" onchange="onBuyerChange();onFormFieldChange()"></select></div>
+      <div class="field"><label>Покупець</label><select id="buyer-select" onchange="onBuyerChange();applyBuyerDealPrice();onFormFieldChange()"></select></div>
     </div>
     <div id="buyer-info-box"></div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
@@ -859,7 +859,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
         </label>
         <label style="margin:0;display:flex;align-items:center;">
           <input type="radio" name="pricetype" value="opt" onchange="renderItems();refreshPriceTypeBtns()" style="display:none;">
-          <span class="price-seg-btn" data-val="opt" onclick="this.closest('div').querySelectorAll('input[type=radio]')[2].checked=true;renderItems();refreshPriceTypeBtns()" style="display:block;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;transition:all .15s;color:var(--ink3);">Викуп</span>
+          <span class="price-seg-btn" data-val="opt" onclick="this.closest('div').querySelectorAll('input[type=radio]')[2].checked=true;renderItems();refreshPriceTypeBtns()" style="display:block;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;transition:all .15s;color:var(--ink3);">Передоплата</span>
         </label>
       </div>
       <span style="font-size:11px;color:var(--ink4);">жовте поле — власна ціна</span>
@@ -1336,15 +1336,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       </div>
       <div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 6px;">Умови співпраці</div>
       <div class="row">
-        <div class="field"><label>Тип</label>
+        <div class="field"><label>Умова (визначає ціну в документах)</label>
           <select id="nb-dealType">
             <option value="">—</option>
-            <option value="consignment">Консигнація (реалізація)</option>
-            <option value="purchase">Викуп</option>
+            <option value="consignment">Під реалізацію — ціна 70% від полиці</option>
+            <option value="prepay">Передоплата — ціна 60% від полиці</option>
           </select>
         </div>
-        <div class="field"><label>Комісія / знижка партнера, %</label><input id="nb-commissionPct" type="number" min="0" max="100" step="0.5" placeholder="напр. 40"></div>
-        <div class="field"><label>Термін оплати, днів</label><input id="nb-paymentTermDays" type="number" min="0" step="1" placeholder="напр. 14"></div>
       </div>
       <div class="row">
         <div class="field"><label>Нотатки про партнера</label><input id="nb-partnerNote" placeholder="Що любить, як часто звіряємось, особливості"></div>
@@ -1925,10 +1923,24 @@ function saveLocal(){
 var BUYER_DOC_FIELDS=["name","fullName","address","contract","receiver","iban","edrpou","bank"];
 // Partner-relationship fields (contacts + terms). Not printed on documents, so
 // they are deliberately NOT in BUYER_DOC_FIELDS and never frozen into the journal.
-var BUYER_PARTNER_FIELDS=["contactName","phone","telegram","instagram","channel","dealType","commissionPct","paymentTermDays","partnerNote"];
-var BUYER_PARTNER_NUM={commissionPct:1,paymentTermDays:1};
+var BUYER_PARTNER_FIELDS=["contactName","phone","telegram","instagram","channel","dealType","partnerNote"];
+var BUYER_PARTNER_NUM={};
 var CHANNEL_LABELS={telegram:"Telegram",viber:"Viber",instagram:"Instagram",phone:"Дзвінок",email:"Email"};
-var DEAL_LABELS={consignment:"Консигнація",purchase:"Викуп"};
+// A point works on one of two terms; the term sets the document price type.
+// Під реалізацію → "real" (70% of shelf), Передоплата → "opt" (60% of shelf).
+var DEAL_LABELS={consignment:"Під реалізацію",prepay:"Передоплата"};
+var DEAL_PRICE_TYPE={consignment:"real",prepay:"opt"};
+var DEAL_PRICE_PCT={consignment:70,prepay:60};
+function buyerDeal(b){ var d=b&&b.dealType; return d==="purchase"?"prepay":(DEAL_LABELS[d]?d:null); }
+// Called only when the user picks a buyer in the form (not when a saved document
+// or draft is reopened, so historical prices stay as they were).
+function applyBuyerDealPrice(){
+  var sel=document.getElementById("buyer-select");
+  var b=sel&&buyers.find(function(x){return x.id===sel.value;});
+  var d=buyerDeal(b); if(!d||b.isD2C) return;
+  var r=document.querySelector('input[name="pricetype"][value="'+DEAL_PRICE_TYPE[d]+'"]');
+  if(r&&!r.checked){ r.checked=true; renderItems(); refreshPriceTypeBtns(); }
+}
 
 // ── Payments on documents ──────────────────────────────────
 // j.payments = [{id, date:"YYYY-MM-DD", amount, note, createdAt}]
@@ -1940,13 +1952,6 @@ function docPaidSum(j){
   return Math.round(p.reduce(function(s,x){return s+(parseFloat(x.amount)||0);},0)*100)/100;
 }
 function docOutstanding(j){ return Math.max(0,Math.round(((j.total||0)-docPaidSum(j))*100)/100); }
-function docDueDate(j){
-  var b=jBuyerId(j)&&buyers.find(function(x){return x.id===jBuyerId(j);});
-  if(!b||b.paymentTermDays==null||!j.invoiceDate) return null;
-  if(b.dealType==="consignment"&&j.docType==="invoice") return null; // під реалізацію: платять після звірки, не від дати накладної
-  var d=new Date(j.invoiceDate+"T12:00:00"); d.setDate(d.getDate()+(parseInt(b.paymentTermDays)||0));
-  return d.toISOString().slice(0,10);
-}
 function todayISO(){ var d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
 function addDocPayment(docId){
   var j=journal.find(function(x){return x.id===docId;}); if(!j)return;
@@ -1983,13 +1988,12 @@ function syncPaidStatus(j){
 }
 function docPaymentsHtml(g){
   var pays=docPayments(g).slice().sort(function(a,b){return (a.date||"").localeCompare(b.date||"");});
-  var paid=docPaidSum(g), out=docOutstanding(g), due=docDueDate(g), today=todayISO();
+  var paid=docPaidSum(g), out=docOutstanding(g), today=todayISO();
   var legacy=!pays.length&&g.status==="paid";
   var html='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">'
     +'<div style="font-weight:700;font-size:13px;margin-bottom:6px">💳 Оплати</div>'
     +'<div style="font-size:12px;margin-bottom:6px">Оплачено <strong>'+fmt(paid)+' ₴</strong> з '+fmt(g.total)+' ₴'
     +(out>0?' · залишок <strong style="color:var(--cedar)">'+fmt(out)+' ₴</strong>':' · <span style="color:#2e7d32;font-weight:700">повністю</span>')
-    +(due&&out>0?(' · оплатити до '+esc(due)+(due<today?' <span style="color:var(--red);font-weight:700">(прострочено)</span>':'')):'')
     +'</div>';
   if(legacy) html+='<div style="font-size:11px;color:var(--ink3);margin-bottom:6px">Позначено «оплачено» без суми й дати. Додайте оплату, щоб зберегти точну дату.</div>';
   if(pays.length){
@@ -3160,7 +3164,9 @@ function onBuyerChange(){
       +(b.edrpou?" <span style=\"color:var(--ash)\">· ЄДРПОУ: "+esc(b.edrpou)+"</span>":"")
       +(b.iban?"<div>IBAN: "+esc(b.iban)+"</div>":"")+(b.bank?"<div>Банк: "+esc(b.bank)+"</div>":"")
       +(b.address?"<div>"+esc(b.address)+"</div>":"")+(b.contract?"<div>Договір: "+esc(b.contract)+"</div>":"")
-      +"<div>Отримувач: "+esc(b.receiver||"—")+"</div></div>";
+      +"<div>Отримувач: "+esc(b.receiver||"—")+"</div>"
+      +(buyerDeal(b)?"<div style=\"margin-top:4px\"><strong>Умова:</strong> "+DEAL_LABELS[buyerDeal(b)]+" (ціна "+DEAL_PRICE_PCT[buyerDeal(b)]+"% від полиці)</div>":"")
+      +"</div>";
   }
 }
 function refreshPriceTypeBtns(){
@@ -3626,7 +3632,7 @@ function generate(){
 var priceLabel={
   "shelf":"Полиця (100%)",
   "real":"Реалізація (70%)",
-  "opt":"Викуп (60%)"
+  "opt":"Передоплата (60%)"
 }[getPriceType()]||"";
 
   // Check raw material availability (for invoices only)
@@ -5414,8 +5420,10 @@ function renderBuyersList(){
   var priceForBuyer=function(b){
     var n=(b.name||"").toLowerCase();
     if(n.indexOf("instagram")>=0||n.indexOf("сайт")>=0||n.indexOf("d2c")>=0) return "Полиця";
+    var d=buyerDeal(b);
+    if(d) return d==="consignment"?"Реалізація (70%)":"Передоплата (60%)";
     if(b.priceType) return b.priceType;
-    return "Опт";
+    return '<span style="color:var(--ink4)">не вказано</span>';
   };
   var el=document.getElementById("buyers-list");
   if(!buyers.length){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--ink3);">Немає покупців</div>';return;}
@@ -5451,9 +5459,8 @@ function partnerSummaryHtml(b){
   if(handle) contact.push((ch&&CHANNEL_LABELS[ch]?CHANNEL_LABELS[ch]+": ":"")+esc(handle));
   else if(ch&&CHANNEL_LABELS[ch]) contact.push(CHANNEL_LABELS[ch]);
   var terms=[];
-  if(b.dealType&&DEAL_LABELS[b.dealType]) terms.push(DEAL_LABELS[b.dealType]);
-  if(b.commissionPct!=null) terms.push(b.commissionPct+"%");
-  if(b.paymentTermDays!=null) terms.push(b.paymentTermDays+" дн.");
+  var d=buyerDeal(b);
+  if(d) terms.push(DEAL_LABELS[d]+" · "+DEAL_PRICE_PCT[d]+"%");
   if(!contact.length&&!terms.length) return '<span style="color:var(--ink4)">— не заповнено</span>';
   return (contact.length?'<div>'+contact.join(" · ")+'</div>':'')
     +(terms.length?'<div style="color:var(--ink3)">'+terms.join(" · ")+'</div>':'');
@@ -5515,7 +5522,7 @@ function saveBuyer(){
     if(BUYER_PARTNER_NUM[f]){ var n=parseFloat(String(v).replace(",",".")); data[f]=(v===""||isNaN(n))?null:n; }
     else data[f]=v||null;
   });
-  if(data.commissionPct!=null&&(data.commissionPct<0||data.commissionPct>100)){alert("Комісія має бути від 0 до 100%");return;}
+
   if(editId){
     // Pin current values onto existing documents BEFORE overwriting the record,
     // so already-issued накладні keep the requisites they were printed with.
@@ -5523,6 +5530,9 @@ function saveBuyer(){
     var idx=buyers.findIndex(function(b){return b.id===editId;});if(idx>=0)buyers[idx]=Object.assign({},buyers[idx],data);
   }
   else buyers.push(data);
+  // Fields from an earlier draft of this form (commission %, payment term) are no longer used.
+  var _sb=buyers.find(function(b){return b.id===data.id;});
+  if(_sb){ delete _sb.commissionPct; delete _sb.paymentTermDays; }
   save();hideBuyerForm();renderBuyersList();renderBuyerSelect();
 }
 function deleteBuyer(id){
