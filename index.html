@@ -1322,6 +1322,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   </div>
   <div id="partners-goal" style="margin-bottom:16px"></div>
   <div id="partners-overview" style="margin-bottom:20px"></div>
+  <div id="leads-funnel" style="margin-bottom:20px"></div>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
     <div style="font-size:13px;font-weight:600;color:var(--ink);">Історія звітів</div>
     <select id="retail-history-filter" onchange="renderRetailHistory()" style="padding:5px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);">
@@ -1825,6 +1826,8 @@ var receiveHistory=[];
 var retailStock={};
 // salesReports: [{id,buyerId,buyerName,month,items,savedAt}]
 var salesReports=[];
+// leads: new places in the funnel [{id,name,city,kind,contactName,instagram,telegram,phone,note,stage,stageAt,createdAt,history:[{date,text}],buyerId}]
+var leads=[];
 // suppliers: [{id, name, aromas:[aromaId,...], custom}]
 var suppliers=[
   {id:"yasuhito", name:"B-Faith (Yasuhito)",          aromas:["osmanthus","cherry","sandalwood","camphor"], custom:false},
@@ -1921,6 +1924,7 @@ function load(){
     var sh=localStorage.getItem("atik5_recv");     if(sh) receiveHistory=JSON.parse(sh);
     var srt=localStorage.getItem("atik5_retail");  if(srt) retailStock=JSON.parse(srt);
     var srp=localStorage.getItem("atik5_salesrep");if(srp) salesReports=JSON.parse(srp);
+    var sld=localStorage.getItem("atik5_leads");if(sld) leads=JSON.parse(sld);
     var ssu=localStorage.getItem("atik5_suppliers");if(ssu) suppliers=JSON.parse(ssu);
     var sox=localStorage.getItem("atik5_opex");if(sox) opexStore=JSON.parse(sox);
     var srr=localStorage.getItem("atik5_reorder");if(srr) reorderPoints=JSON.parse(srr);
@@ -1984,6 +1988,7 @@ function saveLocal(){
   localStorage.setItem("atik5_recv",JSON.stringify(receiveHistory));
   localStorage.setItem("atik5_retail",JSON.stringify(retailStock));
   localStorage.setItem("atik5_salesrep",JSON.stringify(salesReports));
+  localStorage.setItem("atik5_leads",JSON.stringify(leads));
   localStorage.setItem("atik5_suppliers",JSON.stringify(suppliers));
   localStorage.setItem("atik5_opex",JSON.stringify(opexStore));
   localStorage.setItem("atik5_fixedcogs",JSON.stringify(fixedCogsMap));
@@ -2203,7 +2208,7 @@ function collectAppState(){
   return {
     products:products, buyers:buyers, journal:journal, settings:settings,
     warehouseStock:warehouseStock, rawStock:rawStock, receiveHistory:receiveHistory,
-    retailStock:retailStock, salesReports:salesReports, suppliers:suppliers,
+    retailStock:retailStock, salesReports:salesReports, suppliers:suppliers, leads:leads,
     reorderPoints:reorderPoints, opexStore:opexStore,
     fixedCogsMap:fixedCogsMap, matPrices:matPrices, bomData:bomData
   };
@@ -2308,6 +2313,7 @@ function applyAppState(data){
     });
   });
   salesReports=data.salesReports||[];
+  leads=Array.isArray(data.leads)?data.leads:[];
   if(data.suppliers)suppliers=data.suppliers;
   if(data.reorderPoints)reorderPoints=data.reorderPoints;
   if(data.opexStore)opexStore=data.opexStore;
@@ -4784,6 +4790,7 @@ function renderRetailTab(){
 function renderRetailStoreGrid(){
   renderGoalCard("partners-goal");
   renderPartnersOverview();
+  renderLeads();
   var metaEl=document.getElementById("retail-meta");
   if(metaEl) metaEl.textContent=buyers.filter(isPartnerPoint).length+" активних точок";
 }
@@ -7452,6 +7459,150 @@ function submitQuickOrder(){
 }
 
 // ============================================================
+// NEW POINTS FUNNEL: контакт → пробник → перша поставка → партнер
+// A lead is a place that is not a partner yet. Moving to «Партнер» creates the point (buyer)
+// and opens its first накладна. Messages are drafted (template or AI); the person sends them.
+// ============================================================
+var LEAD_STAGES=[
+  {id:"contact",label:"Контакт",hint:"знайшли, написали",purpose:"intro",next:"Надіслали пробник"},
+  {id:"sample",label:"Пробник",hint:"пробники в них",purpose:"sampleFollowup",next:"Домовились про поставку"},
+  {id:"first",label:"Перша поставка",hint:"домовляємось",purpose:"firstOrder",next:"Створити точку й накладну"},
+  {id:"partner",label:"Партнер",hint:"за 60 днів",purpose:null,next:null}
+];
+var LEAD_PURPOSES={intro:"Перше знайомство",sampleFollowup:"Як вам пробники?",firstOrder:"Перша поставка"};
+function leadStage(id){ return LEAD_STAGES.find(function(s){return s.id===id;})||LEAD_STAGES[0]; }
+function leadById(id){ return leads.find(function(l){return l.id===id;}); }
+function renderLeads(){
+  var el=document.getElementById("leads-funnel"); if(!el) return;
+  var lost=leads.filter(function(l){return l.stage==="lost";}).length;
+  var head='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">'
+    +'<div style="font-size:13px;font-weight:600;color:var(--ink)">🌱 Нові точки <span style="font-weight:400;color:var(--ink3)">· воронка'+(lost?' · не підійшли: '+lost:'')+'</span></div>'
+    +'<button class="btn btn-gray btn-sm" onclick="openLeadForm()">+ Додати заклад</button></div>';
+  var cols=LEAD_STAGES.map(function(st){
+    var list=leads.filter(function(l){ if(l.stage!==st.id) return false; return st.id!=="partner"||(daysAgo(l.stageAt)||0)<=60; })
+      .sort(function(a,b){return String(a.stageAt||"").localeCompare(String(b.stageAt||""));});
+    var cards=list.map(function(l){
+      var d=daysAgo(l.stageAt), stale=st.id!=="partner"&&d!==null&&d>=7;
+      var link=partnerContact(l);
+      return '<div style="background:var(--surface);border:1px solid '+(stale?'var(--gold)':'var(--border)')+';border-radius:8px;padding:8px 9px;margin-bottom:6px;font-size:12px">'
+        +'<div style="display:flex;justify-content:space-between;gap:6px"><a href="#" onclick="openLeadForm(\''+l.id+'\');return false" style="font-weight:700;color:var(--ink);text-decoration:none">'+esc(l.name)+'</a>'
+        +'<span style="color:'+(stale?'var(--cedar)':'var(--ink4)')+';white-space:nowrap" title="днів на цьому етапі">'+(stale?'⏰ ':'')+(d===null?'':d+' дн.')+'</span></div>'
+        +((l.city||l.kind)?'<div style="color:var(--ink3)">'+esc([l.kind,l.city].filter(Boolean).join(" · "))+'</div>':'')
+        +(l.note?'<div style="color:var(--ink3);margin-top:2px">'+esc(String(l.note).slice(0,90))+'</div>':'')
+        +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">'
+        +(st.purpose?'<button class="btn btn-moss btn-sm" style="color:#fff;padding:3px 8px" onclick="openLeadMessage(\''+l.id+'\')">✍️ Написати</button>':'')
+        +(st.next?'<button class="btn btn-gray btn-sm" style="padding:3px 8px" onclick="advanceLead(\''+l.id+'\')">→ '+esc(st.next)+'</button>':'')
+        +(st.id==="partner"&&l.buyerId?'<button class="btn btn-gray btn-sm" style="padding:3px 8px" onclick="openRetailDetailModal(\''+l.buyerId+'\')">🏪 Картка</button>':'')
+        +(link&&st.id!=="partner"?'<a class="btn btn-gray btn-sm" style="padding:3px 8px;text-decoration:none" href="'+esc(link.href)+'" target="_blank" rel="noopener">'+esc(link.label)+'</a>':'')
+        +'</div></div>';
+    }).join("");
+    return '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);padding:8px;min-width:0">'
+      +'<div style="font-size:11px;font-weight:700;color:var(--pine);text-transform:uppercase;letter-spacing:.06em">'+st.label+' · '+list.length+'</div>'
+      +'<div style="font-size:10.5px;color:var(--ink4);margin-bottom:6px">'+st.hint+'</div>'
+      +(cards||'<div style="font-size:11px;color:var(--ink4);padding:6px 0">—</div>')+'</div>';
+  }).join("");
+  el.innerHTML=head+'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px">'+cols+'</div>';
+}
+function openLeadForm(id){
+  var l=id?leadById(id):{};
+  var f=function(k,label,ph){ return '<div class="field"><label>'+label+'</label><input id="lf-'+k+'" value="'+esc(l[k]||"")+'" placeholder="'+esc(ph||"")+'"></div>'; };
+  var hist=(l.history||[]).slice(0,8).map(function(h){return '<div style="font-size:11.5px;color:var(--ink3)">'+esc(h.date)+' · '+esc(h.text)+'</div>';}).join("");
+  maintModal("modal-lead",id?"🌱 "+esc(l.name):"🌱 Новий заклад",
+    '<div class="row">'+f("name","Назва *","Кава на Подолі")+f("city","Місто","Київ")+'</div>'
+    +'<div class="row">'+f("kind","Тип","кав\'ярня, концепт-стор…")+f("contactName","Контактна особа","Ім\'я")+'</div>'
+    +'<div class="row">'+f("instagram","Instagram","@account")+f("telegram","Telegram","@username")+f("phone","Телефон","+380…")+'</div>'
+    +'<div class="field"><label>Нотатка (що сподобалось, з ким говорили, які аромати цікаві)</label><textarea id="lf-note" rows="3" style="width:100%;box-sizing:border-box">'+esc(l.note||"")+'</textarea></div>'
+    +(id?'<div style="font-size:12px;margin:6px 0">Етап: <b>'+esc(l.stage==="lost"?"Не підійшло":leadStage(l.stage).label)+'</b></div>'+hist:''),
+    '<button class="btn btn-moss btn-sm" style="color:#fff" onclick="saveLeadForm(\''+(id||"")+'\')">💾 Зберегти</button>'
+    +(id&&l.stage!=="lost"&&l.stage!=="partner"?'<button class="btn btn-gray btn-sm" onclick="setLeadStage(\''+id+'\',\'lost\')">✕ Не підійшло</button>':'')
+    +(id&&l.stage==="lost"?'<button class="btn btn-gray btn-sm" onclick="setLeadStage(\''+id+'\',\'contact\')">↺ Повернути у воронку</button>':''));
+}
+function saveLeadForm(id){
+  var g=function(k){ var e=document.getElementById("lf-"+k); return e?String(e.value).trim():""; };
+  if(!g("name")){ alert("Вкажіть назву"); return; }
+  var l=id?leadById(id):null, now=todayISO();
+  if(!l){ l={id:uid(),stage:"contact",stageAt:now,createdAt:now,history:[{date:now,text:"Додано у воронку"}]}; leads.push(l); }
+  ["name","city","kind","contactName","instagram","telegram","phone","note"].forEach(function(k){ var v=g(k); if(v) l[k]=v; else delete l[k]; });
+  save(); var m=document.getElementById("modal-lead"); if(m) m.remove(); renderLeads();
+}
+function setLeadStage(id,stage){
+  var l=leadById(id); if(!l) return;
+  l.stage=stage; l.stageAt=todayISO();
+  l.history=[{date:l.stageAt,text:stage==="lost"?"Не підійшло":"Етап: "+leadStage(stage).label}].concat(l.history||[]).slice(0,20);
+  save(); var m=document.getElementById("modal-lead"); if(m) m.remove(); renderLeads();
+}
+function advanceLead(id){
+  var l=leadById(id); if(!l) return;
+  var i=LEAD_STAGES.findIndex(function(s){return s.id===l.stage;});
+  var next=LEAD_STAGES[i+1]; if(!next) return;
+  if(next.id!=="partner"){ setLeadStage(id,next.id); return; }
+  // Become a partner: create the point (once) and open its first накладна
+  var b=l.buyerId&&buyers.find(function(x){return x.id===l.buyerId;});
+  if(!b){
+    if(!confirm("Створити точку «"+l.name+"» (під реалізацію) і відкрити її першу накладну?")) return;
+    b={id:uid(),name:l.name,fullName:l.name,retailName:l.name,receiver:l.contactName||l.name,iban:null,edrpou:null,bank:null,
+      address:l.city||null,contract:null,isRetail:true,custom:true,dealType:"consignment"};
+    ["contactName","instagram","telegram","phone"].forEach(function(k){ if(l[k]) b[k]=l[k]; });
+    b.channel=b.telegram?"telegram":b.instagram?"instagram":b.phone?"phone":undefined; if(!b.channel) delete b.channel;
+    buyers.push(b); l.buyerId=b.id;
+  }
+  setLeadStage(id,"partner");
+  switchTab("docs"); switchDocsSub("form"); renderBuyerSelect();
+  var sel=document.getElementById("buyer-select"); if(sel){ sel.value=b.id; onBuyerChange(); }
+  var dt=document.querySelector('input[name="doctype"][value="invoice"]'); if(dt) dt.checked=true;
+  var pt=document.querySelector('input[name="pricetype"][value="real"]'); if(pt) pt.checked=true;
+  var ne=document.getElementById("inv-num"); if(ne) ne.value=nextInvoiceNum();
+  var de=document.getElementById("inv-date"); if(de) de.value=todayISO();
+  onDocTypeChange(); refreshPriceTypeBtns(); renderItems();
+  addToast("Точку «"+l.name+"» створено","success","Додайте товари першої поставки й натисніть «Згенерувати». Реквізити (ФОП, ЄДРПОУ) можна дописати в Довідниках.");
+}
+function leadTemplate(l,purpose){
+  var hi=(l.contactName?l.contactName+", вітаю":"Добрий день")+"!";
+  if(purpose==="sampleFollowup") return hi+" Це All Trees I Know. Як вам наші пробники ароматичних паличок? Які аромати найбільше сподобались? Якщо хочете, можемо почати з невеликої поставки під реалізацію: оплата лише за продане.";
+  if(purpose==="firstOrder") return hi+" Готові привезти перший набір наших паличок під реалізацію: ви платите лише за продане. Підкажіть, будь ласка, куди й коли зручно доставити?";
+  return hi+" Мене звати ..., я з бренду All Trees I Know: ми привозимо натуральні ароматичні палички з Японії. Нам дуже відгукується ваш простір, і здається, наші аромати там були б доречні. Можемо надіслати безкоштовні пробники?";
+}
+function openLeadMessage(id){
+  var l=leadById(id); if(!l) return;
+  var purpose=leadStage(l.stage).purpose||"intro";
+  window._lm={id:id,link:partnerContact(l)};
+  maintModal("modal-lmsg","✍️ "+esc(l.name),
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'+Object.keys(LEAD_PURPOSES).map(function(k){
+      return '<label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="lm-purpose" value="'+k+'"'+(k===purpose?' checked':'')+' onchange="document.getElementById(\'lm-text\').value=leadTemplate(leadById(\''+id+'\'),this.value)">'+LEAD_PURPOSES[k]+'</label>';
+    }).join("")+'</div>'
+    +'<textarea id="lm-text" rows="7" style="width:100%;box-sizing:border-box;font-family:inherit;font-size:13px;padding:8px">'+esc(leadTemplate(l,purpose))+'</textarea>'
+    +'<div id="lm-status" style="font-size:12px;margin-top:6px;color:var(--ink3)">Це шаблон. «🤖 Написати з AI» перепише його з урахуванням нотатки й вашого стилю. Надсилаєте ви самі.</div>',
+    '<button class="btn btn-gray btn-sm" onclick="leadAiWrite()">🤖 Написати з AI</button>'
+    +'<button class="btn btn-gray btn-sm" onclick="leadCopyOpen()">📋 Скопіювати'+(window._lm.link?' й відкрити '+esc(window._lm.link.label):'')+'</button>'
+    +'<button class="btn btn-moss btn-sm" style="color:#fff" onclick="leadMarkSent()">✓ Позначити як надіслане</button>');
+}
+function leadPurpose(){ var r=document.querySelector('input[name="lm-purpose"]:checked'); return r?r.value:"intro"; }
+function leadAiWrite(){
+  var lm=window._lm, l=lm&&leadById(lm.id); if(!l) return;
+  var st=document.getElementById("lm-status"); st.innerHTML="🤖 AI пише…";
+  var net=networkBestSellers().slice(0,4).map(function(n){return n.name;});
+  aiApi("/api/partner-message",{audience:"lead",point:{name:l.name,contactName:l.contactName||""},purposes:[leadPurpose()],
+    facts:{kind:l.kind||"",city:l.city||"",note:l.note||"",bestSellers:net,history:(l.history||[]).slice(0,5)},
+    examples:settings.messageExamples||"",draft:document.getElementById("lm-text").value}).then(function(j){
+    document.getElementById("lm-text").value=j.text; st.innerHTML='<span style="color:var(--moss)">✓ Готово. Перевірте й відредагуйте за потреби.</span>';
+  }).catch(function(e){ st.innerHTML='<span style="color:var(--red)">'+esc(e.message||String(e))+'</span>'; });
+}
+function leadCopyOpen(){
+  var lm=window._lm; if(!lm) return;
+  var t=document.getElementById("lm-text").value;
+  var open=function(){ if(lm.link) window.open(lm.link.href,"_blank","noopener"); };
+  (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){
+    document.getElementById("lm-status").innerHTML='<span style="color:var(--moss)">Скопійовано. Вставте в чат і надішліть, потім натисніть «Позначити як надіслане».</span>'; open();
+  }).catch(function(){ prompt("Скопіюйте текст:",t); open(); });
+}
+function leadMarkSent(){
+  var lm=window._lm, l=lm&&leadById(lm.id); if(!l) return;
+  l.history=[{date:todayISO(),text:"Написали: "+LEAD_PURPOSES[leadPurpose()]}].concat(l.history||[]).slice(0,20);
+  save(); var m=document.getElementById("modal-lmsg"); if(m) m.remove(); renderLeads();
+  addToast("Позначено: написали «"+l.name+"»","success","Це лише відмітка в ATIK, повідомлення надсилаєте ви");
+}
+
+// ============================================================
 // ASSISTANT CHAT (/api/assistant). The server talks to Claude; tools run here over the app's data.
 // Read tools return counted numbers. Action tools only add a button: the person opens the draft
 // and confirms it in the usual window. Nothing is saved, deleted or sent by the assistant.
@@ -7539,6 +7690,19 @@ function asstFindPoint(q){
   if(!hit.length) return {error:"Точку «"+q+"» не знайдено",points:buyers.filter(isPartnerPoint).map(function(b){return b.retailName||b.name;})};
   return {error:"Кілька точок підходять",candidates:hit.map(function(b){return b.retailName||b.name;})};
 }
+// Period for assistant tools: from/to (YYYY-MM or YYYY-MM-DD, inclusive) wins over the quick period.
+function asstRange(i){
+  var norm=function(v,end){ v=String(v||"").trim(); if(/^\d{4}-\d{2}$/.test(v)) return end?v+"-31":v+"-01"; return /^\d{4}-\d{2}-\d{2}$/.test(v)?v:""; };
+  var f=norm(i.from,false), t=norm(i.to,true);
+  if(!f&&!t) return null;
+  return {from:f||"0000-01-01",to:t||"9999-12-31",fromM:(f||"0000-01").slice(0,7),toM:(t||"9999-12").slice(0,7)};
+}
+function asstDocs(i){
+  var r=asstRange(i);
+  if(!r) return filterByPeriod(journal,i.period||"all");
+  return journal.filter(function(j){ var d=String(j.invoiceDate||""); return d>=r.from&&d<=r.to; });
+}
+function asstPeriodLabel(i){ var r=asstRange(i); return r?(r.from.replace("0000-01-01","…")+" — "+r.to.replace("9999-12-31","…")):(i.period||"all"); }
 function asstDocRow(j){ return {type:j.docType==="bill"?"рахунок":"накладна",num:j.invoiceNum||"",date:j.invoiceDate||"",buyer:jBuyerName(j),total:Math.round(j.total||0),
   outstanding:j.docType==="bill"?Math.round(docOutstanding(j)):undefined,status:j.status||""}; }
 var ASST_TOOLS={
@@ -7557,7 +7721,8 @@ var ASST_TOOLS={
   get_point:function(i){
     var f=asstFindPoint(i.point); if(!f.b) return f;
     var b=f.b, x=partnerStats(b,networkBestSellers());
-    var reps=salesReports.filter(function(r){return r.buyerId===b.id;}).sort(function(a,c){return String(c.month).localeCompare(String(a.month));}).slice(0,6);
+    var rg=asstRange(i);
+    var reps=salesReports.filter(function(r){return r.buyerId===b.id&&(!rg||(r.month>=rg.fromM&&r.month<=rg.toM));}).sort(function(a,c){return String(c.month).localeCompare(String(a.month));}).slice(0,12);
     var docs=journal.filter(function(j){return jBuyerId(j)===b.id;}).sort(function(a,c){return String(c.invoiceDate||"").localeCompare(String(a.invoiceDate||""));});
     return {point:x.name,legalName:b.fullName||b.name,term:DEAL_LABELS[x.term],contact:{name:b.contactName||"",phone:b.phone||"",telegram:b.telegram||"",instagram:b.instagram||""},
       shelf:Object.keys(x.shelf).map(function(k){return {product:shortName(x.shelf[k].name||k),qty:x.shelf[k].qty};}),
@@ -7568,13 +7733,19 @@ var ASST_TOOLS={
       restock:x.restock,notSelling:x.still,tryNew:x.tryNew.map(function(n){return n.name;}),todo:x.flags.map(function(f){return f.text;})};
   },
   get_sales:function(i){
-    var list=filterByPeriod(journal,i.period||"month").filter(function(j){return j.docType==="invoice"&&j.status==="shipped";}), m={};
+    if(!i.period&&!asstRange(i)) i.period="month";
+    var list=asstDocs(i).filter(function(j){return j.docType==="invoice"&&j.status==="shipped";}), m={};
     list.forEach(function(j){ (j.items||[]).forEach(function(it){
-      var k=i.group_by==="buyer"?jBuyerName(j):shortName(it.name||""); if(!m[k]) m[k]={qty:0,sum:0};
-      m[k].qty+=it.qty||0; m[k].sum+=itemSum(it);
+      var k=i.group_by==="buyer"?jBuyerName(j):i.group_by==="month"?String(j.invoiceDate||"").slice(0,7):shortName(it.name||""); if(!m[k]) m[k]={qty:0,sum:0,docs:{}};
+      m[k].qty+=it.qty||0; m[k].sum+=itemSum(it); m[k].docs[j.id]=1;
     });});
-    var rows=Object.keys(m).map(function(k){return {name:k,qty:m[k].qty,sum:Math.round(m[k].sum)};}).sort(function(a,b){return b.sum-a.sum;});
-    return {period:i.period,invoices:list.length,total:Math.round(list.reduce(function(s,j){return s+(j.total||0);},0)),rows:rows.slice(0,40)};
+    // Months without sales still appear (as 0) so months can be compared
+    var rg=asstRange(i);
+    if(i.group_by==="month"&&rg&&rg.fromM>"1900"){ var endM=rg.toM>"9000"?curYM():rg.toM; for(var mm=rg.fromM, guard=0; mm<=endM&&guard<60; mm=ymShift(mm,1), guard++) if(!m[mm]) m[mm]={qty:0,sum:0,docs:{}}; }
+    var rows=Object.keys(m).map(function(k){return {name:k,qty:m[k].qty,sum:Math.round(m[k].sum),invoices:Object.keys(m[k].docs).length};});
+    rows.sort(i.group_by==="month"?function(a,b){return a.name.localeCompare(b.name);}:function(a,b){return b.sum-a.sum;});
+    return {period:asstPeriodLabel(i),invoices:list.length,total:Math.round(list.reduce(function(s,j){return s+(j.total||0);},0)),rows:rows.slice(0,60),
+      note:list.length?undefined:"За цей період відвантажених накладних немає"};
   },
   get_stock:function(){
     var wh=Object.keys(warehouseStock).filter(function(k){return (warehouseStock[k].qty||0)>0;}).map(function(k){var p=products.find(function(x){return x.id===k;});return {product:shortName((p&&p.name)||warehouseStock[k].name||k),qty:warehouseStock[k].qty};}).sort(function(a,b){return b.qty-a.qty;});
@@ -7583,17 +7754,28 @@ var ASST_TOOLS={
     return {warehouse:wh,rawSticks:raw,supplierOrders:fc.orders.map(function(o){return {supplier:o.supplier,orderBy:o.orderBy,now:o.now,totalKg:o.totalKg,items:o.items.map(function(i){return i.name+" "+i.kg+" кг";})};})};
   },
   get_abc:function(i){
-    var a=abcData(i.period||"quarter",i.basis||"revenue");
+    var r=asstRange(i), a;
+    if(r){
+      var cur=curYM(), fm=r.fromM<"1900"?String((journal.map(function(j){return String(j.invoiceDate||"").slice(0,7);}).filter(Boolean).sort()[0])||cur):r.fromM, tm=r.toM>"9000"?cur:r.toM;
+      a=abcAnalysis({products:products,invoices:asstDocs(i).filter(function(j){return j.docType==="invoice"&&j.status==="shipped";}),
+        reports:salesReports.filter(function(x){return x.month>=fm&&x.month<=tm;}),retailStock:retailStock,warehouseStock:warehouseStock,
+        months:Math.max(1,ymDiff(fm,tm)+1),basis:i.basis||"revenue",nameOf:function(n){return shortName(String(n||""));}});
+    } else a=abcData(i.period||"quarter",i.basis||"revenue");
     return {basis:a.basis,total:Math.round(a.total),summary:a.summary,rows:a.rows.slice(0,40).map(function(r){return {cls:r.cls,product:r.name,revenue:r.revenue,soldInPoints:r.sold,sharePct:Math.round(r.share*10)/10,warehouse:r.warehouse,points:r.points,tips:r.tips.map(function(t){return t.text;})};}),
       idle:a.idle.map(function(r){return {product:r.name,warehouse:r.warehouse,points:r.points};})};
   },
   find_documents:function(i){
-    var list=filterByPeriod(journal,i.period||"all");
+    var list=asstDocs(i);
     if(i.doc_type&&i.doc_type!=="any") list=list.filter(function(j){return j.docType===i.doc_type;});
     if(i.unpaid_only) list=list.filter(function(j){return j.docType==="bill"&&docOutstanding(j)>0;});
     if(i.buyer){ var f=asstFindPoint(i.buyer); if(f.b) list=list.filter(function(j){return jBuyerId(j)===f.b.id;}); else { var q=String(i.buyer).toLowerCase(); list=list.filter(function(j){return jBuyerName(j).toLowerCase().indexOf(q)>=0;}); } }
     list=list.slice().sort(function(a,c){return String(c.invoiceDate||"").localeCompare(String(a.invoiceDate||""));});
     return {count:list.length,sum:Math.round(list.reduce(function(s,j){return s+(j.total||0);},0)),documents:list.slice(0,30).map(asstDocRow)};
+  },
+  get_funnel:function(){
+    return {leads:leads.filter(function(l){return l.stage!=="lost";}).map(function(l){return {name:l.name,city:l.city||"",kind:l.kind||"",stage:l.stage==="partner"?"Партнер":leadStage(l.stage).label,
+      daysInStage:daysAgo(l.stageAt),note:l.note||"",lastActions:(l.history||[]).slice(0,3).map(function(h){return h.date+" "+h.text;})};}),
+      lost:leads.filter(function(l){return l.stage==="lost";}).length};
   },
   propose_restock_invoice:function(i){ var f=asstFindPoint(i.point); if(!f.b) return f; var b=f.b;
     if(!restockLinesFor(b)) return {error:"Для «"+(b.retailName||b.name)+"» немає даних для поповнення: ні звітів, ні накладних"};
