@@ -843,7 +843,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <div class="row">
       <div class="field" style="flex:0 0 130px"><label>№ документа</label><input id="inv-num" type="text" value="1" oninput="onFormFieldChange()"></div>
       <div class="field" style="flex:0 0 160px"><label>Дата</label><input id="inv-date" type="date" onchange="onFormFieldChange()"></div>
-      <div class="field"><label>Покупець</label><select id="buyer-select" onchange="onBuyerChange();onFormFieldChange()"></select></div>
+      <div class="field"><label>Покупець</label><select id="buyer-select" onchange="onBuyerChange();applyBuyerDealPrice();onFormFieldChange()"></select></div>
     </div>
     <div id="buyer-info-box"></div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
@@ -859,7 +859,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
         </label>
         <label style="margin:0;display:flex;align-items:center;">
           <input type="radio" name="pricetype" value="opt" onchange="renderItems();refreshPriceTypeBtns()" style="display:none;">
-          <span class="price-seg-btn" data-val="opt" onclick="this.closest('div').querySelectorAll('input[type=radio]')[2].checked=true;renderItems();refreshPriceTypeBtns()" style="display:block;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;transition:all .15s;color:var(--ink3);">Викуп</span>
+          <span class="price-seg-btn" data-val="opt" onclick="this.closest('div').querySelectorAll('input[type=radio]')[2].checked=true;renderItems();refreshPriceTypeBtns()" style="display:block;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;transition:all .15s;color:var(--ink3);">Передоплата</span>
         </label>
       </div>
       <span style="font-size:11px;color:var(--ink4);">жовте поле — власна ціна</span>
@@ -1315,6 +1315,38 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
           <input type="hidden" id="nb-isretail" value="1">
         </div>
       </div>
+      <div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 6px;">Контакти</div>
+      <div class="row">
+        <div class="field"><label>Контактна особа</label><input id="nb-contactName" placeholder="Ім'я, з ким спілкуємось"></div>
+        <div class="field"><label>Телефон / Viber</label><input id="nb-phone" type="tel" placeholder="+380..."></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Telegram</label><input id="nb-telegram" placeholder="@username"></div>
+        <div class="field"><label>Instagram</label><input id="nb-instagram" placeholder="@account"></div>
+        <div class="field"><label>Де пишемо</label>
+          <select id="nb-channel">
+            <option value="">—</option>
+            <option value="telegram">Telegram</option>
+            <option value="viber">Viber</option>
+            <option value="instagram">Instagram</option>
+            <option value="phone">Дзвінок / SMS</option>
+            <option value="email">Email</option>
+          </select>
+        </div>
+      </div>
+      <div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 6px;">Умови співпраці</div>
+      <div class="row">
+        <div class="field"><label>Умова (визначає ціну в документах)</label>
+          <select id="nb-dealType">
+            <option value="">—</option>
+            <option value="consignment">Під реалізацію — ціна 70% від полиці</option>
+            <option value="prepay">Передоплата — ціна 60% від полиці</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Нотатки про партнера</label><input id="nb-partnerNote" placeholder="Що любить, як часто звіряємось, особливості"></div>
+      </div>
       <div style="display:flex;gap:10px;margin-top:8px">
         <button class="btn btn-moss btn-sm" onclick="saveBuyer()">💾 Зберегти</button>
         <button class="btn btn-gray btn-sm" onclick="hideBuyerForm()">Скасувати</button>
@@ -1408,6 +1440,35 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       <button class="btn btn-gray btn-sm" onclick="document.getElementById('import-file').click()">📂 Відновити</button>
       <button class="btn btn-gray btn-sm" onclick="document.getElementById('merge-file').click()">☁️ Merge</button>
     </div>
+  </div>
+
+  <!-- Sales goal -->
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:14px;box-shadow:var(--shadow);">
+    <div style="padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em;">Ціль продажів</div>
+    <div style="padding:12px 14px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+      <div class="field" style="margin:0"><label>Сума, ₴</label><input id="goal-amount" type="number" min="0" step="1000" style="width:130px" onchange="saveSalesGoal()"></div>
+      <div class="field" style="margin:0"><label>Період</label>
+        <select id="goal-period" onchange="saveSalesGoal()">
+          <option value="month">Місяць</option><option value="quarter">Квартал</option><option value="year">Рік</option>
+        </select>
+      </div>
+      <div class="field" style="margin:0"><label>Що рахуємо</label>
+        <select id="goal-basis" onchange="saveSalesGoal()">
+          <option value="paid">Отримані оплати</option><option value="issued">Виставлені накладні</option>
+        </select>
+      </div>
+    </div>
+    <div id="goal-preview" style="padding:0 14px 12px;font-size:12px;color:var(--ink3);"></div>
+  </div>
+
+  <!-- AI assistant (server check) -->
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:14px;box-shadow:var(--shadow);">
+    <div style="padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em;">AI-асистент</div>
+    <div style="padding:12px 14px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-gray btn-sm" onclick="aiCheckServer()">Перевірити підключення</button>
+      <button class="btn btn-gray btn-sm" onclick="aiTestReport()">Тест: розібрати звіт</button>
+    </div>
+    <div id="ai-check-out" style="padding:0 14px 12px;font-size:12px;color:var(--ink3);"></div>
   </div>
 
   <!-- Auto-increment + other -->
@@ -1870,6 +1931,100 @@ function saveLocal(){
 // so historical documents keep the data they were issued with.
 // ============================================================
 var BUYER_DOC_FIELDS=["name","fullName","address","contract","receiver","iban","edrpou","bank"];
+// Partner-relationship fields (contacts + terms). Not printed on documents, so
+// they are deliberately NOT in BUYER_DOC_FIELDS and never frozen into the journal.
+var BUYER_PARTNER_FIELDS=["contactName","phone","telegram","instagram","channel","dealType","partnerNote"];
+var BUYER_PARTNER_NUM={};
+var CHANNEL_LABELS={telegram:"Telegram",viber:"Viber",instagram:"Instagram",phone:"Дзвінок",email:"Email"};
+// A point works on one of two terms; the term sets the document price type.
+// Під реалізацію → "real" (70% of shelf), Передоплата → "opt" (60% of shelf).
+var DEAL_LABELS={consignment:"Під реалізацію",prepay:"Передоплата"};
+var DEAL_PRICE_TYPE={consignment:"real",prepay:"opt"};
+var DEAL_PRICE_PCT={consignment:70,prepay:60};
+function buyerDeal(b){ var d=b&&b.dealType; return d==="purchase"?"prepay":(DEAL_LABELS[d]?d:null); }
+// Called only when the user picks a buyer in the form (not when a saved document
+// or draft is reopened, so historical prices stay as they were).
+function applyBuyerDealPrice(){
+  var sel=document.getElementById("buyer-select");
+  var b=sel&&buyers.find(function(x){return x.id===sel.value;});
+  var d=buyerDeal(b); if(!d||b.isD2C) return;
+  var r=document.querySelector('input[name="pricetype"][value="'+DEAL_PRICE_TYPE[d]+'"]');
+  if(r&&!r.checked){ r.checked=true; renderItems(); refreshPriceTypeBtns(); }
+}
+
+// ── Payments on documents ──────────────────────────────────
+// j.payments = [{id, date:"YYYY-MM-DD", amount, note, createdAt}]
+// Legacy documents marked "оплачено" without payment records count as paid in full.
+function docPayments(j){ return (j&&Array.isArray(j.payments))?j.payments:[]; }
+function docPaidSum(j){
+  var p=docPayments(j);
+  if(!p.length) return (j&&j.status==="paid")?(j.total||0):0;
+  return Math.round(p.reduce(function(s,x){return s+(parseFloat(x.amount)||0);},0)*100)/100;
+}
+function docOutstanding(j){ return Math.max(0,Math.round(((j.total||0)-docPaidSum(j))*100)/100); }
+function todayISO(){ var d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
+function addDocPayment(docId){
+  var j=journal.find(function(x){return x.id===docId;}); if(!j)return;
+  var dEl=document.getElementById("pay-date"), aEl=document.getElementById("pay-amount"), nEl=document.getElementById("pay-note");
+  var date=(dEl&&dEl.value)||todayISO();
+  var amount=parseFloat(String(aEl&&aEl.value||"").replace(",","."));
+  if(!(amount>0)){alert("Вкажіть суму оплати");return;}
+  var out=docOutstanding(j);
+  if(amount>out+0.01&&!confirm("Сума більша за залишок ("+fmt(out)+" ₴). Все одно зберегти?"))return;
+  if(!Array.isArray(j.payments)){
+    j.payments=[];
+    // Legacy "оплачено" without amounts: the new record replaces the implicit full payment.
+    if(j.status==="paid") j.status="created";
+  }
+  j.payments.push({id:uid(),date:date,amount:Math.round(amount*100)/100,note:(nEl&&nEl.value.trim())||null,createdAt:new Date().toISOString()});
+  syncPaidStatus(j);
+  save(); openJournalItem(docId); renderJournal();
+  addToast("Оплату "+fmt(amount)+" ₴ додано","success");
+}
+function removeDocPayment(docId,payId){
+  var j=journal.find(function(x){return x.id===docId;}); if(!j)return;
+  var p=docPayments(j).find(function(x){return x.id===payId;}); if(!p)return;
+  if(!confirm("Видалити оплату "+fmt(p.amount)+" ₴ від "+p.date+"?"))return;
+  j.payments=docPayments(j).filter(function(x){return x.id!==payId;});
+  syncPaidStatus(j);
+  save(); openJournalItem(docId); renderJournal();
+}
+// Рахунок: status follows the payments (fully paid → "оплачено").
+// Накладна keeps its own shipping status; payments are tracked alongside it.
+function syncPaidStatus(j){
+  if(j.docType!=="bill"||!Array.isArray(j.payments))return;
+  if(docOutstanding(j)<=0.01&&j.payments.length) j.status="paid";
+  else if(j.status==="paid") j.status="created";
+}
+function docPaymentsHtml(g){
+  var pays=docPayments(g).slice().sort(function(a,b){return (a.date||"").localeCompare(b.date||"");});
+  var paid=docPaidSum(g), out=docOutstanding(g), today=todayISO();
+  var legacy=!pays.length&&g.status==="paid";
+  var html='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">'
+    +'<div style="font-weight:700;font-size:13px;margin-bottom:6px">💳 Оплати</div>'
+    +'<div style="font-size:12px;margin-bottom:6px">Оплачено <strong>'+fmt(paid)+' ₴</strong> з '+fmt(g.total)+' ₴'
+    +(out>0?' · залишок <strong style="color:var(--cedar)">'+fmt(out)+' ₴</strong>':' · <span style="color:#2e7d32;font-weight:700">повністю</span>')
+    +'</div>';
+  if(legacy) html+='<div style="font-size:11px;color:var(--ink3);margin-bottom:6px">Позначено «оплачено» без суми й дати. Додайте оплату, щоб зберегти точну дату.</div>';
+  if(pays.length){
+    html+='<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px">'
+      +pays.map(function(p){
+        return '<tr><td style="border-bottom:1px solid var(--border);padding:3px 6px;font-family:ui-monospace,monospace;white-space:nowrap">'+esc(p.date)+'</td>'
+          +'<td style="border-bottom:1px solid var(--border);padding:3px 6px;text-align:right;font-weight:700;white-space:nowrap">'+fmt(p.amount)+' ₴</td>'
+          +'<td style="border-bottom:1px solid var(--border);padding:3px 6px;color:var(--ink3)">'+esc(p.note||"")+'</td>'
+          +'<td style="border-bottom:1px solid var(--border);padding:3px 6px;text-align:right"><button class="jact" title="Видалити оплату" onclick="event.stopPropagation();removeDocPayment(\''+g.id+'\',\''+p.id+'\')">×</button></td></tr>';
+      }).join("")+'</table>';
+  }
+  if(out>0){
+    html+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
+      +'<div><div style="font-size:10.5px;color:var(--ink3)">Дата</div><input id="pay-date" type="date" value="'+today+'" style="padding:4px 6px;font-size:12px"></div>'
+      +'<div><div style="font-size:10.5px;color:var(--ink3)">Сума, ₴</div><input id="pay-amount" type="number" min="0" step="0.01" value="'+out+'" style="width:100px;padding:4px 6px;font-size:12px"></div>'
+      +'<div style="flex:1;min-width:120px"><div style="font-size:10.5px;color:var(--ink3)">Коментар</div><input id="pay-note" placeholder="напр. за звіркою жовтня" style="width:100%;padding:4px 6px;font-size:12px"></div>'
+      +'<button class="btn btn-moss btn-sm" style="color:#fff" onclick="event.stopPropagation();addDocPayment(\''+g.id+'\')">+ Додати оплату</button>'
+      +'</div>';
+  }
+  return html+'</div>';
+}
 
 function jBuyer(j){
   if(!j) return {};
@@ -3019,7 +3174,9 @@ function onBuyerChange(){
       +(b.edrpou?" <span style=\"color:var(--ash)\">· ЄДРПОУ: "+esc(b.edrpou)+"</span>":"")
       +(b.iban?"<div>IBAN: "+esc(b.iban)+"</div>":"")+(b.bank?"<div>Банк: "+esc(b.bank)+"</div>":"")
       +(b.address?"<div>"+esc(b.address)+"</div>":"")+(b.contract?"<div>Договір: "+esc(b.contract)+"</div>":"")
-      +"<div>Отримувач: "+esc(b.receiver||"—")+"</div></div>";
+      +"<div>Отримувач: "+esc(b.receiver||"—")+"</div>"
+      +(buyerDeal(b)?"<div style=\"margin-top:4px\"><strong>Умова:</strong> "+DEAL_LABELS[buyerDeal(b)]+" (ціна "+DEAL_PRICE_PCT[buyerDeal(b)]+"% від полиці)</div>":"")
+      +"</div>";
   }
 }
 function refreshPriceTypeBtns(){
@@ -3485,7 +3642,7 @@ function generate(){
 var priceLabel={
   "shelf":"Полиця (100%)",
   "real":"Реалізація (70%)",
-  "opt":"Викуп (60%)"
+  "opt":"Передоплата (60%)"
 }[getPriceType()]||"";
 
   // Check raw material availability (for invoices only)
@@ -3942,7 +4099,15 @@ function renderJournal(){
         +(j.note?'<div style="font-size:10.5px;color:var(--ink3);margin-top:1px;">📝 '+esc(j.note)+'</div>':"")
       +'</td>'
       +'<td class="jtd jtd-muted" style="text-align:center;font-family:ui-monospace,monospace;">'+j.items.length+'</td>'
-      +'<td class="jtd jtd-mono" style="text-align:right;white-space:nowrap;">'+fmt(j.total)+' ₴</td>'
+      +'<td class="jtd jtd-mono" style="text-align:right;white-space:nowrap;">'+fmt(j.total)+' ₴'
+        +(function(){
+          if(!docPayments(j).length) return "";
+          var out=docOutstanding(j);
+          return out>0
+            ?'<div style="font-size:10.5px;color:var(--cedar);font-weight:600" title="Оплачено частково">💳 '+fmt(docPaidSum(j))+' ₴</div>'
+            :'<div style="font-size:10.5px;color:#2e7d32;font-weight:600">💳 оплачено</div>';
+        })()
+      +'</td>'
       +'<td class="jtd"><span class="status-badge status-'+st+'" title="→ '+nextTxt
         +'" onclick="cycleJournalStatus(\''+j.id+'\',event)">'+stTxt+'</span></td>'
       +'<td class="jtd" style="text-align:right;">'
@@ -4039,7 +4204,8 @@ function openJournalItem(id){
       if(g.docType==="invoice"&&st!=="shipped") html+=' <button class="btn btn-sm" style="margin-left:8px;background:#e3f2fd;color:#1565c0;border:1px solid #90caf9" onclick="event.stopPropagation();setStatus(\''+g.id+'\',\'shipped\')">✓ Відвантажено</button>';
       html+='</div>';
       return html;
-    })();
+    })()
+    +docPaymentsHtml(g);
   document.getElementById("modal-journal").classList.add("open");
 }
 function deleteFromJournal(g){
@@ -5264,18 +5430,21 @@ function renderBuyersList(){
   var priceForBuyer=function(b){
     var n=(b.name||"").toLowerCase();
     if(n.indexOf("instagram")>=0||n.indexOf("сайт")>=0||n.indexOf("d2c")>=0) return "Полиця";
+    var d=buyerDeal(b);
+    if(d) return d==="consignment"?"Реалізація (70%)":"Передоплата (60%)";
     if(b.priceType) return b.priceType;
-    return "Опт";
+    return '<span style="color:var(--ink4)">не вказано</span>';
   };
   var el=document.getElementById("buyers-list");
   if(!buyers.length){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--ink3);">Немає покупців</div>';return;}
-  el.innerHTML='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:500px;"><thead><tr style="background:var(--surface2);"><th class="jth">Назва</th><th class="jth">ЄДРПОУ</th><th class="jth">Адреса</th><th class="jth">Цінова категорія</th><th class="jth" style="width:70px;"></th></tr></thead><tbody>'
+  el.innerHTML='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:640px;"><thead><tr style="background:var(--surface2);"><th class="jth">Назва</th><th class="jth">ЄДРПОУ</th><th class="jth">Адреса</th><th class="jth">Цінова категорія</th><th class="jth">Контакт і умови</th><th class="jth" style="width:70px;"></th></tr></thead><tbody>'
     +buyers.map(function(b){
       return '<tr class="jtr">'
         +'<td class="jtd"><div style="font-weight:600;">'+esc(b.name)+'</div>'+(b.fullName&&b.fullName!==b.name?'<div style="font-size:11px;color:var(--ink3);">'+esc(b.fullName)+'</div>':"")+'</td>'
         +'<td class="jtd jtd-muted" style="font-family:ui-monospace,monospace;">'+(b.edrpou||"—")+'</td>'
         +'<td class="jtd jtd-muted" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(b.address||"—")+'</td>'
         +'<td class="jtd">'+priceForBuyer(b)+'</td>'
+        +'<td class="jtd" style="font-size:11.5px;max-width:200px;">'+partnerSummaryHtml(b)+'</td>'
         +'<td class="jtd"><div style="display:flex;gap:3px;justify-content:flex-end;">'
           +'<button class="jact" title="Редагувати" onclick="showBuyerForm(\''+b.id+'\')">'
             +'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--pine)" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
@@ -5289,18 +5458,35 @@ function renderBuyersList(){
     +'</tbody></table></div>';
 }
 document.addEventListener("change",function(e){});
+function partnerSummaryHtml(b){
+  var contact=[];
+  if(b.contactName) contact.push(esc(b.contactName));
+  var ch=b.channel, handle="";
+  if(ch==="telegram"&&b.telegram) handle=b.telegram;
+  else if(ch==="instagram"&&b.instagram) handle=b.instagram;
+  else if((ch==="viber"||ch==="phone")&&b.phone) handle=b.phone;
+  else handle=b.telegram||b.phone||b.instagram||"";
+  if(handle) contact.push((ch&&CHANNEL_LABELS[ch]?CHANNEL_LABELS[ch]+": ":"")+esc(handle));
+  else if(ch&&CHANNEL_LABELS[ch]) contact.push(CHANNEL_LABELS[ch]);
+  var terms=[];
+  var d=buyerDeal(b);
+  if(d) terms.push(DEAL_LABELS[d]+" · "+DEAL_PRICE_PCT[d]+"%");
+  if(!contact.length&&!terms.length) return '<span style="color:var(--ink4)">— не заповнено</span>';
+  return (contact.length?'<div>'+contact.join(" · ")+'</div>':'')
+    +(terms.length?'<div style="color:var(--ink3)">'+terms.join(" · ")+'</div>':'');
+}
 function showBuyerForm(editId){
   document.getElementById("buyer-form-title").textContent=editId?"Редагувати покупця":"Новий покупець";
   document.getElementById("edit-buyer-id").value=editId||"";
   // Clear all fields first
-  ["name","fullName","edrpou","iban","bank","address","contract","receiver","retailname"].forEach(function(f){
+  ["name","fullName","edrpou","iban","bank","address","contract","receiver","retailname"].concat(BUYER_PARTNER_FIELDS).forEach(function(f){
     var el=document.getElementById("nb-"+f);if(el)el.value="";
   });
   // Pre-fill if editing
   if(editId){
     var b=buyers.find(function(x){return x.id===editId;});
     if(b){
-      var map=["name","fullName","edrpou","iban","bank","address","contract","receiver"];
+      var map=["name","fullName","edrpou","iban","bank","address","contract","receiver"].concat(BUYER_PARTNER_FIELDS);
       map.forEach(function(f){
         var el=document.getElementById("nb-"+f);
         if(el) el.value=(b[f]!=null?b[f]:"");
@@ -5340,6 +5526,13 @@ function saveBuyer(){
     isRetail:true, // all buyers are retail points
     retailName:retailName,
     custom:true};
+  BUYER_PARTNER_FIELDS.forEach(function(f){
+    var el=document.getElementById("nb-"+f); if(!el)return;
+    var v=el.value.trim();
+    if(BUYER_PARTNER_NUM[f]){ var n=parseFloat(String(v).replace(",",".")); data[f]=(v===""||isNaN(n))?null:n; }
+    else data[f]=v||null;
+  });
+
   if(editId){
     // Pin current values onto existing documents BEFORE overwriting the record,
     // so already-issued накладні keep the requisites they were printed with.
@@ -5347,6 +5540,9 @@ function saveBuyer(){
     var idx=buyers.findIndex(function(b){return b.id===editId;});if(idx>=0)buyers[idx]=Object.assign({},buyers[idx],data);
   }
   else buyers.push(data);
+  // Fields from an earlier draft of this form (commission %, payment term) are no longer used.
+  var _sb=buyers.find(function(b){return b.id===data.id;});
+  if(_sb){ delete _sb.commissionPct; delete _sb.paymentTermDays; }
   save();hideBuyerForm();renderBuyersList();renderBuyerSelect();
 }
 function deleteBuyer(id){
@@ -5535,7 +5731,95 @@ function deleteProduct(id){
 // ============================================================
 // SETTINGS
 // ============================================================
+// ── AI assistant server (/api on Vercel) ───────────────────
+// On Vercel the API is same-origin; elsewhere (GitHub Pages, local file) call the Vercel deployment.
+var AI_API_BASE=(/\.vercel\.app$/.test(location.hostname)||location.hostname==="localhost")?"":"https://atik-mgmt.vercel.app";
+function aiApi(path,body){
+  var headers={"Content-Type":"application/json"};
+  var tokenP=(cloudUser&&cloudUser.getIdToken)?cloudUser.getIdToken():Promise.resolve(null);
+  return tokenP.then(function(t){
+    if(body&&!t) throw new Error("Спочатку увійдіть через Google");
+    if(t) headers.Authorization="Bearer "+t;
+    return fetch(AI_API_BASE+path,body?{method:"POST",headers:headers,body:JSON.stringify(body)}:{headers:headers});
+  }).then(function(r){
+    return r.json().catch(function(){return {};}).then(function(j){
+      if(!r.ok) throw new Error(j.error||("Помилка сервера "+r.status));
+      return j;
+    });
+  });
+}
+function aiOut(html){ var el=document.getElementById("ai-check-out"); if(el) el.innerHTML=html; }
+function aiCheckServer(){
+  aiOut("Перевіряю…");
+  aiApi("/api/health").then(function(j){
+    var ok=j.anthropicKey&&j.allowedEmails>0;
+    aiOut((ok?'<span style="color:#2e7d32;font-weight:700">✓ Сервер готовий.</span> ':'<span style="color:var(--cedar);font-weight:700">Сервер працює, але не налаштований.</span> ')
+      +'Ключ Claude: '+(j.anthropicKey?"є":"<strong>немає</strong>")+' · дозволених email: '+(j.allowedEmails||"<strong>0</strong>"));
+  }).catch(function(e){ aiOut('<span style="color:var(--red)">'+esc(e.message||String(e))+'</span>'); });
+}
+// Sends a made-up report for a point with stock on its shelf (or a sample shelf) and shows what Claude extracted.
+function aiTestReport(){
+  var bid=Object.keys(retailStock).find(function(k){return Object.keys(retailStock[k]||{}).length;});
+  var b=bid&&buyers.find(function(x){return x.id===bid;});
+  var shelf=bid?Object.keys(retailStock[bid]).map(function(pid){return {productId:pid,name:retailStock[bid][pid].name,qty:retailStock[bid][pid].qty};})
+    :products.slice(0,6).map(function(p){return {productId:p.id,name:p.name,qty:5};});
+  var sample=shelf.slice(0,3).map(function(p,i){return shortName(p.name).toLowerCase()+" — продано "+(i+1);}).join("\n")+"\nсвічка соєва — 2";
+  aiOut("Надсилаю тестовий звіт…<br><pre style='white-space:pre-wrap;margin:4px 0'>"+esc(sample)+"</pre>");
+  aiApi("/api/parse-sales-report",{pointName:b?(b.retailName||b.name):"Тестова точка",shelf:shelf,report:{type:"text",text:sample}}).then(function(j){
+    var rows=(j.items||[]).map(function(it){return "<li>"+esc(shortName(it.name))+": <strong>"+it.sold+"</strong> шт."+(it.confidence==="low"?" (не впевнено)":"")+"</li>";}).join("");
+    var un=(j.unmatched||[]).map(function(u){return "<li>"+esc(u.reportedName)+": "+u.sold+"</li>";}).join("");
+    aiOut('<span style="color:#2e7d32;font-weight:700">✓ AI відповів.</span><ul style="margin:4px 0 4px 18px">'+(rows||"<li>нічого не знайдено</li>")+"</ul>"
+      +(un?'Не розпізнано:<ul style="margin:4px 0 4px 18px">'+un+"</ul>":"")
+      +(j.notes?"Примітка: "+esc(j.notes)+"<br>":"")
+      +(j.usage?'<span style="color:var(--ink4)">'+j.usage.input_tokens+" + "+j.usage.output_tokens+" токенів</span>":""));
+  }).catch(function(e){ aiOut('<span style="color:var(--red)">'+esc(e.message||String(e))+'</span>'); });
+}
+
+var DEFAULT_SALES_GOAL={amount:200000,period:"month",basis:"paid"};
+function getSalesGoal(){ return Object.assign({},DEFAULT_SALES_GOAL,settings.salesGoal||{}); }
+function goalPeriodRange(period,now){
+  now=now||new Date();
+  var y=now.getFullYear(), m=now.getMonth(), from, to;
+  if(period==="year"){ from=new Date(y,0,1); to=new Date(y+1,0,1); }
+  else if(period==="quarter"){ var q=Math.floor(m/3)*3; from=new Date(y,q,1); to=new Date(y,q+3,1); }
+  else { from=new Date(y,m,1); to=new Date(y,m+1,1); }
+  function iso(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+  return {from:iso(from), to:iso(to)}; // [from, to)
+}
+// Progress toward the goal for the current period.
+// paid: payments dated in the period (+ legacy "оплачено" рахунки without records, by document date).
+// issued: totals of накладні dated in the period.
+function salesGoalProgress(){
+  var g=getSalesGoal(), r=goalPeriodRange(g.period), sum=0;
+  function inR(d){ return d&&d>=r.from&&d<r.to; }
+  journal.forEach(function(j){
+    if(g.basis==="issued"){ if(j.docType==="invoice"&&inR(j.invoiceDate)) sum+=j.total||0; return; }
+    var p=docPayments(j);
+    if(p.length) p.forEach(function(x){ if(inR(x.date)) sum+=parseFloat(x.amount)||0; });
+    else if(j.status==="paid"&&inR(j.invoiceDate)) sum+=j.total||0;
+  });
+  return {goal:g, range:r, done:Math.round(sum)};
+}
+function renderGoalSettings(){
+  var g=getSalesGoal();
+  var a=document.getElementById("goal-amount"), p=document.getElementById("goal-period"), b=document.getElementById("goal-basis");
+  if(!a) return;
+  a.value=g.amount; p.value=g.period; b.value=g.basis;
+  var pr=salesGoalProgress(), pct=g.amount>0?Math.min(100,Math.round(pr.done/g.amount*100)):0;
+  var el=document.getElementById("goal-preview");
+  if(el) el.innerHTML='Зараз: <strong style="color:var(--ink)">'+fmt(pr.done)+' ₴</strong> з '+fmt(g.amount)+' ₴ ('+pct+'%) · з '+pr.range.from;
+}
+function saveSalesGoal(){
+  var amt=parseFloat(document.getElementById("goal-amount").value);
+  settings.salesGoal={
+    amount:(amt>=0?amt:DEFAULT_SALES_GOAL.amount),
+    period:document.getElementById("goal-period").value||"month",
+    basis:document.getElementById("goal-basis").value||"paid"
+  };
+  save(); renderGoalSettings();
+}
 function loadSettings(){
+  renderGoalSettings();
   var cb = document.getElementById("setting-autoincrement");
   if(cb) cb.checked = settings.autoincrement;
   var tog = document.getElementById('toggle-autoincrement');
