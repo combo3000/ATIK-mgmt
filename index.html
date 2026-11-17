@@ -3739,7 +3739,7 @@ var priceLabel={
     var shortages=[];
     filled.forEach(function(i){
       var p=products.find(function(x){return x.id===i.productId;});
-      var group=p&&p.group||"other";
+      var group=bomGroupOf(p);
       var bom=bomData[group]||DEFAULT_BOM[group]||{};
       var aromaId=PRODUCT_AROMA[i.productId];
       var sticksNeeded=(bom.sticks||0)*i.qty;
@@ -4476,6 +4476,8 @@ function receiveGoods(){
 // ledger (optional) receives the AMOUNTS ACTUALLY TAKEN, keyed by rawStock key.
 // Stock may be short, so "needed" and "taken" are not the same number — only
 // what was really removed may ever be returned.
+// Paper packs of 10 share the "refill" group with packs of 20 but have their own recipe (10 sticks).
+function bomGroupOf(p){ var g=p&&p.group||"other"; return (g==="refill"&&+p.pack===10)?"refill10":g; }
 function deductRawForItems(invoiceItems, ledger){
   var sticksPerKg=2000;
   function note(k,qty,sticks){
@@ -4486,7 +4488,7 @@ function deductRawForItems(invoiceItems, ledger){
   invoiceItems.forEach(function(it){
     var p=products.find(function(x){return x.id===it.id;});
     if(!p) return;
-    var group=p.group||"other";
+    var group=bomGroupOf(p);
     var bom=bomData[group]||DEFAULT_BOM[group]||{};
     var sticksNeeded=(bom.sticks||0)*it.qty;
     var tubesNeeded=(bom.tubes||0)*it.qty;
@@ -4671,7 +4673,7 @@ function openAromaModal(aromaId){
   journal.filter(function(j){return j.docType==="invoice";}).forEach(function(j){
     j.items.forEach(function(it){
       if(PRODUCT_AROMA[it.id]!==aromaId)return;
-      var pg=products.find(function(x){return x.id===it.id;}),grp=pg&&pg.group||"other";
+      var pg=products.find(function(x){return x.id===it.id;}),grp=bomGroupOf(pg);
       var bom=(bomData[grp]||DEFAULT_BOM[grp]||{}),su=(bom.sticks||0)*it.qty;
       if(su>0)outgoing.push({date:j.invoiceDate,doc:"Накладна "+j.invoiceNum,buyer:jBuyerName(j),product:it.name,qty:it.qty,sticks:su});
     });
@@ -5216,37 +5218,12 @@ function createBillFromSalesReport(reportId){
   addToast("Рахунок на продане за "+r.month+" підготовлено","success","Перевірте і натисніть «Згенерувати»"+(missing.length?". Не в каталозі: "+missing.join(", "):""));
 }
 
-// ── Накладна на поповнення в один клік ─────────────────────
-// Consignment points: the restock suggestion from the Partners table (top up to ~1.5 months of sales).
-// Prepay points, or nothing to suggest: repeat the last накладна.
-function restockLinesFor(b){
-  var x=partnerStats(b,null);
-  var inCat=function(pid){ return products.some(function(p){return p.id===pid;}); };
-  var lines=x.restock.filter(function(r){return inCat(r.productId);}).map(function(r){return {productId:r.productId,qty:r.suggest};});
-  if(lines.length) return {lines:lines,source:"restock"};
-  if(x.lastInvoice){
-    lines=(x.lastInvoice.items||[]).filter(function(it){return inCat(it.id)&&it.qty>0;}).map(function(it){return {productId:it.id,qty:it.qty};});
-    if(lines.length) return {lines:lines,source:"last",from:x.lastInvoice};
-  }
-  return null;
-}
+// ── Накладна на поповнення ──────────────────────────────────
+// Points choose what they reorder, so the накладна opens empty: the point, number, date and
+// the point's prices are set, the items are added by a person. The "що дозамовити" hint stays in the table.
 function createRestockInvoice(buyerId){
-  var b=buyers.find(function(x){return x.id===buyerId;}); if(!b) return;
-  var r=restockLinesFor(b);
-  if(!r){ alert("Немає даних для поповнення: у точки ще не було ні звітів продажів, ні накладних."); return; }
   ["modal-ptodo","modal-retail-detail"].forEach(function(id){ var e=document.getElementById(id); if(e) e.remove(); });
-  switchTab("docs"); switchDocsSub("form");
-  renderBuyerSelect();
-  var sel=document.getElementById("buyer-select"); sel.value=b.id; onBuyerChange();
-  var dtEl=document.querySelector('input[name="doctype"][value="invoice"]'); if(dtEl) dtEl.checked=true;
-  var ptEl=document.querySelector('input[name="pricetype"][value="'+(buyerDeal(b)==="prepay"?"opt":"real")+'"]'); if(ptEl) ptEl.checked=true;
-  document.getElementById("inv-num").value=nextInvoiceNum();
-  document.getElementById("inv-date").value=todayISO();
-  items=r.lines.map(function(l){ return {id:Date.now()+Math.random(),productId:l.productId,qty:l.qty,customPrice:"",baseShelf:lastShelfPriceFor(b.id,l.productId)}; });
-  onDocTypeChange(); refreshPriceTypeBtns(); renderItems();
-  addToast("Накладну на поповнення підготовлено","success",
-    (r.source==="restock"?"За продажами точки: довезти до ~1,5 місяця запасу. ":"Як остання накладна №"+(r.from.invoiceNum||"")+" від "+formatDate(r.from.invoiceDate)+". ")
-    +"Перевірте кількості і натисніть «Згенерувати»");
+  openDocDraft(buyerId,"invoice",[]);
 }
 
 // ── Акт звірки ──────────────────────────────────────────────
@@ -6862,7 +6839,7 @@ function rawUsageKg(days){
     if(j.docType!=="invoice"||String(j.invoiceDate||"")<from) return;
     (j.items||[]).forEach(function(it){
       var a=PRODUCT_AROMA[it.id]; if(!a) return;
-      var p=products.find(function(x){return x.id===it.id;}), g=p&&p.group||"other";
+      var p=products.find(function(x){return x.id===it.id;}), g=bomGroupOf(p);
       var bom=bomData[g]||DEFAULT_BOM[g]||{};
       use[a]=(use[a]||0)+(bom.sticks||0)*(it.qty||0)/2000;
     });
@@ -7805,13 +7782,10 @@ var ASST_TOOLS={
       var p=products.find(function(x){return x.id===it.product_id;}), q=parseInt(it.qty,10);
       if(!p||!(q>0)) bad.push(it.product_id); else lines.push({p:p,qty:q});
     });
-    if(bad.length||!lines.length) return {error:"Невідомі товари або кількість: "+bad.join(", ")+". Знайди точні id через list_products або перепитай людину."};
-    var label=(type==="bill"?"🧾 Чернетка рахунку: ":"📦 Чернетка накладної: ")+(b.retailName||b.name)+" ("+lines.map(function(l){return shortName(l.p.name)+" × "+l.qty;}).join(", ")+")";
+    if(bad.length) return {error:"Невідомі товари або кількість: "+bad.join(", ")+". Знайди точні id через list_products або перепитай людину."};
+    var label=(type==="bill"?"🧾 Чернетка рахунку: ":"📦 Чернетка накладної: ")+(b.retailName||b.name)+(lines.length?" ("+lines.map(function(l){return shortName(l.p.name)+" × "+l.qty;}).join(", ")+")":" (без позицій)");
     return {action:{label:label,run:function(){ asstClose(); openDocDraft(b.id,type,lines.map(function(l){return {productId:l.p.id,qty:l.qty};})); }}};
   },
-  propose_restock_invoice:function(i){ var f=asstFindPoint(i.point); if(!f.b) return f; var b=f.b;
-    if(!restockLinesFor(b)) return {error:"Для «"+(b.retailName||b.name)+"» немає даних для поповнення: ні звітів, ні накладних"};
-    return {action:{label:"📦 Чернетка накладної: "+(b.retailName||b.name),run:function(){ asstClose(); createRestockInvoice(b.id); }}}; },
   propose_partner_message:function(i){ var f=asstFindPoint(i.point); if(!f.b) return f; var b=f.b;
     return {action:{label:"✍️ Написати: "+(b.retailName||b.name),run:function(){ asstClose(); openPartnerMessage(b.id,i.purpose||undefined); }}}; },
   propose_reconciliation_act:function(i){ var f=asstFindPoint(i.point); if(!f.b) return f; var b=f.b;
@@ -7830,9 +7804,12 @@ function openDocDraft(buyerId,docType,lines){
   if(!b.isD2C){ var term=buyerDeal(b)||partnerTermFor(b); var ptEl=document.querySelector('input[name="pricetype"][value="'+(term==="prepay"?"opt":"real")+'"]'); if(ptEl) ptEl.checked=true; }
   document.getElementById("inv-num").value=nextInvoiceNum();
   document.getElementById("inv-date").value=todayISO();
-  items=lines.map(function(l){ return {id:Date.now()+Math.random(),productId:l.productId,qty:l.qty,customPrice:"",baseShelf:lastShelfPriceFor(b.id,l.productId)}; });
+  // New deliveries go at today's catalog prices. Only a consignment bill (for goods already on the shelf)
+  // keeps the shelf price they were delivered at.
+  var keepOld=docType==="bill"&&!b.isD2C&&(buyerDeal(b)||partnerTermFor(b))!=="prepay";
+  items=lines.map(function(l){ return {id:Date.now()+Math.random(),productId:l.productId,qty:l.qty,customPrice:"",baseShelf:keepOld?lastShelfPriceFor(b.id,l.productId):null}; });
   onDocTypeChange(); refreshPriceTypeBtns(); renderItems();
-  addToast((docType==="bill"?"Чернетка рахунку":"Чернетка накладної")+" для «"+(b.retailName||b.name)+"»","success","Перевірте позиції й ціни і натисніть «Згенерувати»");
+  addToast((docType==="bill"?"Чернетка рахунку":"Чернетка накладної")+" для «"+(b.retailName||b.name)+"»","success",lines.length?"Перевірте позиції й ціни і натисніть «Згенерувати»":"Додайте позиції, які замовила точка, і натисніть «Згенерувати»");
 }
 function asstRunTool(name,input){ var f=ASST_TOOLS[name]; if(!f) return {error:"Невідомий інструмент"}; return f(input); }
 
@@ -8355,13 +8332,12 @@ function _doInvoiceFromOrder(orderId,buyerId){
     var p=products.find(function(x){return x.id===it.id;});
     if(p)items.push({id:Date.now()+Math.random(),productId:it.id,qty:it.qty,customPrice:"",baseShelf:(it.price>0?it.price:null)});
   });
-  // Order from a point's personal link: same setup as «Накладна на поповнення» (its deal, its shelf prices).
+  // Order from a point's personal link: invoice at the point's deal, today's catalog prices.
   if(orderPointBuyer(o)&&orderPointBuyer(o).id===buyer.id){
     var dtEl=document.querySelector('input[name="doctype"][value="invoice"]'); if(dtEl) dtEl.checked=true;
     var ptEl=document.querySelector('input[name="pricetype"][value="'+((buyerDeal(buyer)||partnerTermFor(buyer))==="prepay"?"opt":"real")+'"]'); if(ptEl) ptEl.checked=true;
     var ne=document.getElementById("inv-num"); if(ne) ne.value=nextInvoiceNum();
     var de=document.getElementById("inv-date"); if(de) de.value=todayISO();
-    items.forEach(function(x){ var sp=lastShelfPriceFor(buyer.id,x.productId); if(sp) x.baseShelf=sp; });
     onDocTypeChange(); refreshPriceTypeBtns();
     addToast("Чернетка накладної для «"+(buyer.retailName||buyer.name)+"»","success","З її замовлення за посиланням. Перевірте й натисніть «Згенерувати»");
   }

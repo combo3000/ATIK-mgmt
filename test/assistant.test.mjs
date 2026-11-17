@@ -63,6 +63,7 @@ test("document draft tools are offered and propose_document needs exact items", 
   const names = TOOLS.map((t) => t.name);
   assert.ok(names.includes("list_products"));
   assert.ok(names.includes("propose_document"));
+  assert.ok(!names.includes("propose_restock_invoice"), "no auto-filled restock накладна");
   const pd = TOOLS.find((t) => t.name === "propose_document");
   assert.deepEqual(pd.input_schema.required.slice().sort(), ["doc_type", "items", "point"]);
 });
