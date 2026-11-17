@@ -7690,6 +7690,19 @@ function asstFindPoint(q){
   if(!hit.length) return {error:"Точку «"+q+"» не знайдено",points:buyers.filter(isPartnerPoint).map(function(b){return b.retailName||b.name;})};
   return {error:"Кілька точок підходять",candidates:hit.map(function(b){return b.retailName||b.name;})};
 }
+// Period for assistant tools: from/to (YYYY-MM or YYYY-MM-DD, inclusive) wins over the quick period.
+function asstRange(i){
+  var norm=function(v,end){ v=String(v||"").trim(); if(/^\d{4}-\d{2}$/.test(v)) return end?v+"-31":v+"-01"; return /^\d{4}-\d{2}-\d{2}$/.test(v)?v:""; };
+  var f=norm(i.from,false), t=norm(i.to,true);
+  if(!f&&!t) return null;
+  return {from:f||"0000-01-01",to:t||"9999-12-31",fromM:(f||"0000-01").slice(0,7),toM:(t||"9999-12").slice(0,7)};
+}
+function asstDocs(i){
+  var r=asstRange(i);
+  if(!r) return filterByPeriod(journal,i.period||"all");
+  return journal.filter(function(j){ var d=String(j.invoiceDate||""); return d>=r.from&&d<=r.to; });
+}
+function asstPeriodLabel(i){ var r=asstRange(i); return r?(r.from.replace("0000-01-01","…")+" — "+r.to.replace("9999-12-31","…")):(i.period||"all"); }
 function asstDocRow(j){ return {type:j.docType==="bill"?"рахунок":"накладна",num:j.invoiceNum||"",date:j.invoiceDate||"",buyer:jBuyerName(j),total:Math.round(j.total||0),
   outstanding:j.docType==="bill"?Math.round(docOutstanding(j)):undefined,status:j.status||""}; }
 var ASST_TOOLS={
@@ -7708,7 +7721,8 @@ var ASST_TOOLS={
   get_point:function(i){
     var f=asstFindPoint(i.point); if(!f.b) return f;
     var b=f.b, x=partnerStats(b,networkBestSellers());
-    var reps=salesReports.filter(function(r){return r.buyerId===b.id;}).sort(function(a,c){return String(c.month).localeCompare(String(a.month));}).slice(0,6);
+    var rg=asstRange(i);
+    var reps=salesReports.filter(function(r){return r.buyerId===b.id&&(!rg||(r.month>=rg.fromM&&r.month<=rg.toM));}).sort(function(a,c){return String(c.month).localeCompare(String(a.month));}).slice(0,12);
     var docs=journal.filter(function(j){return jBuyerId(j)===b.id;}).sort(function(a,c){return String(c.invoiceDate||"").localeCompare(String(a.invoiceDate||""));});
     return {point:x.name,legalName:b.fullName||b.name,term:DEAL_LABELS[x.term],contact:{name:b.contactName||"",phone:b.phone||"",telegram:b.telegram||"",instagram:b.instagram||""},
       shelf:Object.keys(x.shelf).map(function(k){return {product:shortName(x.shelf[k].name||k),qty:x.shelf[k].qty};}),
@@ -7719,13 +7733,19 @@ var ASST_TOOLS={
       restock:x.restock,notSelling:x.still,tryNew:x.tryNew.map(function(n){return n.name;}),todo:x.flags.map(function(f){return f.text;})};
   },
   get_sales:function(i){
-    var list=filterByPeriod(journal,i.period||"month").filter(function(j){return j.docType==="invoice"&&j.status==="shipped";}), m={};
+    if(!i.period&&!asstRange(i)) i.period="month";
+    var list=asstDocs(i).filter(function(j){return j.docType==="invoice"&&j.status==="shipped";}), m={};
     list.forEach(function(j){ (j.items||[]).forEach(function(it){
-      var k=i.group_by==="buyer"?jBuyerName(j):shortName(it.name||""); if(!m[k]) m[k]={qty:0,sum:0};
-      m[k].qty+=it.qty||0; m[k].sum+=itemSum(it);
+      var k=i.group_by==="buyer"?jBuyerName(j):i.group_by==="month"?String(j.invoiceDate||"").slice(0,7):shortName(it.name||""); if(!m[k]) m[k]={qty:0,sum:0,docs:{}};
+      m[k].qty+=it.qty||0; m[k].sum+=itemSum(it); m[k].docs[j.id]=1;
     });});
-    var rows=Object.keys(m).map(function(k){return {name:k,qty:m[k].qty,sum:Math.round(m[k].sum)};}).sort(function(a,b){return b.sum-a.sum;});
-    return {period:i.period,invoices:list.length,total:Math.round(list.reduce(function(s,j){return s+(j.total||0);},0)),rows:rows.slice(0,40)};
+    // Months without sales still appear (as 0) so months can be compared
+    var rg=asstRange(i);
+    if(i.group_by==="month"&&rg&&rg.fromM>"1900"){ var endM=rg.toM>"9000"?curYM():rg.toM; for(var mm=rg.fromM, guard=0; mm<=endM&&guard<60; mm=ymShift(mm,1), guard++) if(!m[mm]) m[mm]={qty:0,sum:0,docs:{}}; }
+    var rows=Object.keys(m).map(function(k){return {name:k,qty:m[k].qty,sum:Math.round(m[k].sum),invoices:Object.keys(m[k].docs).length};});
+    rows.sort(i.group_by==="month"?function(a,b){return a.name.localeCompare(b.name);}:function(a,b){return b.sum-a.sum;});
+    return {period:asstPeriodLabel(i),invoices:list.length,total:Math.round(list.reduce(function(s,j){return s+(j.total||0);},0)),rows:rows.slice(0,60),
+      note:list.length?undefined:"За цей період відвантажених накладних немає"};
   },
   get_stock:function(){
     var wh=Object.keys(warehouseStock).filter(function(k){return (warehouseStock[k].qty||0)>0;}).map(function(k){var p=products.find(function(x){return x.id===k;});return {product:shortName((p&&p.name)||warehouseStock[k].name||k),qty:warehouseStock[k].qty};}).sort(function(a,b){return b.qty-a.qty;});
@@ -7734,12 +7754,18 @@ var ASST_TOOLS={
     return {warehouse:wh,rawSticks:raw,supplierOrders:fc.orders.map(function(o){return {supplier:o.supplier,orderBy:o.orderBy,now:o.now,totalKg:o.totalKg,items:o.items.map(function(i){return i.name+" "+i.kg+" кг";})};})};
   },
   get_abc:function(i){
-    var a=abcData(i.period||"quarter",i.basis||"revenue");
+    var r=asstRange(i), a;
+    if(r){
+      var cur=curYM(), fm=r.fromM<"1900"?String((journal.map(function(j){return String(j.invoiceDate||"").slice(0,7);}).filter(Boolean).sort()[0])||cur):r.fromM, tm=r.toM>"9000"?cur:r.toM;
+      a=abcAnalysis({products:products,invoices:asstDocs(i).filter(function(j){return j.docType==="invoice"&&j.status==="shipped";}),
+        reports:salesReports.filter(function(x){return x.month>=fm&&x.month<=tm;}),retailStock:retailStock,warehouseStock:warehouseStock,
+        months:Math.max(1,ymDiff(fm,tm)+1),basis:i.basis||"revenue",nameOf:function(n){return shortName(String(n||""));}});
+    } else a=abcData(i.period||"quarter",i.basis||"revenue");
     return {basis:a.basis,total:Math.round(a.total),summary:a.summary,rows:a.rows.slice(0,40).map(function(r){return {cls:r.cls,product:r.name,revenue:r.revenue,soldInPoints:r.sold,sharePct:Math.round(r.share*10)/10,warehouse:r.warehouse,points:r.points,tips:r.tips.map(function(t){return t.text;})};}),
       idle:a.idle.map(function(r){return {product:r.name,warehouse:r.warehouse,points:r.points};})};
   },
   find_documents:function(i){
-    var list=filterByPeriod(journal,i.period||"all");
+    var list=asstDocs(i);
     if(i.doc_type&&i.doc_type!=="any") list=list.filter(function(j){return j.docType===i.doc_type;});
     if(i.unpaid_only) list=list.filter(function(j){return j.docType==="bill"&&docOutstanding(j)>0;});
     if(i.buyer){ var f=asstFindPoint(i.buyer); if(f.b) list=list.filter(function(j){return jBuyerId(j)===f.b.id;}); else { var q=String(i.buyer).toLowerCase(); list=list.filter(function(j){return jBuyerName(j).toLowerCase().indexOf(q)>=0;}); } }
