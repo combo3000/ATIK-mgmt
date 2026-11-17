@@ -31,6 +31,11 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
+  // Серверні функції (/api/…) і будь-які не-GET запити — завжди пряма мережа, без кешу
+  if (event.request.method !== 'GET' || url.pathname.startsWith('/api/')) {
+    return;
+  }
+
   // Firebase / Google APIs — завжди пряма мережа, без кешу
   if (
     url.hostname.includes('googleapis.com') ||

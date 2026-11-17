@@ -43,3 +43,14 @@ service cloud.firestore {
 
 ## Важливо
 Зараз це **один спільний файл-стан** для двох людей. Це найпростіший і правильний старт. Коли захочете, можна буде рознести дані по колекціях: `buyers`, `products`, `journal`, `stock` — але на старті це не потрібно.
+
+## AI-асистент (сервер на Vercel)
+Серверні функції лежать у папці `api/` і працюють тільки на Vercel (на GitHub Pages їх немає, тому додаток звертається до `https://atik-mgmt.vercel.app`).
+
+Змінні середовища у Vercel → Project `atik-mgmt` → Settings → Environment Variables:
+- `ANTHROPIC_API_KEY` — ключ Claude API з https://console.anthropic.com (Settings → API Keys).
+- `ALLOWED_EMAILS` — через кому Google-адреси, яким дозволено користуватися AI (наприклад `you@gmail.com,wife@gmail.com`). Без цієї змінної AI вимкнено.
+- `CLAUDE_MODEL` — необов'язково, за замовчуванням `claude-opus-5-5`.
+
+Після зміни змінних потрібен Redeploy. Перевірка: Налаштування → AI-асистент → «Перевірити підключення».
+Тести сервера: `npm install && npm test`.

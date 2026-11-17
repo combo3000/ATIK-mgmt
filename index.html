@@ -1461,6 +1461,16 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <div id="goal-preview" style="padding:0 14px 12px;font-size:12px;color:var(--ink3);"></div>
   </div>
 
+  <!-- AI assistant (server check) -->
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:14px;box-shadow:var(--shadow);">
+    <div style="padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em;">AI-асистент</div>
+    <div style="padding:12px 14px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-gray btn-sm" onclick="aiCheckServer()">Перевірити підключення</button>
+      <button class="btn btn-gray btn-sm" onclick="aiTestReport()">Тест: розібрати звіт</button>
+    </div>
+    <div id="ai-check-out" style="padding:0 14px 12px;font-size:12px;color:var(--ink3);"></div>
+  </div>
+
   <!-- Auto-increment + other -->
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:14px;box-shadow:var(--shadow);">
     <div style="padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em;">Документи</div>
@@ -5721,6 +5731,50 @@ function deleteProduct(id){
 // ============================================================
 // SETTINGS
 // ============================================================
+// ── AI assistant server (/api on Vercel) ───────────────────
+// On Vercel the API is same-origin; elsewhere (GitHub Pages, local file) call the Vercel deployment.
+var AI_API_BASE=(/\.vercel\.app$/.test(location.hostname)||location.hostname==="localhost")?"":"https://atik-mgmt.vercel.app";
+function aiApi(path,body){
+  var headers={"Content-Type":"application/json"};
+  var tokenP=(cloudUser&&cloudUser.getIdToken)?cloudUser.getIdToken():Promise.resolve(null);
+  return tokenP.then(function(t){
+    if(body&&!t) throw new Error("Спочатку увійдіть через Google");
+    if(t) headers.Authorization="Bearer "+t;
+    return fetch(AI_API_BASE+path,body?{method:"POST",headers:headers,body:JSON.stringify(body)}:{headers:headers});
+  }).then(function(r){
+    return r.json().catch(function(){return {};}).then(function(j){
+      if(!r.ok) throw new Error(j.error||("Помилка сервера "+r.status));
+      return j;
+    });
+  });
+}
+function aiOut(html){ var el=document.getElementById("ai-check-out"); if(el) el.innerHTML=html; }
+function aiCheckServer(){
+  aiOut("Перевіряю…");
+  aiApi("/api/health").then(function(j){
+    var ok=j.anthropicKey&&j.allowedEmails>0;
+    aiOut((ok?'<span style="color:#2e7d32;font-weight:700">✓ Сервер готовий.</span> ':'<span style="color:var(--cedar);font-weight:700">Сервер працює, але не налаштований.</span> ')
+      +'Ключ Claude: '+(j.anthropicKey?"є":"<strong>немає</strong>")+' · дозволених email: '+(j.allowedEmails||"<strong>0</strong>"));
+  }).catch(function(e){ aiOut('<span style="color:var(--red)">'+esc(e.message||String(e))+'</span>'); });
+}
+// Sends a made-up report for a point with stock on its shelf (or a sample shelf) and shows what Claude extracted.
+function aiTestReport(){
+  var bid=Object.keys(retailStock).find(function(k){return Object.keys(retailStock[k]||{}).length;});
+  var b=bid&&buyers.find(function(x){return x.id===bid;});
+  var shelf=bid?Object.keys(retailStock[bid]).map(function(pid){return {productId:pid,name:retailStock[bid][pid].name,qty:retailStock[bid][pid].qty};})
+    :products.slice(0,6).map(function(p){return {productId:p.id,name:p.name,qty:5};});
+  var sample=shelf.slice(0,3).map(function(p,i){return shortName(p.name).toLowerCase()+" — продано "+(i+1);}).join("\n")+"\nсвічка соєва — 2";
+  aiOut("Надсилаю тестовий звіт…<br><pre style='white-space:pre-wrap;margin:4px 0'>"+esc(sample)+"</pre>");
+  aiApi("/api/parse-sales-report",{pointName:b?(b.retailName||b.name):"Тестова точка",shelf:shelf,report:{type:"text",text:sample}}).then(function(j){
+    var rows=(j.items||[]).map(function(it){return "<li>"+esc(shortName(it.name))+": <strong>"+it.sold+"</strong> шт."+(it.confidence==="low"?" (не впевнено)":"")+"</li>";}).join("");
+    var un=(j.unmatched||[]).map(function(u){return "<li>"+esc(u.reportedName)+": "+u.sold+"</li>";}).join("");
+    aiOut('<span style="color:#2e7d32;font-weight:700">✓ AI відповів.</span><ul style="margin:4px 0 4px 18px">'+(rows||"<li>нічого не знайдено</li>")+"</ul>"
+      +(un?'Не розпізнано:<ul style="margin:4px 0 4px 18px">'+un+"</ul>":"")
+      +(j.notes?"Примітка: "+esc(j.notes)+"<br>":"")
+      +(j.usage?'<span style="color:var(--ink4)">'+j.usage.input_tokens+" + "+j.usage.output_tokens+" токенів</span>":""));
+  }).catch(function(e){ aiOut('<span style="color:var(--red)">'+esc(e.message||String(e))+'</span>'); });
+}
+
 var DEFAULT_SALES_GOAL={amount:200000,period:"month",basis:"paid"};
 function getSalesGoal(){ return Object.assign({},DEFAULT_SALES_GOAL,settings.salesGoal||{}); }
 function goalPeriodRange(period,now){
