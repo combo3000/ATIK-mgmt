@@ -4884,7 +4884,10 @@ function openRetailDetailModal(buyerId, editMode){
     +(b.custom
       ? '<button class="btn btn-danger btn-sm" onclick="confirmDeleteRetailPoint(\''+buyerId+'\')">🗑 Видалити точку</button>'
       : '<div></div>')
-    +'<button class="btn btn-gray btn-sm" onclick="document.getElementById(\'modal-retail-detail\').remove()">Закрити</button>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+      +'<button class="btn btn-gray btn-sm" onclick="createRestockInvoice(\''+buyerId+'\')">📦 Накладна на поповнення</button>'
+      +'<button class="btn btn-gray btn-sm" onclick="openReconAct(\''+buyerId+'\')">📄 Акт звірки</button>'
+      +'<button class="btn btn-gray btn-sm" onclick="document.getElementById(\'modal-retail-detail\').remove()">Закрити</button></div>'
     +'</div>'
     +'</div>';
   document.body.appendChild(m);
@@ -5177,6 +5180,155 @@ function createBillFromSalesReport(reportId){
   onDocTypeChange(); refreshPriceTypeBtns(); renderItems();
   pendingSalesBill={reportId:r.id,buyerId:b.id};
   addToast("Рахунок на продане за "+r.month+" підготовлено","success","Перевірте і натисніть «Згенерувати»"+(missing.length?". Не в каталозі: "+missing.join(", "):""));
+}
+
+// ── Накладна на поповнення в один клік ─────────────────────
+// Consignment points: the restock suggestion from the Partners table (top up to ~1.5 months of sales).
+// Prepay points, or nothing to suggest: repeat the last накладна.
+function restockLinesFor(b){
+  var x=partnerStats(b,null);
+  var inCat=function(pid){ return products.some(function(p){return p.id===pid;}); };
+  var lines=x.restock.filter(function(r){return inCat(r.productId);}).map(function(r){return {productId:r.productId,qty:r.suggest};});
+  if(lines.length) return {lines:lines,source:"restock"};
+  if(x.lastInvoice){
+    lines=(x.lastInvoice.items||[]).filter(function(it){return inCat(it.id)&&it.qty>0;}).map(function(it){return {productId:it.id,qty:it.qty};});
+    if(lines.length) return {lines:lines,source:"last",from:x.lastInvoice};
+  }
+  return null;
+}
+function createRestockInvoice(buyerId){
+  var b=buyers.find(function(x){return x.id===buyerId;}); if(!b) return;
+  var r=restockLinesFor(b);
+  if(!r){ alert("Немає даних для поповнення: у точки ще не було ні звітів продажів, ні накладних."); return; }
+  ["modal-ptodo","modal-retail-detail"].forEach(function(id){ var e=document.getElementById(id); if(e) e.remove(); });
+  switchTab("docs"); switchDocsSub("form");
+  renderBuyerSelect();
+  var sel=document.getElementById("buyer-select"); sel.value=b.id; onBuyerChange();
+  var dtEl=document.querySelector('input[name="doctype"][value="invoice"]'); if(dtEl) dtEl.checked=true;
+  var ptEl=document.querySelector('input[name="pricetype"][value="'+(buyerDeal(b)==="prepay"?"opt":"real")+'"]'); if(ptEl) ptEl.checked=true;
+  document.getElementById("inv-num").value=nextInvoiceNum();
+  document.getElementById("inv-date").value=todayISO();
+  items=r.lines.map(function(l){ return {id:Date.now()+Math.random(),productId:l.productId,qty:l.qty,customPrice:"",baseShelf:lastShelfPriceFor(b.id,l.productId)}; });
+  onDocTypeChange(); refreshPriceTypeBtns(); renderItems();
+  addToast("Накладну на поповнення підготовлено","success",
+    (r.source==="restock"?"За продажами точки: довезти до ~1,5 місяця запасу. ":"Як остання накладна №"+(r.from.invoiceNum||"")+" від "+formatDate(r.from.invoiceDate)+". ")
+    +"Перевірте кількості і натисніть «Згенерувати»");
+}
+
+// ── Акт звірки ──────────────────────────────────────────────
+// Money: рахунки (what the point owes) against payments recorded on them, with opening and closing balance.
+// Goods (consignment): shipped by накладні and sold by reports in the period, and what is on the shelf now.
+function reconData(b,from,to){
+  var rows=[], opening=0;
+  function add(date,doc,debit,credit){
+    if(date<from){ opening+=debit-credit; return; }
+    if(date>to) return;
+    rows.push({date:date,doc:doc,debit:debit,credit:credit});
+  }
+  journal.filter(function(j){return jBuyerId(j)===b.id&&j.docType==="bill";}).forEach(function(j){
+    var d=String(j.invoiceDate||"").slice(0,10); if(!d) return;
+    add(d,"Рахунок №"+(j.invoiceNum||"")+" від "+formatDate(d),j.total||0,0);
+    var p=docPayments(j);
+    if(p.length) p.forEach(function(x){ var pd=String(x.date||d).slice(0,10); add(pd,"Оплата за рахунком №"+(j.invoiceNum||""),0,parseFloat(x.amount)||0); });
+    else if(j.status==="paid") add(d,"Оплата за рахунком №"+(j.invoiceNum||"")+" (дата не вказана)",0,j.total||0);
+  });
+  rows.sort(function(a,c){return a.date.localeCompare(c.date)||(c.debit-a.debit);});
+  var debit=rows.reduce(function(s,r){return s+r.debit;},0), credit=rows.reduce(function(s,r){return s+r.credit;},0);
+  var shippedQty=0, shippedSum=0;
+  journal.filter(function(j){var d=String(j.invoiceDate||"").slice(0,10);return jBuyerId(j)===b.id&&j.docType==="invoice"&&d>=from&&d<=to;}).forEach(function(j){
+    (j.items||[]).forEach(function(it){ shippedQty+=it.qty||0; }); shippedSum+=j.total||0;
+  });
+  var fm=from.slice(0,7), tm=to.slice(0,7), soldQty=0;
+  salesReports.filter(function(r){return r.buyerId===b.id&&r.month>=fm&&r.month<=tm;}).forEach(function(r){ (r.items||[]).forEach(function(it){ soldQty+=it.sold||0; }); });
+  var st=retailStock[b.id]||{}, shelf=[];
+  Object.keys(st).forEach(function(pid){ var q=parseInt(st[pid].qty)||0; if(q>0){ var p=products.find(function(x){return x.id===pid;}); shelf.push({name:shortName(st[pid].name),qty:q,price:lastShelfPriceFor(b.id,pid)||(p&&p.shelf)||0}); } });
+  shelf.sort(function(a,c){return a.name.localeCompare(c.name);});
+  return {from:from,to:to,rows:rows,opening:Math.round(opening*100)/100,debit:debit,credit:credit,
+    closing:Math.round((opening+debit-credit)*100)/100,shippedQty:shippedQty,shippedSum:shippedSum,soldQty:soldQty,shelf:shelf};
+}
+function openReconAct(buyerId){
+  var b=buyers.find(function(x){return x.id===buyerId;}); if(!b) return;
+  var first=journal.filter(function(j){return jBuyerId(j)===b.id&&j.invoiceDate;}).map(function(j){return String(j.invoiceDate).slice(0,10);}).sort()[0];
+  var y=new Date().getFullYear()+"-01-01";
+  var from=first&&first>y?first:y;
+  ["modal-ptodo"].forEach(function(id){ var e=document.getElementById(id); if(e) e.remove(); });
+  var body='<div style="font-size:12px;color:var(--ink3);margin-bottom:10px">Рахунки, оплати й сальдо з точкою за період, а також рух товару. Відкриється вікно друку, де можна зберегти PDF.</div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
+      +'<div class="field" style="margin:0"><label>З</label><input type="date" id="recon-from" value="'+from+'" onchange="reconPreview(\''+b.id+'\')"></div>'
+      +'<div class="field" style="margin:0"><label>По</label><input type="date" id="recon-to" value="'+todayISO()+'" onchange="reconPreview(\''+b.id+'\')"></div>'
+    +'</div><div id="recon-preview" style="font-size:12.5px"></div>';
+  maintModal("modal-recon","📄 Акт звірки: "+esc(b.retailName||b.name),body,
+    '<button class="btn btn-gray" onclick="document.getElementById(\'modal-recon\').remove()">Закрити</button>'
+    +'<button class="btn btn-moss" style="color:#fff" onclick="exportReconPDF(\''+b.id+'\')">📄 Зберегти PDF</button>');
+  reconPreview(b.id);
+}
+function reconRange(){
+  var f=document.getElementById("recon-from").value, t=document.getElementById("recon-to").value||todayISO();
+  if(!f||f>t) f=t;
+  return {from:f,to:t};
+}
+function reconPreview(buyerId){
+  var b=buyers.find(function(x){return x.id===buyerId;}); var el=document.getElementById("recon-preview"); if(!b||!el) return;
+  var r=reconRange(), d=reconData(b,r.from,r.to);
+  el.innerHTML='<div>Сальдо на початок: <strong>'+fmt(d.opening)+' ₴</strong></div>'
+    +'<div>Виставлено рахунків: <strong>'+fmt(d.debit)+' ₴</strong> · оплачено: <strong>'+fmt(d.credit)+' ₴</strong></div>'
+    +'<div style="margin-top:4px;font-size:14px">'+(d.closing>0?'Точка винна: <strong style="color:var(--cedar)">'+fmt(d.closing)+' ₴</strong>':d.closing<0?'Переплата точки: <strong>'+fmt(-d.closing)+' ₴</strong>':'<strong style="color:var(--moss)">Боргу немає</strong>')+' на '+formatDate(r.to)+'</div>'
+    +'<div style="margin-top:6px;color:var(--ink3)">Документів у періоді: '+d.rows.length+' · передано '+d.shippedQty+' шт. · продано за звітами '+d.soldQty+' шт. · на полиці зараз '+d.shelf.reduce(function(s,x){return s+x.qty;},0)+' шт.</div>';
+}
+function exportReconPDF(buyerId){
+  var b=buyers.find(function(x){return x.id===buyerId;}); if(!b) return;
+  var r=reconRange(), d=reconData(b,r.from,r.to);
+  function m0(v){ return (Math.round((Number(v)||0)*100)/100).toLocaleString("uk-UA",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function m(v){ return v?m0(v):""; }
+  var td='style="border:1px solid #bbb;padding:3px 6px"', tdr='style="border:1px solid #bbb;padding:3px 6px;text-align:right"';
+  var bal=d.opening;
+  var rowsHtml=d.rows.map(function(x){ bal+=x.debit-x.credit;
+    return '<tr><td style="border:1px solid #bbb;padding:3px 6px;white-space:nowrap">'+x.date.split("-").reverse().join(".")+'</td><td '+td+'>'+esc(x.doc)+'</td><td '+tdr+'>'+m(x.debit)+'</td><td '+tdr+'>'+m(x.credit)+'</td><td '+tdr+'>'+m0(bal)+'</td></tr>'; }).join("");
+  var closingTxt=d.closing>0?"Заборгованість "+esc(b.fullName||b.name)+" перед ФОП Савчук А.Б. станом на "+formatDate(r.to)+": "+m(d.closing)+" грн."
+    :d.closing<0?"Заборгованість ФОП Савчук А.Б. перед "+esc(b.fullName||b.name)+" (переплата) станом на "+formatDate(r.to)+": "+m(-d.closing)+" грн."
+    :"Станом на "+formatDate(r.to)+" заборгованості між сторонами немає.";
+  var shelfSum=d.shelf.reduce(function(s,x){return s+x.qty*x.price;},0), shelfQty=d.shelf.reduce(function(s,x){return s+x.qty;},0);
+  var goods=(buyerDeal(b)==="consignment"||shelfQty)
+    ?'<h3>Рух товару на реалізації</h3>'
+      +'<div>За період передано за накладними: <strong>'+d.shippedQty+' шт.</strong> на суму '+m(d.shippedSum)+' грн; продано за звітами: <strong>'+d.soldQty+' шт.</strong></div>'
+      +(d.shelf.length?'<div style="margin-top:4px">Залишок товару на реалізації станом на '+formatDate(todayISO())+':</div>'
+        +'<table><thead><tr><th>Товар</th><th style="width:60px">К-сть</th><th style="width:90px">Ціна полиці</th><th style="width:90px">Сума</th></tr></thead><tbody>'
+        +d.shelf.map(function(x){return '<tr><td '+td+'>'+esc(x.name)+'</td><td '+tdr+'>'+x.qty+'</td><td '+tdr+'>'+m(x.price)+'</td><td '+tdr+'>'+m(x.qty*x.price)+'</td></tr>';}).join("")
+        +'<tr style="font-weight:700"><td '+td+'>Разом</td><td '+tdr+'>'+shelfQty+'</td><td '+td+'></td><td '+tdr+'>'+m(shelfSum)+'</td></tr></tbody></table>'
+        :'<div>Залишку товару на реалізації немає.</div>')
+    :'';
+  var title="Акт звірки "+(b.retailName||b.name)+" "+r.to;
+  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+esc(title)+'</title><style>'
+    +'@page{size:A4;margin:12mm 10mm}body{font-family:Arial,sans-serif;font-size:9.5pt;color:#000;line-height:1.5}'
+    +'h2{font-size:12pt;margin:0 0 6px}h3{font-size:10.5pt;margin:14px 0 4px}table{width:100%;border-collapse:collapse;margin:6px 0}'
+    +'th{border:1px solid #333;padding:3px 6px;background:#f0f0f0;font-size:9pt}td{font-size:9pt}</style></head><body>'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-start"><div><h2>Акт звірки взаєморозрахунків</h2>'
+    +'<div>за період з '+formatDate(r.from)+' по '+formatDate(r.to)+'</div></div><img src="'+LOGO_B64+'" style="height:36px;opacity:0.85"></div>'
+    +'<div style="margin:8px 0">між <strong>ФОП Савчук Анастасія Борисівна</strong> (ЄДРПОУ 3305200068) та <strong>'+esc(b.fullName||b.name)+'</strong>'+(b.edrpou?' (ЄДРПОУ '+esc(b.edrpou)+')':'')+(b.contract?', договір '+esc(b.contract):'')+'</div>'
+    +'<table><thead><tr><th style="width:70px">Дата</th><th>Документ</th><th style="width:90px">Дебет, грн</th><th style="width:90px">Кредит, грн</th><th style="width:90px">Сальдо, грн</th></tr></thead><tbody>'
+    +'<tr><td '+td+'></td><td '+td+'><strong>Сальдо на '+formatDate(r.from)+'</strong></td><td '+td+'></td><td '+td+'></td><td '+tdr+'><strong>'+m0(d.opening)+'</strong></td></tr>'
+    +rowsHtml
+    +'<tr style="font-weight:700;background:#f0f7f4"><td '+td+'></td><td '+td+'>Обороти за період</td><td '+tdr+'>'+m0(d.debit)+'</td><td '+tdr+'>'+m0(d.credit)+'</td><td '+td+'></td></tr>'
+    +'<tr style="font-weight:700"><td '+td+'></td><td '+td+'>Сальдо на '+formatDate(r.to)+'</td><td '+td+'></td><td '+td+'></td><td '+tdr+'>'+m0(d.closing)+'</td></tr>'
+    +'</tbody></table>'
+    +'<div style="margin-top:6px"><strong>'+closingTxt+'</strong></div>'
+    +'<div style="font-size:8.5pt;color:#555">Дебет: виставлені рахунки; кредит: отримані оплати.</div>'
+    +goods
+    +'<div style="display:flex;justify-content:space-between;margin-top:26px;padding-top:10px;border-top:1px solid #ddd">'
+    +'<div>Від постачальника:<br><br>________________ <strong>Савчук А.Б.</strong></div>'
+    +'<div style="text-align:right">Від покупця:<br><br>________________ <strong>'+esc(b.receiver||"")+'</strong></div></div>'
+    +'</body></html>';
+  printHtmlDoc(html,title);
+}
+function printHtmlDoc(html,title){
+  var old=document.getElementById("_pdf_print_frame"); if(old) old.remove();
+  var iframe=document.createElement("iframe");
+  iframe.id="_pdf_print_frame";
+  iframe.style.cssText="position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;border:none;";
+  document.body.appendChild(iframe);
+  iframe.contentWindow.document.open(); iframe.contentWindow.document.write(html); iframe.contentWindow.document.close();
+  var prevTitle=document.title; document.title=title;
+  setTimeout(function(){ iframe.contentWindow.focus(); iframe.contentWindow.print(); setTimeout(function(){ document.title=prevTitle; iframe.remove(); },3000); },500);
 }
 
 // ============================================================
@@ -6259,10 +6411,11 @@ function renderPartnersOverview(){
           +'<div style="font-size:10.5px;color:var(--ink4)">'+(x.term==="prepay"?"передоплата":"під реалізацію")+'</div></td>'
         +'<td '+td+'>'+(x.shelfQty||'—')+'</td>'
         +'<td '+td+'>'+(x.term==="consignment"?(x.soldPerMonth||'—'):'<span style="color:var(--ink4)">—</span>')+'</td>'
-        +'<td '+td+'>'+(x.debt?'<strong style="color:var(--cedar)">'+fmt(x.debt)+' ₴</strong>':'—')+'</td>'
+        +'<td '+td+'>'+(x.debt?'<strong style="color:var(--cedar);white-space:nowrap">'+fmt(x.debt)+' ₴</strong>':'—')+(journal.some(function(j){return j.docType==="bill"&&jBuyerId(j)===x.id;})?'<div><a href="#" style="font-size:10.5px;color:var(--ink3);white-space:nowrap" onclick="openReconAct(\''+x.id+'\');return false">акт звірки</a></div>':'')+'</td>'
         +'<td '+td+'>'+lastTxt+'</td>'
         +'<td '+td+'>'+(x.flags.length?x.flags.map(function(f){return '<div style="'+(f.lvl>=3?'color:var(--red);font-weight:600':'')+'">'+esc(f.text)+'</div>';}).join("")+rs:'<span style="color:var(--moss)">✓</span>')+'</td>'
         +'<td '+td+'><div style="display:flex;gap:6px;justify-content:flex-end">'
+          +(x.flags.some(function(f){return f.k==="restock"||f.k==="empty"||f.k==="reorder";})?'<button class="btn btn-gray btn-sm" style="white-space:nowrap" title="Підготувати накладну на поповнення" onclick="createRestockInvoice(\''+x.id+'\')">📦 Накладна</button>':'')
           +'<button class="btn btn-moss btn-sm" style="color:#fff;white-space:nowrap" onclick="openPartnerMessage(\''+x.id+'\')">✍️ Написати</button>'
           +(c?'<a class="btn btn-gray btn-sm" href="'+esc(c.href)+'" target="_blank" rel="noopener" style="text-decoration:none;white-space:nowrap">'+esc(c.label)+'</a>':'')+'</div>'
           +(x.lastMsg?'<div style="font-size:10.5px;color:var(--ink4);text-align:right;margin-top:3px">написали '+(daysAgo(x.lastMsg.date)===0?'сьогодні':daysAgo(x.lastMsg.date)+' дн. тому')+'</div>':'')+'</td></tr>';
@@ -6392,6 +6545,8 @@ function openPartnerTodo(){
     +items.map(function(it){
       var x=it.x, extra='';
       if(it.flag.k==="bill"&&x.lastReport) extra='<button class="btn btn-gray btn-sm" onclick="document.getElementById(\'modal-ptodo\').remove();createBillFromSalesReport(\''+x.lastReport.id+'\')">🧾 Створити рахунок</button>';
+      if(it.flag.k==="restock"||it.flag.k==="empty"||it.flag.k==="reorder") extra='<button class="btn btn-gray btn-sm" onclick="createRestockInvoice(\''+x.id+'\')">📦 Накладна</button>';
+      if(it.flag.k==="debt") extra='<button class="btn btn-gray btn-sm" onclick="openReconAct(\''+x.id+'\')">📄 Акт звірки</button>';
       if(it.flag.k==="report") extra='<button class="btn btn-gray btn-sm" onclick="document.getElementById(\'modal-ptodo\').remove();openSalesReportModal();var s=document.getElementById(\'sales-buyer-id\');s.value=\''+x.id+'\';renderSalesReportItems();">✏️ Внести звіт</button>';
       var detail=it.flag.k==="restock"&&x.restock.length?x.restock.slice(0,4).map(function(r){return r.name+" +"+r.suggest;}).join(", "):"";
       return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);'+(it.recent?'opacity:.55':'')+'">'
