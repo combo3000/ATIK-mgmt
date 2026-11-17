@@ -46,6 +46,7 @@ service cloud.firestore {
 
 ## AI-асистент (сервер на Vercel)
 Серверні функції лежать у папці `api/` і працюють тільки на Vercel (на GitHub Pages їх немає, тому додаток звертається до `https://atik-mgmt.vercel.app`).
+Функції: `health` (перевірка налаштувань), `parse-sales-report` (AI читає звіт точки), `weekly-report` (AI пише висновки й список дій до тижневого звіту; усі цифри рахує сам додаток).
 
 Змінні середовища у Vercel → Project `atik-mgmt` → Settings → Environment Variables:
 - `ANTHROPIC_API_KEY` — ключ Claude API з https://console.anthropic.com (Settings → API Keys).
