@@ -50,7 +50,7 @@ service cloud.firestore {
 Змінні середовища у Vercel → Project `atik-mgmt` → Settings → Environment Variables:
 - `ANTHROPIC_API_KEY` — ключ Claude API з https://console.anthropic.com (Settings → API Keys).
 - `ALLOWED_EMAILS` — через кому Google-адреси, яким дозволено користуватися AI (наприклад `you@gmail.com,wife@gmail.com`). Без цієї змінної AI вимкнено.
-- `CLAUDE_MODEL` — необов'язково, за замовчуванням `claude-opus-5-5`.
+- `CLAUDE_MODEL` — необов'язково, за замовчуванням `claude-sonnet-5-5` (Sonnet: дешевше й швидше; для складних фото звітів можна поставити `claude-opus-5-5`).
 
 Після зміни змінних потрібен Redeploy. Перевірка: Налаштування → AI-асистент → «Перевірити підключення».
 Тести сервера: `npm install && npm test`.

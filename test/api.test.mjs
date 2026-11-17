@@ -57,7 +57,7 @@ test("parseReport: sends schema with shelf ids + fallbacks, parses the answer", 
       seen = { url: req.url, headers: req.headers, body: JSON.parse(data) };
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({
-        id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5-5",
+        id: "msg_1", type: "message", role: "assistant", model: "claude-sonnet-5-5",
         stop_reason: "end_turn", stop_sequence: null,
         usage: { input_tokens: 900, output_tokens: 120 },
         content: [{ type: "text", text: JSON.stringify({
@@ -76,7 +76,7 @@ test("parseReport: sends schema with shelf ids + fallbacks, parses the answer", 
     assert.equal(out.usage.input_tokens, 900);
     assert.match(seen.url, /\/v1\/messages/);
     assert.match(String(seen.headers["anthropic-beta"]), /server-side-fallback-2026-07-01/);
-    assert.equal(seen.body.model, "claude-opus-5-5");
+    assert.equal(seen.body.model, "claude-sonnet-5-5");
     assert.equal(seen.body.fallbacks, "default");
     assert.deepEqual(seen.body.output_config.format.schema.properties.items.items.properties.productId.enum, ["cherry20", "cherry40", "osmanthus20"]);
     assert.ok(seen.body.messages[0].content[0].text.includes("Cherry big 1"));

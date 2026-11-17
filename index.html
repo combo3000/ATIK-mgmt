@@ -1461,6 +1461,16 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
     <div id="goal-preview" style="padding:0 14px 12px;font-size:12px;color:var(--ink3);"></div>
   </div>
 
+  <!-- Data maintenance -->
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:14px;box-shadow:var(--shadow);">
+    <div style="padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em;">Обслуговування точок</div>
+    <div style="padding:12px 14px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-gray btn-sm" onclick="openOrderPointsCleanup()">🧹 Прибрати точки з інтернет-замовлень…</button>
+      <button class="btn btn-gray btn-sm" onclick="openPartnerFill()">📇 Заповнити контакти й умови…</button>
+    </div>
+    <div style="padding:0 14px 12px;font-size:11.5px;color:var(--ink3);">Спершу показується список. Нічого не змінюється, доки ви не натиснете кнопку підтвердження.</div>
+  </div>
+
   <!-- AI assistant (server check) -->
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:14px;box-shadow:var(--shadow);">
     <div style="padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em;">AI-асистент</div>
@@ -3707,6 +3717,8 @@ var priceLabel={
       }
     }
 
+    if(buyer.isD2C&&pendingOrderNote) g.note=pendingOrderNote;
+    pendingOrderNote=null;
     journal.unshift(g);
     if(settings.autoincrement){
       document.getElementById("inv-num").value=nextInvoiceNum();
@@ -5731,6 +5743,135 @@ function deleteProduct(id){
 // ============================================================
 // SETTINGS
 // ============================================================
+// ── Points maintenance (one-off cleanups with preview) ─────
+function downloadFullBackup(tag){
+  var data=Object.assign({},collectAppState(),{exportedAt:new Date().toISOString(),version:"5.0",reason:tag||""});
+  var blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  var url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url; a.download="atik_backup_"+(tag?tag+"_":"")+new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")+".json";
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){URL.revokeObjectURL(url);},2000);
+}
+function maintModal(id,title,bodyHtml,footHtml){
+  var ex=document.getElementById(id); if(ex) ex.remove();
+  var m=document.createElement("div"); m.id=id; m.className="modal-overlay open";
+  m.innerHTML='<div class="modal" style="max-width:760px">'
+    +'<div class="modal-header"><h3>'+title+'</h3><button class="modal-close" onclick="document.getElementById(\''+id+'\').remove()">×</button></div>'
+    +'<div style="max-height:60vh;overflow:auto">'+bodyHtml+'</div>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap">'+footHtml
+    +'<button class="btn btn-gray btn-sm" onclick="document.getElementById(\''+id+'\').remove()">Скасувати</button></div></div>';
+  document.body.appendChild(m);
+}
+function buyerDocCount(bid){ return journal.filter(function(j){return jBuyerId(j)===bid;}).length; }
+function buyerHasStock(bid){ var st=retailStock[bid]||{}; return Object.keys(st).some(function(k){return (st[k].qty||0)>0;}); }
+// A "point" that is really an internet customer: a bare person name (2–3 words),
+// no ФОП/ТОВ/brackets, no requisites, nothing on the shelf, no sales reports.
+var LEGAL_FORM_RE=/(^|[^а-яіїєґa-z])(фоп|тов|пп|прат|ат|фг|llc|ltd)([^а-яіїєґa-z]|$)|фізична особа|товариство|підприєм/i;
+function isOrderCustomerPoint(b){
+  if(!b||b.isD2C) return false;
+  if(DEFAULT_BUYERS.some(function(d){return d.id===b.id;})) return false;
+  if(b.edrpou||b.iban||b.contract) return false;
+  var name=String(b.name||"").trim();
+  if(!name||/[()"«»@0-9]/.test(name)) return false;
+  if(LEGAL_FORM_RE.test(name)||LEGAL_FORM_RE.test(String(b.fullName||""))) return false;
+  var words=name.split(/\s+/);
+  if(words.length<2||words.length>3) return false;
+  if(!words.every(function(w){return /^[A-Za-zА-Яа-яІіЇїЄєҐґ'’ʼ-]+$/.test(w);})) return false;
+  if(buyerHasStock(b.id)) return false;
+  if(salesReports.some(function(r){return r.buyerId===b.id;})) return false;
+  if(b.dealType||b.contactName||b.telegram||b.instagram) return false; // someone already set it up as a partner
+  return true;
+}
+function openOrderPointsCleanup(){
+  var list=buyers.filter(isOrderCustomerPoint);
+  if(!list.length){ maintModal("modal-cleanup","Точки з інтернет-замовлень",'<div style="padding:12px 0;color:var(--ink3)">Таких точок не знайдено.</div>',""); return; }
+  var rows=list.map(function(b,i){
+    var n=buyerDocCount(b.id);
+    return '<tr><td style="padding:4px 6px;border-bottom:1px solid var(--border)"><input type="checkbox" class="cleanup-cb" data-id="'+esc(b.id)+'" checked></td>'
+      +'<td style="padding:4px 6px;border-bottom:1px solid var(--border);font-weight:600">'+esc(b.name)+'</td>'
+      +'<td style="padding:4px 6px;border-bottom:1px solid var(--border);color:var(--ink3);font-size:11.5px">'+esc(b.address||"")+'</td>'
+      +'<td style="padding:4px 6px;border-bottom:1px solid var(--border);text-align:center">'+n+'</td></tr>';
+  }).join("");
+  maintModal("modal-cleanup","Точки з інтернет-замовлень: "+list.length,
+    '<div style="font-size:12.5px;margin-bottom:8px">Це «точки» з іменем і прізвищем без ФОП, без реквізитів, з порожньою полицею і без звітів. Зніміть галочку з тих, кого треба залишити.<br>'
+    +'Документи цих покупців <strong>залишаться</strong> в журналі з тими самими даними, зникне лише картка точки.</div>'
+    +'<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="background:var(--surface2)"><th></th><th style="text-align:left;padding:4px 6px">Назва</th><th style="text-align:left;padding:4px 6px">Адреса</th><th style="padding:4px 6px">Документів</th></tr></thead><tbody>'+rows+'</tbody></table>',
+    '<button class="btn btn-sm" style="background:var(--red);color:#fff" onclick="applyOrderPointsCleanup()">Зберегти бекап і видалити позначені</button>');
+}
+function applyOrderPointsCleanup(){
+  var ids=[].slice.call(document.querySelectorAll(".cleanup-cb:checked")).map(function(c){return c.dataset.id;});
+  if(!ids.length){ alert("Нічого не позначено"); return; }
+  if(!confirm("Видалити "+ids.length+" точок? Перед цим завантажиться файл резервної копії.")) return;
+  downloadFullBackup("before-cleanup");
+  ids.forEach(function(id){
+    freezeBuyerInJournal(id); // documents keep the requisites they were printed with
+    if(retailStock[id]) delete retailStock[id];
+  });
+  var set={}; ids.forEach(function(id){set[id]=1;});
+  buyers=buyers.filter(function(b){return !set[b.id];});
+  save(); renderBuyersList(); renderBuyerSelect(); renderRetailTab();
+  var m=document.getElementById("modal-cleanup"); if(m) m.remove();
+  addToast("Видалено точок: "+ids.length,"success","Резервна копія завантажена");
+}
+
+// Contacts from the free-text description (fullName/address/receiver) + the two terms.
+var PREPAY_POINTS_RE=/бюро\s*вин|товариство|(^|[^а-яіїєґ])руда([^а-яіїєґ]|$)/i;
+function extractContacts(b){
+  var text=[b.fullName,b.address,b.contract,b.name].filter(Boolean).join(" · ");
+  var out={};
+  var ph=text.match(/(\+?3?8?[\s(-]*0\d{2}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2})/);
+  if(ph) out.phone=ph[1].replace(/\s+/g," ").trim();
+  var tg=text.match(/(?:t\.me\/|telegram[:\s]+@?)([A-Za-z0-9_]{4,})/i);
+  if(tg) out.telegram="@"+tg[1];
+  var ig=text.match(/(?:instagram\.com\/|insta(?:gram)?[:\s]+@?)([A-Za-z0-9_.]{2,})/i);
+  if(ig) out.instagram="@"+ig[1].replace(/\/$/,"");
+  if(!out.telegram&&!out.instagram){ var at=text.match(/(^|\s)@([A-Za-z0-9_.]{3,})/); if(at) out.instagram="@"+at[2]; }
+  if(b.receiver&&b.receiver!=="—") out.contactName=b.receiver;
+  return out;
+}
+function partnerTermFor(b){
+  var label=[b.name,b.retailName].filter(Boolean).join(" ");
+  return PREPAY_POINTS_RE.test(label)?"prepay":"consignment";
+}
+function openPartnerFill(){
+  var pts=buyers.filter(function(b){return !b.isD2C&&!isOrderCustomerPoint(b);});
+  var rows=pts.map(function(b){
+    var c=extractContacts(b), term=b.dealType||partnerTermFor(b), fill={};
+    ["contactName","phone","telegram","instagram"].forEach(function(f){ if(c[f]&&!b[f]) fill[f]=c[f]; });
+    var contactTxt=Object.keys(fill).map(function(f){return esc(fill[f]);}).join(" · ");
+    return '<tr><td style="padding:4px 6px;border-bottom:1px solid var(--border)"><input type="checkbox" class="pfill-cb" data-id="'+esc(b.id)+'" checked></td>'
+      +'<td style="padding:4px 6px;border-bottom:1px solid var(--border);font-weight:600">'+esc(b.retailName||b.name)+'<div style="font-weight:400;font-size:11px;color:var(--ink3)">'+esc(b.name)+'</div></td>'
+      +'<td style="padding:4px 6px;border-bottom:1px solid var(--border)"><select class="pfill-term" data-id="'+esc(b.id)+'" style="font-size:12px">'
+        +'<option value="consignment"'+(term==="consignment"?" selected":"")+'>Під реалізацію</option>'
+        +'<option value="prepay"'+(term==="prepay"?" selected":"")+'>Передоплата</option></select>'
+        +(b.dealType?'<div style="font-size:10.5px;color:var(--ink4)">вже вказано</div>':'')+'</td>'
+      +'<td style="padding:4px 6px;border-bottom:1px solid var(--border);font-size:11.5px">'+(contactTxt||'<span style="color:var(--ink4)">нічого нового в описі</span>')+'</td></tr>';
+  }).join("");
+  maintModal("modal-pfill","Контакти й умови точок: "+pts.length,
+    '<div style="font-size:12.5px;margin-bottom:8px">Умова: передоплата для Бюро Вин, Товариство і ФОП Руда, решта під реалізацію. Перевірте й за потреби змініть.<br>'
+    +'Контакти беруться з опису точки (телефон, Telegram, Instagram, отримувач) і записуються лише в порожні поля.</div>'
+    +'<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="background:var(--surface2)"><th></th><th style="text-align:left;padding:4px 6px">Точка</th><th style="text-align:left;padding:4px 6px">Умова</th><th style="text-align:left;padding:4px 6px">Буде заповнено</th></tr></thead><tbody>'+rows+'</tbody></table>',
+    '<button class="btn btn-moss btn-sm" style="color:#fff" onclick="applyPartnerFill()">Зберегти бекап і застосувати</button>');
+}
+function applyPartnerFill(){
+  var ids=[].slice.call(document.querySelectorAll(".pfill-cb:checked")).map(function(c){return c.dataset.id;});
+  if(!ids.length){ alert("Нічого не позначено"); return; }
+  downloadFullBackup("before-partner-fill");
+  var n=0;
+  ids.forEach(function(id){
+    var b=buyers.find(function(x){return x.id===id;}); if(!b) return;
+    var sel=document.querySelector('.pfill-term[data-id="'+CSS.escape(id)+'"]');
+    if(sel) b.dealType=sel.value;
+    var c=extractContacts(b);
+    ["contactName","phone","telegram","instagram"].forEach(function(f){ if(c[f]&&!b[f]) b[f]=c[f]; });
+    if(!b.channel) b.channel=b.telegram?"telegram":b.instagram?"instagram":b.phone?"phone":null;
+    if(b.channel===null) delete b.channel;
+    n++;
+  });
+  save(); renderBuyersList(); renderBuyerSelect();
+  var m=document.getElementById("modal-pfill"); if(m) m.remove();
+  addToast("Оновлено точок: "+n,"success","Резервна копія завантажена");
+}
+
 // ── AI assistant server (/api on Vercel) ───────────────────
 // On Vercel the API is same-origin; elsewhere (GitHub Pages, local file) call the Vercel deployment.
 var AI_API_BASE=(/\.vercel\.app$/.test(location.hostname)||location.hostname==="localhost")?"":"https://atik-mgmt.vercel.app";
@@ -6701,6 +6842,7 @@ function declineOrder(orderId) {
 function createInvoiceFromOrder(orderId){
   var o=ordersData.find(function(x){return x._id===orderId;});
   if(!o)return;
+  if(!isPartnerOrder(o)){ _doInvoiceFromOrder(orderId,null); return; }
   var cl=(o.company||"").toLowerCase();
   var similar=buyers.filter(function(b){
     if(!b.name)return false;
@@ -6734,9 +6876,25 @@ function _showOrderBuyerModal(orderId,o,similar){
   document.body.appendChild(m);
 }
 function closeOrderBuyerModal(){var m=document.getElementById("modal-order-buyer");if(m)m.remove();}
+// Orders from the wholesale form (order.html) come from partners; everything else
+// (Shopify site, Instagram…) is a retail customer and must not become a "point".
+function isPartnerOrder(o){ return /^order-form/i.test(String(o&&o.source||"")); }
+function d2cBuyerForOrder(o){
+  var src=String(o&&(o.source||o.channel)||"").toLowerCase();
+  var id=src.indexOf("instagram")>=0?"d2c_instagram":"d2c_site";
+  var b=buyers.find(function(x){return x.id===id;});
+  if(!b){ var d=DEFAULT_BUYERS.find(function(x){return x.id===id;}); if(d){ b=Object.assign({},d); buyers.push(b); save(); } }
+  return b||null;
+}
+var pendingOrderNote=null; // customer name/address of an internet order, saved as the document note
 function _doInvoiceFromOrder(orderId,buyerId){
   var o=ordersData.find(function(x){return x._id===orderId;});if(!o)return;
   var buyer=buyerId?buyers.find(function(b){return b.id===buyerId;}):null;
+  pendingOrderNote=null;
+  if(!buyer&&!isPartnerOrder(o)){
+    buyer=d2cBuyerForOrder(o);
+    pendingOrderNote=["Замовлення #"+String(orderId).slice(-4),o.contact||o.company||o.nickname||"",o.phone||"",o.address||""].filter(Boolean).join(" · ");
+  }
   if(!buyer){
     buyer={id:"order_"+orderId,name:o.company||"Замовлення з форми",fullName:o.company||"Замовлення з форми",
       receiver:o.contact||"",iban:null,edrpou:null,bank:null,address:o.address||null,contract:null,isRetail:false};
