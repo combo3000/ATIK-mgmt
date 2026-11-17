@@ -40,3 +40,25 @@ test("message handler: 405", async () => {
   await handler({ method: "GET", headers: {} }, res);
   assert.equal(res.statusCode, 405);
 });
+
+test("draftMessage: customer audience uses the customer prompt", async () => {
+  let seen = null;
+  const server = http.createServer((req, res) => {
+    let d = ""; req.on("data", (c) => (d += c));
+    req.on("end", () => {
+      seen = JSON.parse(d);
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ id: "m", type: "message", role: "assistant", model: "claude-sonnet-5-5", stop_reason: "end_turn", stop_sequence: null,
+        usage: { input_tokens: 5, output_tokens: 5 }, content: [{ type: "text", text: JSON.stringify({ text: "Ірино, добрий день!" }) }] }));
+    });
+  });
+  await new Promise((r) => server.listen(0, r));
+  try {
+    const client = new Anthropic({ apiKey: "t", baseURL: `http://127.0.0.1:${server.address().port}`, maxRetries: 0 });
+    const v = validateBody({ audience: "customer", point: { name: "Ірина" }, purposes: ["repeat"], facts: { favorite: ["Cherry Bloom"] } });
+    const out = await draftMessage(v, client);
+    assert.equal(out.text, "Ірино, добрий день!");
+    assert.match(seen.system, /покупцеві/);
+    assert.ok(seen.messages[0].content[0].text.startsWith("Дані про покупця"));
+  } finally { server.close(); }
+});
