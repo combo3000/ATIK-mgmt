@@ -13,7 +13,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { applyCors, sendJson, requireUser, httpError } from "./_lib/http.js";
 
-const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
+const MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-5-5";
 const MAX_TEXT = 60000;
 const MAX_IMAGE_B64 = 4_000_000; // Vercel request body limit is ~4.5 MB
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
