@@ -964,9 +964,12 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
         <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0;">Сировина</h2>
         <div id="wh-raw-meta" style="font-size:12px;color:var(--ink3);margin-top:3px;"></div>
       </div>
-      <button class="btn btn-moss btn-sm" style="color:#fff;" onclick="switchSubTab('warehouse','receive')">
-        + Прийом
-      </button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-gray btn-sm" onclick="openRawForecast()">📈 Коли замовляти</button>
+        <button class="btn btn-moss btn-sm" style="color:#fff;" onclick="switchSubTab('warehouse','receive')">
+          + Прийом
+        </button>
+      </div>
     </div>
     <div id="raw-materials-cards"></div>
     <div id="raw-edit-panel" style="display:none;margin-top:14px;" class="manage-form">
@@ -1237,7 +1240,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
       Оновити
     </button>
-    <button class="btn btn-gray btn-sm" onclick="openCustomers()" style="flex-shrink:0;">👥 Клієнти: кому пора докупити</button>
     <button class="btn btn-moss btn-sm" onclick="openQuickOrder()" style="color:#fff;">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       Швидке замовлення
@@ -1267,6 +1269,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Додати точку
       </button>
+      <button class="btn btn-gray btn-sm" onclick="openPartnerTodo()" id="partner-todo-btn">📋 На сьогодні</button>
       <button class="btn btn-moss btn-sm" onclick="openSalesReportModal()" style="color:#fff;">
         ✏️ Ввести продажі
       </button>
@@ -4473,6 +4476,7 @@ function renderRawMaterials(){
   var metaEl=document.getElementById("wh-raw-meta");
   if(metaEl) metaEl.textContent=aromaKeys.length+" ароматів · "+totalKg.toFixed(1)+" кг загалом";
 
+  var fc={}; rawForecast().rows.forEach(function(r){fc[r.aroma]=r;});
   var html='<div class="raw-grid">';
   aromaKeys.forEach(function(aId){
     var key="sticks_"+aId;
@@ -4511,6 +4515,7 @@ function renderRawMaterials(){
       +'</div>'
       // Мін + постачальник
       +'<div style="font-size:11px;color:var(--ink3);margin:3px 0 8px;">мін. '+reorderKg+' кг &nbsp;·&nbsp; ост. прийом '+lastRecvDate+'</div>'
+      +(fc[aId]&&fc[aId].daysLeft!==null?'<div style="font-size:11px;margin:-4px 0 8px;color:'+(fc[aId].status==="now"?'var(--red)':fc[aId].status==="soon"?'var(--cedar)':'var(--ink3)')+'">вистачить ~'+(fc[aId].daysLeft>365?'рік+':fc[aId].daysLeft+' дн.')+(fc[aId].status==="now"?' · замовити зараз':fc[aId].status==="soon"?' · замовити до '+formatDate(fc[aId].orderBy):'')+'</div>':'')
       // Progress bar
       +'<div style="height:5px;border-radius:3px;background:var(--surface2);overflow:hidden;margin-bottom:8px;">'
         +'<div style="height:100%;width:'+barPct+'%;background:'+barColor+';border-radius:3px;transition:width .4s;"></div>'
@@ -6239,6 +6244,7 @@ function renderPartnersOverview(){
   if(!list.length){ el.innerHTML=""; return; }
   list.sort(function(a,c){return c.score-a.score||c.debt-a.debt||c.soldPerMonth-a.soldPerMonth;});
   var cons=list.filter(function(x){return x.term==="consignment";}).length;
+  var tb=document.getElementById("partner-todo-btn"); if(tb){ var n=partnerTodoItems(list).length; tb.textContent="📋 На сьогодні"+(n?" ("+n+")":""); }
   var need=list.filter(function(x){return x.flags.some(function(f){return f.lvl>=2;});}).length;
   var th='style="border-bottom:1px solid var(--border);padding:6px 8px;text-align:left;font-size:11px;color:var(--ink3);font-weight:600;white-space:nowrap"';
   var td='style="border-bottom:1px solid var(--border);padding:6px 8px;vertical-align:top"';
@@ -6303,7 +6309,8 @@ function buildWeeklyData(){
         restock:x.restock.slice(0,8).map(function(r){return {name:r.name,onShelf:r.have,soldPerMonth:r.perMonth,suggest:r.suggest};}),noSalesOnShelf:x.still.slice(0,6),
         tryNew:x.tryNew.map(function(n){return n.name;}),lastMessageDaysAgo:x.lastMsg?daysAgo(x.lastMsg.date):null};
     }),
-    topProducts:top, slowProducts:slow
+    topProducts:top, slowProducts:slow,
+    rawToOrder:rawForecast().orders.map(function(o){return {supplier:o.supplier,orderBy:o.orderBy,now:o.now,items:o.items.map(function(i){return i.name+" "+i.kg+" кг";})};})
   };
 }
 function weekKey(){ return isoDaysAgo(0); }
@@ -6329,6 +6336,7 @@ function weeklyReportHtml(d,ai){
     +row("Інтернет-замовлення",w.webOrders.loaded?(w.webOrders.count+' на '+fmt(w.webOrders.sum)+' ₴'+(w.webOrders.unconfirmed?' · непідтверджених '+w.webOrders.unconfirmed:'')):'<span style="color:var(--ink4)">відкрийте вкладку «Замовлення», щоб врахувати</span>')
     +row("Борги точок",fmt(d.partners.debtTotal)+' ₴')
     +(d.topProducts.length?row("Найкраще продаються",d.topProducts.map(function(p){return esc(p.name)+' '+p.sold;}).join(", ")):'')
+    +(d.rawToOrder&&d.rawToOrder.length?row("Сировина з Японії",d.rawToOrder.map(function(o){return esc(o.supplier)+': '+(o.now?'<strong style="color:var(--red)">зараз</strong>':'до '+esc(formatDate(o.orderBy)))+' ('+esc(o.items.join(", "))+')';}).join("<br>")):'')
     +(d.slowProducts.length?row("Лежать без продажів",d.slowProducts.map(function(p){return esc(p.name)+' ('+p.pointsWithoutSales+' точ.)';}).join(", ")):'')
     +'</table>';
   if(d.attention.length){
@@ -6367,6 +6375,38 @@ function copyWeeklyReport(){
   var b=document.getElementById("wr-body"); if(!b) return;
   var t=b.innerText;
   (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){addToast("Звіт скопійовано","success");}).catch(function(){prompt("Скопіюйте звіт:",t);});
+}
+
+// ── «На сьогодні»: one line per thing to do with a point ───
+var TODO_FROM_FLAG={debt:"payment",report:"report",bill:"bill",restock:"restock",empty:"restock",reorder:"restock",tryNew:"tryNew"};
+function partnerTodoItems(stats){
+  var items=[];
+  (stats||allPartnerStats()).forEach(function(x){
+    x.flags.forEach(function(f){
+      var purpose=TODO_FROM_FLAG[f.k]; if(!purpose) return;
+      if(f.k==="empty"&&x.flags.some(function(g){return g.k==="restock";})) return; // one restock line is enough
+      items.push({x:x,flag:f,purpose:purpose,recent:x.lastMsg&&daysAgo(x.lastMsg.date)<=3});
+    });
+  });
+  return items.sort(function(a,b){ return (a.recent?1:0)-(b.recent?1:0)||b.flag.lvl-a.flag.lvl||b.x.debt-a.x.debt; });
+}
+function openPartnerTodo(){
+  var items=partnerTodoItems();
+  var body=items.length?'<div style="font-size:12px;color:var(--ink3);margin-bottom:8px">Що варто зробити з точками, від найважливішого. «Написати» відкриває готовий текст саме про цю справу.</div>'
+    +items.map(function(it){
+      var x=it.x, extra='';
+      if(it.flag.k==="bill"&&x.lastReport) extra='<button class="btn btn-gray btn-sm" onclick="document.getElementById(\'modal-ptodo\').remove();createBillFromSalesReport(\''+x.lastReport.id+'\')">🧾 Створити рахунок</button>';
+      if(it.flag.k==="report") extra='<button class="btn btn-gray btn-sm" onclick="document.getElementById(\'modal-ptodo\').remove();openSalesReportModal();var s=document.getElementById(\'sales-buyer-id\');s.value=\''+x.id+'\';renderSalesReportItems();">✏️ Внести звіт</button>';
+      var detail=it.flag.k==="restock"&&x.restock.length?x.restock.slice(0,4).map(function(r){return r.name+" +"+r.suggest;}).join(", "):"";
+      return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);'+(it.recent?'opacity:.55':'')+'">'
+        +'<div style="min-width:0"><div style="font-size:12.5px"><strong>'+esc(x.name)+'</strong> · <span style="'+(it.flag.lvl>=3?'color:var(--red);font-weight:600':'')+'">'+esc(it.flag.text)+'</span></div>'
+          +(detail?'<div style="font-size:11px;color:var(--ink3)">'+esc(detail)+'</div>':'')
+          +(it.recent?'<div style="font-size:10.5px;color:var(--ink4)">написали '+(daysAgo(x.lastMsg.date)===0?'сьогодні':daysAgo(x.lastMsg.date)+' дн. тому')+'</div>':'')+'</div>'
+        +'<div style="display:flex;gap:6px;flex-shrink:0">'+extra
+          +'<button class="btn btn-moss btn-sm" style="color:#fff" onclick="openPartnerMessage(\''+x.id+'\',\''+it.purpose+'\')">✍️ Написати</button></div></div>';
+    }).join("")
+    :'<div style="color:var(--moss);font-size:13px;padding:8px 0">✓ З точками все в порядку, справ на сьогодні немає.</div>';
+  maintModal("modal-ptodo","📋 На сьогодні: справи з точками",body,"");
 }
 
 // ── Message to a partner in one click ──────────────────────
@@ -6424,25 +6464,34 @@ function msgChatLink(b){
   if(c&&/^tel:/.test(c.href)){ var ph=c.href.slice(4); return {href:"viber://chat?number="+encodeURIComponent(ph),label:"Viber"}; }
   return c;
 }
-function openPartnerMessage(id){
+function openPartnerMessage(id,onlyPurpose){
   var b=buyers.find(function(x){return x.id===id;}); if(!b) return;
-  var x=partnerStats(b,networkBestSellers()), f=msgFacts(x), purposes=msgPurposesFor(x);
+  var x=partnerStats(b,networkBestSellers()), f=msgFacts(x), purposes=onlyPurpose?[onlyPurpose]:msgPurposesFor(x);
+  var tm=document.getElementById("modal-ptodo"); if(tm) tm.remove();
   var link=msgChatLink(b);
   var body='<div style="font-size:12px;color:var(--ink3);margin-bottom:8px">'+(x.term==="prepay"?"Передоплата":"Під реалізацію")
-      +(b.contactName?' · '+esc(b.contactName):'')+(link?' · '+esc(link.label):' · <span style="color:var(--cedar)">контакт не заповнено</span>')+'</div>'
+      +(b.contactName?' · '+esc(b.contactName):'')+(link?' · '+esc(link.label):'')+'</div>'
+    +(link?'':'<div style="background:#f9eeda;border-radius:8px;padding:7px 10px;font-size:12px;margin-bottom:8px">Контакт точки не заповнено, тому чат відкрити не вийде. <a href="#" onclick="editPartnerContact(\''+id+'\');return false" style="font-weight:600">➕ Додати контакт</a> (Telegram, Instagram чи телефон), щоб відкривати чат одним натиском.</div>')
     +'<div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-bottom:8px">'
     +MSG_PURPOSES.map(function(p){return '<label style="font-size:12.5px;display:inline-flex;width:auto;gap:5px;align-items:center;cursor:pointer;margin:0;font-weight:400;color:var(--ink);text-transform:none;letter-spacing:0"><input type="checkbox" class="pm-purpose" style="width:auto;margin:0" value="'+p[0]+'"'+(purposes.indexOf(p[0])>=0?' checked':'')+' onchange="pmRefreshTemplate()">'+p[1]+'</label>';}).join("")
     +'</div>'
     +'<textarea id="pm-text" rows="7" style="width:100%;box-sizing:border-box;font-family:inherit;font-size:13px;line-height:1.45;padding:8px 10px;border:1px solid var(--border2);border-radius:8px"></textarea>'
     +'<details style="margin-top:8px;font-size:12px"><summary style="cursor:pointer;color:var(--ink3)">Мій стиль: приклади моїх повідомлень (для AI)</summary>'
       +'<textarea id="pm-examples" rows="4" placeholder="Вставте 3–5 своїх справжніх повідомлень точкам. AI писатиме так само." style="width:100%;box-sizing:border-box;font-family:inherit;font-size:12px;margin-top:6px;padding:6px 8px;border:1px solid var(--border2);border-radius:6px">'+esc(settings.messageExamples||"")+'</textarea></details>'
+    +'<div style="font-size:11.5px;color:var(--ink3);margin-top:6px">ℹ️ ATIK нічого не надсилає сам. Скопіюйте текст, надішліть у своєму месенджері, а тоді натисніть «Позначити як надіслане», щоб додаток запам\'ятав дату.</div>'
     +'<div id="pm-status" style="font-size:12px;margin-top:6px"></div>';
   var foot='<button class="btn btn-gray btn-sm" onclick="pmAiRewrite()">✨ Переписати AI</button>'
     +'<button class="btn btn-gray btn-sm" onclick="pmCopyOpen()">📋 Копіювати'+(link?' й відкрити '+esc(link.label):'')+'</button>'
-    +'<button class="btn btn-moss btn-sm" style="color:#fff" onclick="pmMarkSent()">✓ Надіслано</button>';
+    +'<button class="btn btn-moss btn-sm" style="color:#fff" onclick="pmMarkSent()">✓ Позначити як надіслане</button>';
   maintModal("modal-pmsg","✍️ Повідомлення: "+esc(x.name),body,foot);
   window._pm={id:id,x:x,f:f,link:link};
   document.getElementById("pm-text").value=msgTemplate(x,purposes,f);
+}
+function editPartnerContact(id){
+  var m=document.getElementById("modal-pmsg"); if(m) m.remove();
+  switchTab("catalog"); showBuyerForm(id);
+  setTimeout(function(){ var f=document.getElementById("nb-telegram")||document.getElementById("nb-contactName"); var form=document.getElementById("buyer-form");
+    if(form) form.scrollIntoView({behavior:"smooth",block:"start"}); if(f) f.focus(); },150);
 }
 function pmPurposes(){ return Array.prototype.map.call(document.querySelectorAll(".pm-purpose:checked"),function(i){return i.value;}); }
 function pmRefreshTemplate(){ var pm=window._pm; if(!pm) return; document.getElementById("pm-text").value=msgTemplate(pm.x,pmPurposes(),pm.f); }
@@ -6464,7 +6513,7 @@ function pmCopyOpen(){
   var t=document.getElementById("pm-text").value;
   var open=function(){ if(pm.link) window.open(pm.link.href,"_blank","noopener"); };
   (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){
-    pmStatus('<span style="color:var(--moss)">Скопійовано. Вставте в чат і надішліть, потім натисніть «Надіслано».</span>'); open();
+    pmStatus('<span style="color:var(--moss)">Скопійовано. Вставте в чат і надішліть, потім натисніть «Позначити як надіслане».</span>'); open();
   }).catch(function(){ prompt("Скопіюйте текст:",t); open(); });
 }
 function pmMarkSent(){
@@ -6474,185 +6523,114 @@ function pmMarkSent(){
   save();
   var m=document.getElementById("modal-pmsg"); if(m) m.remove();
   renderPartnersOverview();
-  addToast("Позначено: написали «"+pm.x.name+"»","success");
+  addToast("Позначено: написали «"+pm.x.name+"»","success","Це лише відмітка в ATIK, саме повідомлення надсилаєте ви");
 }
 
-// ── Site customers: who is due to buy again ────────────────
-// Sources: website / Instagram orders in Firestore `orders` (not wholesale form orders,
-// not declined) plus D2C документи whose note holds a phone number (quick orders).
-// One customer = one phone (last 9 digits), else the name.
-var REPEAT_DEFAULT_DAYS=45;
-var custState={list:[],loadedAt:null,filter:"due"};
-function phoneKey(s){ var d=String(s||"").replace(/\D/g,""); return d.length>=9?d.slice(-9):""; }
-function orderDateISO(o){ var c=o.createdAt; if(!c) return ""; if(c.toDate) return c.toDate().toISOString(); if(c.seconds) return new Date(c.seconds*1000).toISOString(); return String(c); }
-function buildCustomers(orders){
-  var map={}, seenOrderTails={};
-  function add(key,rec){
-    var c=map[key]||(map[key]={key:key,name:"",phone:"",city:"",nickname:"",sources:{},orders:[]});
-    if(rec.name&&!c.name) c.name=rec.name;
-    if(rec.phone&&!c.phone) c.phone=rec.phone;
-    if(rec.city&&!c.city) c.city=rec.city;
-    if(rec.nickname&&!c.nickname) c.nickname=rec.nickname;
-    if(rec.source) c.sources[rec.source]=1;
-    c.orders.push({date:rec.date,total:rec.total,items:rec.items||[]});
-  }
-  (orders||[]).forEach(function(o){
-    if(isPartnerOrder(o)||o.status==="declined") return;
-    var date=orderDateISO(o).slice(0,10); if(!date) return;
-    var name=String(o.contact||o.company||"").trim(), phone=String(o.phone||"").trim();
-    var key=phoneKey(phone)||(name?"n:"+name.toLowerCase():"")||(o.nickname?"ig:"+String(o.nickname).toLowerCase():"");
-    if(!key) return;
-    seenOrderTails[String(o._id||"").slice(-4)]=1;
-    var src=String(o.source||o.channel||"сайт").toLowerCase().indexOf("instagram")>=0?"Instagram":"сайт";
-    add(key,{name:name,phone:phone,city:String(o.address||"").split(",")[0].slice(0,40),nickname:o.nickname||"",source:src,date:date,
-      total:o.totalDiscounted||o.total||0,items:o.items||[]});
-  });
+// ── Raw sticks forecast: when to order from Japan ──────────
+// Usage = sticks shipped in накладні over the last 90 days (BOM sticks per item, 2000 sticks = 1 kg).
+// Order-by date = when the stock left after delivery time and a safety buffer would run out.
+var RAW_DEFAULTS={leadDays:45,safetyDays:30,coverDays:90};
+function rawCfg(){ return Object.assign({},RAW_DEFAULTS,settings.rawForecast||{}); }
+function addDaysISO(n){ var d=new Date(); d.setDate(d.getDate()+Math.round(n)); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
+function rawUsageKg(days){
+  var from=isoDaysAgo(days), use={};
   journal.forEach(function(j){
-    var b=buyers.find(function(x){return x.id===jBuyerId(j);});
-    if(!b||!b.isD2C||j.docType!=="invoice") return;
-    var note=String(j.note||""), m=note.match(/#(\w{4})\b/);
-    if(m&&seenOrderTails[m[1]]) return; // same order already counted from Firestore
-    var ph=(note.match(/\+?\d[\d\s()\-]{8,}\d/)||[])[0]; var key=phoneKey(ph); if(!key) return;
-    var name=note.replace(/Замовлення\s*#\w+/,"").split(/·|,|\n/).map(function(x){return x.trim();}).filter(function(x){return x&&!/\d{5,}/.test(x.replace(/\D/g,""));})[0]||"";
-    add(key,{name:name,phone:ph,source:b.id==="d2c_instagram"?"Instagram":"сайт",date:j.invoiceDate,total:j.total||0,
-      items:(j.items||[]).map(function(it){return {id:it.id,qty:it.qty};})});
+    if(j.docType!=="invoice"||String(j.invoiceDate||"")<from) return;
+    (j.items||[]).forEach(function(it){
+      var a=PRODUCT_AROMA[it.id]; if(!a) return;
+      var p=products.find(function(x){return x.id===it.id;}), g=p&&p.group||"other";
+      var bom=bomData[g]||DEFAULT_BOM[g]||{};
+      use[a]=(use[a]||0)+(bom.sticks||0)*(it.qty||0)/2000;
+    });
   });
-  var days=(settings.repeatDays>0?settings.repeatDays:REPEAT_DEFAULT_DAYS), contacts=settings.customerContacts||{};
-  return Object.keys(map).map(function(k){
-    var c=map[k];
-    c.orders.sort(function(a,b){return a.date.localeCompare(b.date);});
-    var last=c.orders[c.orders.length-1];
-    c.count=c.orders.length; c.spent=Math.round(c.orders.reduce(function(s,o){return s+(o.total||0);},0));
-    c.lastDate=last.date; c.firstDate=c.orders[0].date; c.daysSince=daysAgo(c.lastDate);
-    var gaps=[]; for(var i=1;i<c.orders.length;i++){ var g=(new Date(c.orders[i].date)-new Date(c.orders[i-1].date))/86400000; if(g>3) gaps.push(g); }
-    c.avgGap=gaps.length?Math.round(gaps.reduce(function(s,x){return s+x;},0)/gaps.length):null;
-    var fav={}; c.orders.forEach(function(o){ o.items.forEach(function(it){ var p=products.find(function(x){return x.id===it.id;}); var n=p?shortName(p.name):(it.name||it.id); if(n) fav[n]=(fav[n]||0)+(it.qty||1); }); });
-    c.favorite=Object.keys(fav).sort(function(a,b){return fav[b]-fav[a];}).slice(0,3);
-    // Due when the usual gap (theirs, or the default) has passed; lapsed after 2.5× that.
-    var due=Math.max(25,c.avgGap||days);
-    c.segment=c.daysSince<due?"recent":c.daysSince<due*2.5?"due":"lapsed";
-    c.contacted=contacts[k]||null;
-    return c;
-  }).sort(function(a,b){return a.daysSince-b.daysSince;});
+  return use;
 }
-function openCustomers(){
-  maintModal("modal-cust","👥 Клієнти сайту та Instagram",'<div id="cust-body">Завантажую замовлення…</div>',
-    '<button class="btn btn-gray btn-sm" onclick="loadCustomers(true)">Оновити</button>');
-  loadCustomers(false);
+function rawForecast(){
+  var c=rawCfg(), u90=rawUsageKg(90), u30=rawUsageKg(30), transit=settings.rawInTransit||{};
+  var rows=Object.keys(AROMAS).map(function(a){
+    var stock=(rawStock["sticks_"+a]&&rawStock["sticks_"+a].qty)||0, inTransit=parseFloat(transit[a])||0;
+    var perDay=(u90[a]||0)/90, perMonth=perDay*30, trend30=(u30[a]||0);
+    var have=stock+inTransit;
+    var daysLeft=perDay>0?Math.floor(have/perDay):null;
+    var orderIn=daysLeft===null?null:daysLeft-c.leadDays-c.safetyDays;
+    var need=perDay*(c.leadDays+c.safetyDays+c.coverDays)-have;
+    var orderKg=perDay>0&&need>0?Math.ceil(need*2)/2:0;
+    var status=perDay===0?"idle":orderIn<=0?"now":orderIn<=21?"soon":"ok";
+    var sup=aromaSupplier(a);
+    return {aroma:a,name:AROMAS[a].en,uk:AROMAS[a].uk,supplierId:sup?sup.id:"",supplier:sup?sup.name:"—",stock:Math.round(stock*100)/100,inTransit:inTransit,
+      perMonth:Math.round(perMonth*100)/100,last30:Math.round(trend30*100)/100,daysLeft:daysLeft,orderIn:orderIn,
+      orderBy:orderIn===null?null:addDaysISO(Math.max(0,orderIn)),orderKg:orderKg,status:status};
+  });
+  // Per supplier: one shipment. Add every aroma of that supplier that would need ordering within 30 days of the first one.
+  var bySup={};
+  rows.forEach(function(r){ if(r.status==="now"||r.status==="soon") { var s=bySup[r.supplierId]||(bySup[r.supplierId]={supplierId:r.supplierId,supplier:r.supplier,orderIn:r.orderIn,items:[]}); s.orderIn=Math.min(s.orderIn,r.orderIn); } });
+  Object.keys(bySup).forEach(function(sid){
+    var s=bySup[sid];
+    rows.forEach(function(r){
+      if(r.supplierId!==sid||r.perMonth<=0) return;
+      if(r.orderIn!==null&&r.orderIn<=s.orderIn+30){
+        var kg=r.orderKg>0?r.orderKg:Math.ceil((r.perMonth/30)*c.coverDays*2)/2;
+        if(kg>0) s.items.push({aroma:r.aroma,name:r.name,kg:kg});
+      }
+    });
+    s.orderBy=addDaysISO(Math.max(0,s.orderIn)); s.now=s.orderIn<=0;
+    s.totalKg=s.items.reduce(function(t,i){return t+i.kg;},0);
+  });
+  var orders=Object.keys(bySup).map(function(k){return bySup[k];}).filter(function(s){return s.items.length;}).sort(function(a,b){return a.orderIn-b.orderIn;});
+  return {cfg:c,rows:rows,orders:orders};
 }
-function loadCustomers(force){
-  if(!force&&custState.loadedAt&&Date.now()-custState.loadedAt<5*60000){ renderCustomers(); return; }
-  var done=function(orders){ custState.orders=orders; custState.list=buildCustomers(orders); custState.loadedAt=Date.now(); renderCustomers(); };
-  if(!cloudDb){ done([]); return; }
-  cloudDb.collection("orders").orderBy("createdAt","desc").limit(1000).get().then(function(snap){
-    var arr=[]; snap.forEach(function(d){arr.push(Object.assign({_id:d.id},d.data()));}); done(arr);
-  }).catch(function(e){ var el=document.getElementById("cust-body"); if(el) el.innerHTML='<span style="color:var(--red)">'+esc(e.message||String(e))+'</span>'; });
+function rawSupplierEmail(o){
+  var sup=suppliers.find(function(s){return s.id===o.supplierId;});
+  var who=(sup&&(sup.name.match(/\(([^)]+)\)/)||[])[1])||"";
+  return "Dear "+(who?who+"-san":"partner")+",\n\nWe would like to place a new order of incense sticks:\n"
+    +o.items.map(function(i){return "- "+i.name+": "+i.kg+" kg";}).join("\n")
+    +"\n\nCould you please confirm availability, price and the shipping date?\n\nBest regards,\nAll Trees I Know";
 }
-function setCustFilter(f){ custState.filter=f; renderCustomers(); }
-function saveRepeatSettings(){
-  var d=parseInt(document.getElementById("cust-days").value,10), promo=(document.getElementById("cust-promo").value||"").trim().slice(0,40);
-  settings.repeatDays=d>=14&&d<=365?d:REPEAT_DEFAULT_DAYS; settings.repeatPromo=promo; save();
-  custState.list=buildCustomers(custState.orders||[]); renderCustomers();
+function openRawForecast(){
+  var f=rawForecast(), c=f.cfg;
+  var stTxt={now:'<span style="color:var(--red);font-weight:600">замовити зараз</span>',soon:'<span style="color:var(--cedar);font-weight:600">скоро</span>',ok:'<span style="color:var(--moss)">ок</span>',idle:'<span style="color:var(--ink4)">не продається</span>'};
+  var th='style="border-bottom:1px solid var(--border);padding:5px 6px;text-align:left;font-size:11px;color:var(--ink3);font-weight:600;white-space:nowrap"';
+  var td='style="border-bottom:1px solid var(--border);padding:5px 6px;white-space:nowrap"';
+  var lab='style="display:inline-flex;gap:5px;align-items:center;margin:0;width:auto;font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink3)"';
+  var body='<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;font-size:12px;margin-bottom:10px">'
+      +'<label '+lab+'>Доставка з Японії <input id="rf-lead" type="number" min="7" max="180" value="'+c.leadDays+'" style="width:56px;padding:3px 6px"> дн.</label>'
+      +'<label '+lab+'>Запас на всяк випадок <input id="rf-safety" type="number" min="0" max="120" value="'+c.safetyDays+'" style="width:56px;padding:3px 6px"> дн.</label>'
+      +'<label '+lab+'>Замовлення покриває <input id="rf-cover" type="number" min="30" max="365" value="'+c.coverDays+'" style="width:56px;padding:3px 6px"> дн.</label>'
+      +'<button class="btn btn-gray btn-sm" onclick="saveRawForecastCfg()">Перерахувати</button></div>';
+  if(f.orders.length){
+    body+=f.orders.map(function(o,i){
+      return '<div style="border:1px solid '+(o.now?'var(--red)':'var(--border)')+';border-radius:10px;padding:10px 12px;margin-bottom:8px">'
+        +'<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><strong style="font-size:13px">📦 '+esc(o.supplier)+'</strong>'
+        +'<span style="font-size:12px;'+(o.now?'color:var(--red);font-weight:600':'color:var(--cedar)')+'">'+(o.now?'Замовити зараз':'Замовити до '+esc(formatDate(o.orderBy)))+' · '+o.totalKg+' кг</span></div>'
+        +'<div style="font-size:12.5px;margin:4px 0 6px">'+o.items.map(function(it){return esc(it.name)+' <strong>'+it.kg+' кг</strong>';}).join(" · ")+'</div>'
+        +'<button class="btn btn-gray btn-sm" onclick="copyRawOrder('+i+')">📋 Копіювати лист постачальнику (англ.)</button></div>';
+    }).join("");
+  } else body+='<div style="color:var(--moss);font-size:12.5px;margin-bottom:8px">✓ Найближчим часом нічого замовляти не треба.</div>';
+  body+='<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px"><thead><tr><th '+th+'>Аромат</th><th '+th+'>Є, кг</th><th '+th+'>В дорозі, кг</th><th '+th+'>Йде за міс.</th><th '+th+'>Вистачить</th><th '+th+'>Замовити до</th><th '+th+'>Статус</th></tr></thead><tbody>'
+    +f.rows.sort(function(a,b){var o={now:0,soon:1,ok:2,idle:3};return o[a.status]-o[b.status]||(a.daysLeft||1e9)-(b.daysLeft||1e9);}).map(function(r){
+      return '<tr><td '+td+'>'+esc(r.name)+'<div style="font-size:10.5px;color:var(--ink4)">'+esc(r.supplier.replace(/ \([^)]*\)/,""))+'</div></td>'
+        +'<td '+td+'>'+r.stock.toFixed(2)+'</td>'
+        +'<td '+td+'><input class="rf-transit" data-a="'+r.aroma+'" type="number" min="0" step="0.5" value="'+(r.inTransit||"")+'" placeholder="0" style="width:58px;padding:2px 5px"></td>'
+        +'<td '+td+'>'+(r.perMonth?r.perMonth.toFixed(2)+' кг':'—')+'</td>'
+        +'<td '+td+'>'+(r.daysLeft===null?'—':r.daysLeft>365?'> року':'~'+r.daysLeft+' дн.')+'</td>'
+        +'<td '+td+'>'+(r.orderBy?esc(formatDate(r.orderBy)):'—')+'</td>'
+        +'<td '+td+'>'+stTxt[r.status]+'</td></tr>';
+    }).join("")+'</tbody></table>'
+    +'<div style="font-size:11px;color:var(--ink4);margin-top:6px">Витрата рахується з накладних за останні 90 днів. «В дорозі» — те, що вже замовлено, але ще не прийнято на склад; після прийому обнуліть.</div>';
+  maintModal("modal-rawfc","📈 Сировина: коли замовляти з Японії",body,'<button class="btn btn-moss btn-sm" style="color:#fff" onclick="saveRawForecastCfg()">Зберегти</button>');
+  window._rawfc=f;
 }
-function renderCustomers(){
-  var el=document.getElementById("cust-body"); if(!el) return;
-  var all=custState.list, days=settings.repeatDays>0?settings.repeatDays:REPEAT_DEFAULT_DAYS;
-  if(!all.length){ el.innerHTML='<div style="color:var(--ink3);font-size:13px;padding:10px 0">Поки немає замовлень з контактами покупців.</div>'; return; }
-  var rep=all.filter(function(c){return c.count>1;}).length;
-  var cnt={due:0,lapsed:0,recent:0}; all.forEach(function(c){cnt[c.segment]++;});
-  var f=custState.filter, list=all.filter(function(c){return f==="all"||c.segment===f||(f==="repeat"&&c.count>1);});
-  if(f==="due"||f==="lapsed") list.sort(function(a,b){ return (a.contacted?1:0)-(b.contacted?1:0)||b.count-a.count||a.daysSince-b.daysSince; });
-  function tab(k,l){ return '<button class="btn btn-sm '+(f===k?'btn-moss':'btn-gray')+'" style="'+(f===k?'color:#fff':'')+'" onclick="setCustFilter(\''+k+'\')">'+l+'</button>'; }
-  var td='style="border-bottom:1px solid var(--border);padding:6px 8px;vertical-align:top"';
-  el.innerHTML='<div style="font-size:12.5px;margin-bottom:8px">Покупців: <strong>'+all.length+'</strong> · купували повторно: <strong>'+rep+'</strong> ('+Math.round(rep/all.length*100)+'%)</div>'
-    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'+tab("due","⏰ Пора докупити ("+cnt.due+")")+tab("lapsed","💤 Давно не купували ("+cnt.lapsed+")")+tab("recent","🆕 Нещодавно ("+cnt.recent+")")+tab("repeat","🔁 Постійні ("+rep+")")+tab("all","Усі")+'</div>'
-    +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:12px;margin-bottom:8px;color:var(--ink3)">'
-      +'<label style="display:inline-flex;gap:5px;align-items:center;margin:0;width:auto;font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink3)">Палички закінчуються через <input id="cust-days" type="number" min="14" max="365" value="'+days+'" style="width:60px;padding:3px 6px"> дн.</label>'
-      +'<label style="display:inline-flex;gap:5px;align-items:center;margin:0;width:auto;font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink3)">Промокод <input id="cust-promo" value="'+esc(settings.repeatPromo||"")+'" placeholder="необов\'язково" style="width:120px;padding:3px 6px"></label>'
-      +'<button class="btn btn-gray btn-sm" onclick="saveRepeatSettings()">Зберегти</button></div>'
-    +(list.length?'<table style="width:100%;border-collapse:collapse;font-size:12px"><tbody>'
-      +list.slice(0,150).map(function(c){
-        return '<tr><td '+td+'><strong>'+esc(c.name||c.nickname||c.phone||"Без імені")+'</strong>'
-            +'<div style="font-size:11px;color:var(--ink4)">'+esc([c.city,Object.keys(c.sources).join(", ")].filter(Boolean).join(" · "))+'</div></td>'
-          +'<td '+td+'>'+c.count+' зам.<div style="font-size:11px;color:var(--ink4);white-space:nowrap">'+fmt(c.spent)+' ₴</div></td>'
-          +'<td '+td+'>'+esc(formatDate(c.lastDate))+'<div style="font-size:11px;color:var(--ink4)">'+c.daysSince+' дн. тому'+(c.avgGap?' · зазвичай ~'+c.avgGap:'')+'</div></td>'
-          +'<td style="border-bottom:1px solid var(--border);padding:6px 8px;vertical-align:top;color:var(--ink3)">'+esc(c.favorite.join(", "))+'</td>'
-          +'<td style="border-bottom:1px solid var(--border);padding:6px 8px;vertical-align:top;text-align:right;white-space:nowrap">'
-            +'<button class="btn btn-moss btn-sm" style="color:#fff" onclick="openCustomerMessage(\''+esc(c.key)+'\')">✍️ Написати</button>'
-            +(c.contacted?'<div style="font-size:10.5px;color:var(--ink4);margin-top:3px">написали '+(daysAgo(c.contacted)===0?'сьогодні':daysAgo(c.contacted)+' дн. тому')+'</div>':'')+'</td></tr>';
-      }).join("")+'</tbody></table>'+(list.length>150?'<div style="font-size:11px;color:var(--ink4);margin-top:4px">Показано перші 150</div>':'')
-      :'<div style="color:var(--ink3);font-size:12.5px;padding:8px 0">У цьому списку нікого немає.</div>');
+function saveRawForecastCfg(){
+  function num(id,d,min,max){ var v=parseInt(document.getElementById(id).value,10); return v>=min&&v<=max?v:d; }
+  settings.rawForecast={leadDays:num("rf-lead",RAW_DEFAULTS.leadDays,7,180),safetyDays:num("rf-safety",RAW_DEFAULTS.safetyDays,0,120),coverDays:num("rf-cover",RAW_DEFAULTS.coverDays,30,365)};
+  var tr={}; document.querySelectorAll(".rf-transit").forEach(function(i){ var v=parseFloat(i.value); if(v>0) tr[i.dataset.a]=v; });
+  settings.rawInTransit=tr;
+  save(); openRawForecast(); renderRawMaterials();
 }
-function customerChatLink(c){
-  var ph=String(c.phone||"").replace(/[^\d+]/g,"");
-  if(ph&&ph.charAt(0)!=="+") ph=(ph.length===10&&ph.charAt(0)==="0"?"+38":"+")+ph;
-  var ig=String(c.nickname||"").replace(/^@/,"").trim();
-  if(c.sources.Instagram&&ig) return {href:"https://instagram.com/"+ig,label:"Instagram"};
-  if(ph) return {href:"viber://chat?number="+encodeURIComponent(ph),label:"Viber",alt:{href:"https://t.me/"+ph,label:"Telegram"}};
-  if(ig) return {href:"https://instagram.com/"+ig,label:"Instagram"};
-  return null;
-}
-function customerTemplate(c,purpose,promo){
-  var fav=c.favorite.slice(0,2).join(" та ");
-  var t="Добрий день! Це All Trees I Know.";
-  if(purpose==="repeat") t+=" Минулого разу ви брали "+(fav||"наші палички")+", мабуть, вони вже закінчуються. Хочете поповнити запас?";
-  else if(purpose==="winback") t+=" Давно вас не чули і будемо раді знову бачити"+(fav?". Ваші "+fav+" чекають":"")+".";
-  else t+=" Дякуємо за замовлення, сподіваємось, аромати вам до душі!";
-  if(promo&&purpose!=="thanks") t+=" Для вас промокод "+promo+" на наступне замовлення.";
-  if(purpose!=="thanks") t+=" Замовити можна на alltreesiknow.com або просто відповіддю тут.";
-  return t;
-}
-function openCustomerMessage(key){
-  var c=custState.list.find(function(x){return x.key===key;}); if(!c) return;
-  var purpose=c.segment==="lapsed"?"winback":c.segment==="due"?"repeat":"thanks";
-  var link=customerChatLink(c), promo=settings.repeatPromo||"";
-  var opts=[["repeat","⏰ Пора докупити"],["winback","💤 Давно не купували"],["thanks","🙏 Подякувати"]];
-  var body='<div style="font-size:12px;color:var(--ink3);margin-bottom:8px">'+esc(c.name||"Без імені")+(c.phone?' · '+esc(c.phone):'')+' · '+c.count+' зам., останнє '+c.daysSince+' дн. тому</div>'
-    +'<div style="display:flex;gap:6px 14px;flex-wrap:wrap;margin-bottom:8px">'+opts.map(function(o){
-      return '<label style="font-size:12.5px;display:inline-flex;width:auto;gap:5px;align-items:center;cursor:pointer;margin:0;font-weight:400;color:var(--ink);text-transform:none;letter-spacing:0"><input type="radio" name="cm-purpose" style="width:auto;margin:0" value="'+o[0]+'"'+(o[0]===purpose?' checked':'')+' onchange="cmRefresh()">'+o[1]+'</label>';}).join("")+'</div>'
-    +'<textarea id="pm-text" rows="6" style="width:100%;box-sizing:border-box;font-family:inherit;font-size:13px;line-height:1.45;padding:8px 10px;border:1px solid var(--border2);border-radius:8px"></textarea>'
-    +'<details style="margin-top:8px;font-size:12px"><summary style="cursor:pointer;color:var(--ink3)">Мій стиль: приклади моїх повідомлень (для AI)</summary>'
-      +'<textarea id="pm-examples" rows="4" style="width:100%;box-sizing:border-box;font-family:inherit;font-size:12px;margin-top:6px;padding:6px 8px;border:1px solid var(--border2);border-radius:6px">'+esc(settings.messageExamples||"")+'</textarea></details>'
-    +'<div id="pm-status" style="font-size:12px;margin-top:6px"></div>';
-  var foot='<button class="btn btn-gray btn-sm" onclick="cmAiRewrite()">✨ Переписати AI</button>'
-    +(link&&link.alt?'<button class="btn btn-gray btn-sm" onclick="cmCopyOpen(true)">📋 Копіювати й відкрити '+link.alt.label+'</button>':'')
-    +'<button class="btn btn-gray btn-sm" onclick="cmCopyOpen(false)">📋 Копіювати'+(link?' й відкрити '+esc(link.label):'')+'</button>'
-    +'<button class="btn btn-moss btn-sm" style="color:#fff" onclick="cmMarkSent()">✓ Надіслано</button>';
-  maintModal("modal-cmsg","✍️ Повідомлення покупцю",body,foot);
-  window._cm={c:c,link:link,promo:promo};
-  document.getElementById("pm-text").value=customerTemplate(c,purpose,promo);
-}
-function cmPurpose(){ var r=document.querySelector('input[name="cm-purpose"]:checked'); return r?r.value:"repeat"; }
-function cmRefresh(){ var cm=window._cm; if(cm) document.getElementById("pm-text").value=customerTemplate(cm.c,cmPurpose(),cm.promo); }
-function cmAiRewrite(){
-  var cm=window._cm; if(!cm) return;
-  var ex=document.getElementById("pm-examples").value;
-  if(ex!==(settings.messageExamples||"")){ settings.messageExamples=ex.slice(0,6000); save(); }
-  pmStatus("🤖 AI пише…");
-  // Only the first name and what they bought go to AI: no phone, no address.
-  var first=String(cm.c.name||"").trim().split(/\s+/)[0]||"";
-  aiApi("/api/partner-message",{audience:"customer",point:{name:first||"покупець"},purposes:[cmPurpose()],
-    facts:{firstName:first,ordersCount:cm.c.count,daysSinceLastOrder:cm.c.daysSince,favorite:cm.c.favorite,promoCode:cm.promo||"",channel:cm.link?cm.link.label:""},
-    examples:ex,draft:document.getElementById("pm-text").value}).then(function(j){
-    document.getElementById("pm-text").value=j.text; pmStatus('<span style="color:var(--moss)">✓ Готово. Перевірте й відредагуйте за потреби.</span>');
-  }).catch(function(e){ pmStatus('<span style="color:var(--red)">'+esc(e.message||String(e))+'</span>'); });
-}
-function cmCopyOpen(alt){
-  var cm=window._cm; if(!cm) return;
-  var t=document.getElementById("pm-text").value, l=cm.link&&(alt?cm.link.alt:cm.link);
-  var open=function(){ if(l) window.open(l.href,"_blank","noopener"); };
-  (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){
-    pmStatus('<span style="color:var(--moss)">Скопійовано. Вставте в чат і надішліть, потім натисніть «Надіслано».</span>'); open();
-  }).catch(function(){ prompt("Скопіюйте текст:",t); open(); });
-}
-function cmMarkSent(){
-  var cm=window._cm; if(!cm) return;
-  var map=Object.assign({},settings.customerContacts||{}); map[cm.c.key]=todayISO();
-  var keys=Object.keys(map).sort(function(a,b){return String(map[b]).localeCompare(String(map[a]));}).slice(0,800);
-  settings.customerContacts={}; keys.forEach(function(k){settings.customerContacts[k]=map[k];});
-  save(); cm.c.contacted=todayISO();
-  var m=document.getElementById("modal-cmsg"); if(m) m.remove();
-  renderCustomers(); addToast("Позначено як надіслане","success");
+function copyRawOrder(i){
+  var o=window._rawfc&&window._rawfc.orders[i]; if(!o) return;
+  var t=rawSupplierEmail(o);
+  (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){addToast("Лист скопійовано","success");}).catch(function(){prompt("Скопіюйте лист:",t);});
 }
 
 var DEFAULT_SALES_GOAL={amount:200000,period:"month",basis:"paid"};
