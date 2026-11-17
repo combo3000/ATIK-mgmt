@@ -5799,6 +5799,9 @@ function renderBuyersList(){
     var d=buyerDeal(b);
     if(d) return d==="consignment"?"Реалізація (70%)":"Передоплата (60%)";
     if(b.priceType) return b.priceType;
+    // Not saved yet: show the term the app already uses for documents (4 prepay points by name, the rest consignment)
+    if(!b.isD2C&&!isOrderCustomerPoint(b)){ var t=partnerTermFor(b);
+      return (t==="consignment"?"Реалізація (70%)":"Передоплата (60%)")+' <span style="color:var(--ink4);font-size:11px">авто, ще не збережено</span>'; }
     return '<span style="color:var(--ink4)">не вказано</span>';
   };
   var el=document.getElementById("buyers-list");
