@@ -6182,6 +6182,16 @@ function extractContacts(b){
   if(b.receiver&&b.receiver!=="—") out.contactName=b.receiver;
   return out;
 }
+// ── ADDR-START (pure; tested in test/address.test.mjs) ──
+// Phone numbers that were typed into the address go to the phone field; the address keeps only the address.
+var ADDR_PHONE_RE=/(\+?\s*3?\s*8?[\s(-]*0\d{2}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2})/;
+function splitAddressPhone(addr){
+  var a=String(addr||""), phones=[], re=new RegExp("[,;]?\\s*(?:(?:тел(?:ефон)?|tel|моб(?:ільний)?|ph(?:one)?)\\.?\\s*[:.]?\\s*)?"+ADDR_PHONE_RE.source,"gi");
+  var clean=a.replace(re,function(m,ph){ phones.push(ph.replace(/\s+/g," ").trim()); return ""; });
+  clean=clean.replace(/^\s*адреса\s*:\s*/i,"").replace(/\s*[,;]\s*(?=[,;]|$)/g,"").replace(/\s{2,}/g," ").replace(/^[\s,;:.]+|[\s,;:]+$/g,"").trim();
+  return {address:clean,phones:phones,changed:clean!==a.trim()};
+}
+// ── ADDR-END ──
 function partnerTermFor(b){
   var label=[b.name,b.retailName].filter(Boolean).join(" ");
   return PREPAY_POINTS_RE.test(label)?"prepay":"consignment";
@@ -6191,7 +6201,9 @@ function openPartnerFill(){
   var rows=pts.map(function(b){
     var c=extractContacts(b), term=b.dealType||partnerTermFor(b), fill={};
     ["contactName","phone","telegram","instagram"].forEach(function(f){ if(c[f]&&!b[f]) fill[f]=c[f]; });
-    var contactTxt=Object.keys(fill).map(function(f){return esc(fill[f]);}).join(" · ");
+    var ad=splitAddressPhone(b.address); if(ad.phones.length&&!b.phone&&!fill.phone) fill.phone=ad.phones[0];
+    var contactTxt=Object.keys(fill).map(function(f){return esc(fill[f]);}).join(" · ")
+      +(ad.changed&&ad.phones.length?'<div style="color:var(--ink3);margin-top:2px">Адреса стане: <span style="color:var(--ink)">'+esc(ad.address||"—")+'</span></div>':'');
     return '<tr><td style="padding:4px 6px;border-bottom:1px solid var(--border)"><input type="checkbox" class="pfill-cb" data-id="'+esc(b.id)+'" checked></td>'
       +'<td style="padding:4px 6px;border-bottom:1px solid var(--border);font-weight:600">'+esc(b.retailName||b.name)+'<div style="font-weight:400;font-size:11px;color:var(--ink3)">'+esc(b.name)+'</div></td>'
       +'<td style="padding:4px 6px;border-bottom:1px solid var(--border)"><select class="pfill-term" data-id="'+esc(b.id)+'" style="font-size:12px">'
@@ -6202,7 +6214,7 @@ function openPartnerFill(){
   }).join("");
   maintModal("modal-pfill","Контакти й умови точок: "+pts.length,
     '<div style="font-size:12.5px;margin-bottom:8px">Умова: передоплата для Бюро Вин, Товариство і ФОП Руда, решта під реалізацію. Перевірте й за потреби змініть.<br>'
-    +'Контакти беруться з опису точки (телефон, Telegram, Instagram, отримувач) і записуються лише в порожні поля.</div>'
+    +'Контакти беруться з опису точки (телефон, Telegram, Instagram, отримувач) і записуються лише в порожні поля. Телефон, записаний в адресі, переноситься в поле «Телефон», а з адреси прибирається (старі документи не змінюються).</div>'
     +'<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="background:var(--surface2)"><th></th><th style="text-align:left;padding:4px 6px">Точка</th><th style="text-align:left;padding:4px 6px">Умова</th><th style="text-align:left;padding:4px 6px">Буде заповнено</th></tr></thead><tbody>'+rows+'</tbody></table>',
     '<button class="btn btn-moss btn-sm" style="color:#fff" onclick="applyPartnerFill()">Зберегти бекап і застосувати</button>');
 }
@@ -6215,8 +6227,11 @@ function applyPartnerFill(){
     var b=buyers.find(function(x){return x.id===id;}); if(!b) return;
     var sel=document.querySelector('.pfill-term[data-id="'+CSS.escape(id)+'"]');
     if(sel) b.dealType=sel.value;
-    var c=extractContacts(b);
+    var c=extractContacts(b), ad=splitAddressPhone(b.address);
+    if(ad.phones.length&&!b.phone) c.phone=ad.phones[0];
     ["contactName","phone","telegram","instagram"].forEach(function(f){ if(c[f]&&!b[f]) b[f]=c[f]; });
+    // Move the phone out of the address (old documents keep the address they were made with)
+    if(ad.phones.length&&ad.changed&&b.phone){ freezeBuyerInJournal(b.id,{address:ad.address||null}); b.address=ad.address||null; }
     if(!b.channel) b.channel=b.telegram?"telegram":b.instagram?"instagram":b.phone?"phone":null;
     if(b.channel===null) delete b.channel;
     n++;
