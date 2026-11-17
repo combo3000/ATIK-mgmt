@@ -7790,6 +7790,25 @@ var ASST_TOOLS={
       daysInStage:daysAgo(l.stageAt),note:l.note||"",lastActions:(l.history||[]).slice(0,3).map(function(h){return h.date+" "+h.text;})};}),
       lost:leads.filter(function(l){return l.stage==="lost";}).length};
   },
+  list_products:function(i){
+    var KIND={tube40:"тубус 40 шт",tube20:"тубус 20 шт",stand:"підставка"};
+    var kind=function(p){ return p.group==="refill"?"папір "+(p.pack||"")+" шт":(KIND[p.group]||p.group||""); };
+    var q=String(i.query||"").toLowerCase().trim();
+    var list=products.filter(function(p){ return !q||(String(p.name||"")+" "+p.id+" "+kind(p)).toLowerCase().indexOf(q)>=0; });
+    return {count:list.length,products:list.map(function(p){return {id:p.id,name:shortName(p.name||""),pack:kind(p),shelf:p.shelf||0,warehouse:(warehouseStock[p.id]&&warehouseStock[p.id].qty)||0};})};
+  },
+  propose_document:function(i){
+    var f=asstFindPoint(i.point); if(!f.b) return f; var b=f.b;
+    var type=i.doc_type==="invoice"?"invoice":"bill";
+    var bad=[], lines=[];
+    (i.items||[]).forEach(function(it){
+      var p=products.find(function(x){return x.id===it.product_id;}), q=parseInt(it.qty,10);
+      if(!p||!(q>0)) bad.push(it.product_id); else lines.push({p:p,qty:q});
+    });
+    if(bad.length||!lines.length) return {error:"Невідомі товари або кількість: "+bad.join(", ")+". Знайди точні id через list_products або перепитай людину."};
+    var label=(type==="bill"?"🧾 Чернетка рахунку: ":"📦 Чернетка накладної: ")+(b.retailName||b.name)+" ("+lines.map(function(l){return shortName(l.p.name)+" × "+l.qty;}).join(", ")+")";
+    return {action:{label:label,run:function(){ asstClose(); openDocDraft(b.id,type,lines.map(function(l){return {productId:l.p.id,qty:l.qty};})); }}};
+  },
   propose_restock_invoice:function(i){ var f=asstFindPoint(i.point); if(!f.b) return f; var b=f.b;
     if(!restockLinesFor(b)) return {error:"Для «"+(b.retailName||b.name)+"» немає даних для поповнення: ні звітів, ні накладних"};
     return {action:{label:"📦 Чернетка накладної: "+(b.retailName||b.name),run:function(){ asstClose(); createRestockInvoice(b.id); }}}; },
@@ -7801,6 +7820,20 @@ var ASST_TOOLS={
     return {action:{label:"🔗 Скопіювати посилання: "+(b.retailName||b.name),run:function(){ copyPointOrderLink(b.id); }}}; },
   propose_sales_report:function(){ return {action:{label:"📋 Внести звіт продажів",run:function(){ asstClose(); openSalesReportModal(); }}}; }
 };
+// Opens the document form filled in: buyer, type, price by the point's term, number, date and lines.
+// Nothing is saved until the person presses «Згенерувати».
+function openDocDraft(buyerId,docType,lines){
+  var b=buyers.find(function(x){return x.id===buyerId;}); if(!b) return;
+  switchTab("docs"); switchDocsSub("form"); renderBuyerSelect();
+  var sel=document.getElementById("buyer-select"); sel.value=b.id; onBuyerChange();
+  var dtEl=document.querySelector('input[name="doctype"][value="'+docType+'"]'); if(dtEl) dtEl.checked=true;
+  if(!b.isD2C){ var term=buyerDeal(b)||partnerTermFor(b); var ptEl=document.querySelector('input[name="pricetype"][value="'+(term==="prepay"?"opt":"real")+'"]'); if(ptEl) ptEl.checked=true; }
+  document.getElementById("inv-num").value=nextInvoiceNum();
+  document.getElementById("inv-date").value=todayISO();
+  items=lines.map(function(l){ return {id:Date.now()+Math.random(),productId:l.productId,qty:l.qty,customPrice:"",baseShelf:lastShelfPriceFor(b.id,l.productId)}; });
+  onDocTypeChange(); refreshPriceTypeBtns(); renderItems();
+  addToast((docType==="bill"?"Чернетка рахунку":"Чернетка накладної")+" для «"+(b.retailName||b.name)+"»","success","Перевірте позиції й ціни і натисніть «Згенерувати»");
+}
 function asstRunTool(name,input){ var f=ASST_TOOLS[name]; if(!f) return {error:"Невідомий інструмент"}; return f(input); }
 
 // ============================================================

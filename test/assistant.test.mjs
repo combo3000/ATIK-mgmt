@@ -58,3 +58,11 @@ test("assistant handler: 405 / auth", async () => {
   const r1 = mk(); await handler({ method: "GET", headers: {} }, r1); assert.equal(r1.statusCode, 405);
   const r2 = mk(); await handler({ method: "POST", headers: {}, body: {} }, r2); assert.ok([401, 503].includes(r2.statusCode));
 });
+
+test("document draft tools are offered and propose_document needs exact items", () => {
+  const names = TOOLS.map((t) => t.name);
+  assert.ok(names.includes("list_products"));
+  assert.ok(names.includes("propose_document"));
+  const pd = TOOLS.find((t) => t.name === "propose_document");
+  assert.deepEqual(pd.input_schema.required.slice().sort(), ["doc_type", "items", "point"]);
+});
