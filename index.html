@@ -672,6 +672,24 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 
 .store-card-item{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:14px;box-shadow:var(--shadow);cursor:pointer;transition:border-color .18s,box-shadow .18s;}
 .store-card-item:hover{border-color:var(--moss2);box-shadow:0 4px 16px rgba(61,107,74,.12);}
+
+/* ── Assistant chat ── */
+#asst-fab{position:fixed;right:18px;bottom:18px;z-index:900;background:var(--pine);color:#fff;border:none;border-radius:24px;padding:11px 16px;font:600 13px inherit;font-family:inherit;box-shadow:0 6px 20px rgba(0,0,0,.18);cursor:pointer}
+#asst-panel{position:fixed;right:18px;bottom:18px;z-index:901;width:min(420px,calc(100vw - 24px));height:min(620px,calc(100vh - 36px));background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);display:none;flex-direction:column;overflow:hidden}
+#asst-panel.open{display:flex}
+.asst-head{display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--pine);color:#fff;font-weight:700;font-size:13px}
+.asst-head button{background:none;border:none;color:#fff;cursor:pointer;font-size:12px;font-family:inherit;opacity:.85}
+#asst-log{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:13px;line-height:1.5}
+.asst-msg{max-width:88%;padding:8px 11px;border-radius:12px;white-space:normal;word-wrap:break-word}
+.asst-msg.u{align-self:flex-end;background:var(--moss4);color:var(--ink)}
+.asst-msg.a{align-self:flex-start;background:var(--surface3);color:var(--ink)}
+.asst-msg.s{align-self:center;background:none;color:var(--ink4);font-size:11.5px;padding:2px}
+.asst-act{display:inline-block;margin-top:6px;margin-right:6px}
+.asst-sugg{display:flex;flex-wrap:wrap;gap:6px}
+.asst-sugg button{border:1px solid var(--border);background:var(--surface);border-radius:14px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--ink2)}
+.asst-foot{display:flex;gap:6px;padding:10px;border-top:1px solid var(--border)}
+.asst-foot textarea{flex:1;resize:none;height:40px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;font:13px inherit;font-family:inherit}
+@media print{#asst-fab,#asst-panel{display:none!important}}
 </style>
 </head>
 <body>
@@ -5781,6 +5799,9 @@ function renderBuyersList(){
     var d=buyerDeal(b);
     if(d) return d==="consignment"?"Реалізація (70%)":"Передоплата (60%)";
     if(b.priceType) return b.priceType;
+    // Not saved yet: show the term the app already uses for documents (4 prepay points by name, the rest consignment)
+    if(!b.isD2C&&!isOrderCustomerPoint(b)){ var t=partnerTermFor(b);
+      return (t==="consignment"?"Реалізація (70%)":"Передоплата (60%)")+' <span style="color:var(--ink4);font-size:11px">авто, ще не збережено</span>'; }
     return '<span style="color:var(--ink4)">не вказано</span>';
   };
   var el=document.getElementById("buyers-list");
@@ -6164,6 +6185,16 @@ function extractContacts(b){
   if(b.receiver&&b.receiver!=="—") out.contactName=b.receiver;
   return out;
 }
+// ── ADDR-START (pure; tested in test/address.test.mjs) ──
+// Phone numbers that were typed into the address go to the phone field; the address keeps only the address.
+var ADDR_PHONE_RE=/(\+?\s*3?\s*8?[\s(-]*0\d{2}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2})/;
+function splitAddressPhone(addr){
+  var a=String(addr||""), phones=[], re=new RegExp("[,;]?\\s*(?:(?:тел(?:ефон)?|tel|моб(?:ільний)?|ph(?:one)?)\\.?\\s*[:.]?\\s*)?"+ADDR_PHONE_RE.source,"gi");
+  var clean=a.replace(re,function(m,ph){ phones.push(ph.replace(/\s+/g," ").trim()); return ""; });
+  clean=clean.replace(/^\s*адреса\s*:\s*/i,"").replace(/\s*[,;]\s*(?=[,;]|$)/g,"").replace(/\s{2,}/g," ").replace(/^[\s,;:.]+|[\s,;:]+$/g,"").trim();
+  return {address:clean,phones:phones,changed:clean!==a.trim()};
+}
+// ── ADDR-END ──
 function partnerTermFor(b){
   var label=[b.name,b.retailName].filter(Boolean).join(" ");
   return PREPAY_POINTS_RE.test(label)?"prepay":"consignment";
@@ -6173,7 +6204,9 @@ function openPartnerFill(){
   var rows=pts.map(function(b){
     var c=extractContacts(b), term=b.dealType||partnerTermFor(b), fill={};
     ["contactName","phone","telegram","instagram"].forEach(function(f){ if(c[f]&&!b[f]) fill[f]=c[f]; });
-    var contactTxt=Object.keys(fill).map(function(f){return esc(fill[f]);}).join(" · ");
+    var ad=splitAddressPhone(b.address); if(ad.phones.length&&!b.phone&&!fill.phone) fill.phone=ad.phones[0];
+    var contactTxt=Object.keys(fill).map(function(f){return esc(fill[f]);}).join(" · ")
+      +(ad.changed&&ad.phones.length?'<div style="color:var(--ink3);margin-top:2px">Адреса стане: <span style="color:var(--ink)">'+esc(ad.address||"—")+'</span></div>':'');
     return '<tr><td style="padding:4px 6px;border-bottom:1px solid var(--border)"><input type="checkbox" class="pfill-cb" data-id="'+esc(b.id)+'" checked></td>'
       +'<td style="padding:4px 6px;border-bottom:1px solid var(--border);font-weight:600">'+esc(b.retailName||b.name)+'<div style="font-weight:400;font-size:11px;color:var(--ink3)">'+esc(b.name)+'</div></td>'
       +'<td style="padding:4px 6px;border-bottom:1px solid var(--border)"><select class="pfill-term" data-id="'+esc(b.id)+'" style="font-size:12px">'
@@ -6184,7 +6217,7 @@ function openPartnerFill(){
   }).join("");
   maintModal("modal-pfill","Контакти й умови точок: "+pts.length,
     '<div style="font-size:12.5px;margin-bottom:8px">Умова: передоплата для Бюро Вин, Товариство і ФОП Руда, решта під реалізацію. Перевірте й за потреби змініть.<br>'
-    +'Контакти беруться з опису точки (телефон, Telegram, Instagram, отримувач) і записуються лише в порожні поля.</div>'
+    +'Контакти беруться з опису точки (телефон, Telegram, Instagram, отримувач) і записуються лише в порожні поля. Телефон, записаний в адресі, переноситься в поле «Телефон», а з адреси прибирається (старі документи не змінюються).</div>'
     +'<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="background:var(--surface2)"><th></th><th style="text-align:left;padding:4px 6px">Точка</th><th style="text-align:left;padding:4px 6px">Умова</th><th style="text-align:left;padding:4px 6px">Буде заповнено</th></tr></thead><tbody>'+rows+'</tbody></table>',
     '<button class="btn btn-moss btn-sm" style="color:#fff" onclick="applyPartnerFill()">Зберегти бекап і застосувати</button>');
 }
@@ -6197,8 +6230,11 @@ function applyPartnerFill(){
     var b=buyers.find(function(x){return x.id===id;}); if(!b) return;
     var sel=document.querySelector('.pfill-term[data-id="'+CSS.escape(id)+'"]');
     if(sel) b.dealType=sel.value;
-    var c=extractContacts(b);
+    var c=extractContacts(b), ad=splitAddressPhone(b.address);
+    if(ad.phones.length&&!b.phone) c.phone=ad.phones[0];
     ["contactName","phone","telegram","instagram"].forEach(function(f){ if(c[f]&&!b[f]) b[f]=c[f]; });
+    // Move the phone out of the address (old documents keep the address they were made with)
+    if(ad.phones.length&&ad.changed&&b.phone){ freezeBuyerInJournal(b.id,{address:ad.address||null}); b.address=ad.address||null; }
     if(!b.channel) b.channel=b.telegram?"telegram":b.instagram?"instagram":b.phone?"phone":null;
     if(b.channel===null) delete b.channel;
     n++;
@@ -7416,6 +7452,163 @@ function submitQuickOrder(){
 }
 
 // ============================================================
+// ASSISTANT CHAT (/api/assistant). The server talks to Claude; tools run here over the app's data.
+// Read tools return counted numbers. Action tools only add a button: the person opens the draft
+// and confirms it in the usual window. Nothing is saved, deleted or sent by the assistant.
+// ============================================================
+var asst={messages:[],busy:false};
+var ASST_SUGG=["Як ідемо до цілі цього місяця?","Хто з точок винен гроші?","Кому пора довезти товар?","Яка сировина закінчується?","Що продається найкраще за квартал?"];
+function asstOpen(){ document.getElementById("asst-panel").classList.add("open"); document.getElementById("asst-fab").style.display="none"; if(!asst.messages.length) asstRenderIntro(); setTimeout(function(){var i=document.getElementById("asst-input"); if(i) i.focus();},50); }
+function asstClose(){ document.getElementById("asst-panel").classList.remove("open"); document.getElementById("asst-fab").style.display=""; }
+function asstReset(){ if(asst.busy) return; asst.messages=[]; document.getElementById("asst-log").innerHTML=""; asstRenderIntro(); }
+function asstRenderIntro(){
+  asstAdd("a","Привіт! Я бачу продажі, залишки, точки, борги й документи. Можу підготувати чернетку накладної, повідомлення точці чи акт звірки, а ви вже перевірите й підтвердите.");
+  var log=document.getElementById("asst-log"), d=document.createElement("div"); d.className="asst-sugg";
+  d.innerHTML=ASST_SUGG.map(function(q){return '<button onclick="asstSend(this.textContent)">'+esc(q)+'</button>';}).join("");
+  log.appendChild(d);
+}
+function asstFormat(t){
+  return esc(t).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/^\s*[-•]\s+/gm,"• ").replace(/\n/g,"<br>");
+}
+function asstAdd(who,text,html){
+  var log=document.getElementById("asst-log"), d=document.createElement("div");
+  d.className="asst-msg "+who; d.innerHTML=html!==undefined?html:asstFormat(text);
+  log.appendChild(d); log.scrollTop=log.scrollHeight; return d;
+}
+function asstSend(text){
+  if(asst.busy) return;
+  var inp=document.getElementById("asst-input");
+  text=String(text!==undefined?text:inp.value).trim(); if(!text) return;
+  inp.value="";
+  document.querySelectorAll("#asst-log .asst-sugg").forEach(function(e){e.remove();});
+  asstAdd("u",text);
+  var last=asst.messages[asst.messages.length-1];
+  if(last&&last.role==="user") last.content.push({type:"text",text:text}); // after proposals the turn ends with tool results
+  else asst.messages.push({role:"user",content:[{type:"text",text:text}]});
+  asstRun(0);
+}
+function asstRun(step){
+  asst.busy=true; var btn=document.getElementById("asst-send"); if(btn) btn.disabled=true;
+  var wait=asstAdd("s","","Думаю…");
+  aiApi("/api/assistant",{messages:asst.messages,today:todayISO()}).then(function(r){
+    wait.remove();
+    var content=r.content||[];
+    asst.messages.push({role:"assistant",content:content});
+    var actions=[], results=[];
+    content.forEach(function(b){
+      if(b.type==="tool_use"){
+        var out; try{ out=asstRunTool(b.name,b.input||{}); }catch(e){ out={error:String(e&&e.message||e)}; }
+        if(out&&out.action) actions.push(out.action);
+        results.push({type:"tool_result",tool_use_id:b.id,content:JSON.stringify(out&&out.action?{proposed:true,button:out.action.label}:out).slice(0,60000)});
+      }
+    });
+    var text=content.filter(function(b){return b.type==="text";}).map(function(b){return b.text;}).join("\n").trim();
+    if(text||actions.length){
+      var d=asstAdd("a",text);
+      actions.forEach(function(a){
+        var bt=document.createElement("button"); bt.className="btn btn-moss btn-sm asst-act"; bt.style.color="#fff"; bt.textContent=a.label;
+        bt.onclick=function(){ a.run(); }; if(text) d.appendChild(document.createElement("br")); d.appendChild(bt);
+      });
+    }
+    if(r.stop_reason==="tool_use"&&results.length){
+      asst.messages.push({role:"user",content:results});
+      // Only proposals (buttons) in this step: nothing new for Claude to read, so stop here.
+      var onlyActions=content.filter(function(b){return b.type==="tool_use";}).every(function(b){return /^propose_/.test(b.name);});
+      if(!onlyActions&&step<8) return asstRun(step+1);
+    }
+    asstDone();
+  }).catch(function(e){
+    wait.remove(); asstAdd("s","","⚠️ "+esc(e.message||String(e)));
+    // Drop the unanswered turn so the conversation stays valid
+    while(asst.messages.length&&asst.messages[asst.messages.length-1].role==="user") asst.messages.pop();
+    asstDone();
+  });
+}
+function asstDone(){ asst.busy=false; var btn=document.getElementById("asst-send"); if(btn) btn.disabled=false; }
+
+// ── Tool implementations ──
+function asstFindPoint(q){
+  q=String(q||"").toLowerCase().trim();
+  var pts=buyers.filter(function(b){return !b.isD2C;});
+  var names=function(b){return [b.retailName,b.name,b.fullName].filter(Boolean).map(function(x){return String(x).toLowerCase();});};
+  var exact=pts.filter(function(b){return names(b).some(function(n){return n===q;});});
+  if(exact.length===1) return {b:exact[0]};
+  var hit=pts.filter(function(b){return q&&names(b).some(function(n){return n.indexOf(q)>=0||q.indexOf(n)>=0;});});
+  var part=hit.filter(isPartnerPoint); if(part.length===1) return {b:part[0]};
+  if(hit.length===1) return {b:hit[0]};
+  if(!hit.length) return {error:"Точку «"+q+"» не знайдено",points:buyers.filter(isPartnerPoint).map(function(b){return b.retailName||b.name;})};
+  return {error:"Кілька точок підходять",candidates:hit.map(function(b){return b.retailName||b.name;})};
+}
+function asstDocRow(j){ return {type:j.docType==="bill"?"рахунок":"накладна",num:j.invoiceNum||"",date:j.invoiceDate||"",buyer:jBuyerName(j),total:Math.round(j.total||0),
+  outstanding:j.docType==="bill"?Math.round(docOutstanding(j)):undefined,status:j.status||""}; }
+var ASST_TOOLS={
+  get_overview:function(){
+    var pr=salesGoalProgress(), st=allPartnerStats();
+    return {goal:{amount:pr.goal.amount,period:pr.goal.period,from:pr.range.from,to:pr.range.to,sales:pr.done,paymentsReceived:pr.paid,pct:pr.goal.amount?Math.round(pr.done/pr.goal.amount*100):0,byKind:pr.byKind},
+      points:{total:st.length,consignment:st.filter(function(x){return x.term==="consignment";}).length,prepay:st.filter(function(x){return x.term==="prepay";}).length},
+      totalDebt:st.reduce(function(s,x){return s+x.debt;},0),
+      needAttention:st.filter(function(x){return x.flags.some(function(f){return f.lvl>=2;});}).sort(function(a,b){return b.score-a.score;}).slice(0,10).map(function(x){return {point:x.name,todo:x.flags.map(function(f){return f.text;})};}),
+      newWebOrders:(typeof ordersData!=="undefined"?ordersData:[]).filter(function(o){return o.status==="new";}).length};
+  },
+  list_points:function(){
+    return {points:allPartnerStats().map(function(x){return {point:x.name,term:DEAL_LABELS[x.term]||x.term,onShelf:x.shelfQty,soldPerMonth:x.soldPerMonth,debt:x.debt,
+      lastReport:x.lastReport?(x.lastReport.month+" (внесено "+String(x.lastReport.savedAt||"").slice(0,10)+")"):null,lastInvoice:x.lastInvoice?x.lastInvoice.invoiceDate:null,todo:x.flags.map(function(f){return f.text;})};})};
+  },
+  get_point:function(i){
+    var f=asstFindPoint(i.point); if(!f.b) return f;
+    var b=f.b, x=partnerStats(b,networkBestSellers());
+    var reps=salesReports.filter(function(r){return r.buyerId===b.id;}).sort(function(a,c){return String(c.month).localeCompare(String(a.month));}).slice(0,6);
+    var docs=journal.filter(function(j){return jBuyerId(j)===b.id;}).sort(function(a,c){return String(c.invoiceDate||"").localeCompare(String(a.invoiceDate||""));});
+    return {point:x.name,legalName:b.fullName||b.name,term:DEAL_LABELS[x.term],contact:{name:b.contactName||"",phone:b.phone||"",telegram:b.telegram||"",instagram:b.instagram||""},
+      shelf:Object.keys(x.shelf).map(function(k){return {product:shortName(x.shelf[k].name||k),qty:x.shelf[k].qty};}),
+      soldPerMonth:x.soldPerMonth,debt:x.debt,oldestUnpaidDays:x.oldestUnpaid,
+      reports:reps.map(function(r){return {month:r.month,sold:(r.items||[]).reduce(function(s,it){return s+(it.sold||0);},0),items:(r.items||[]).filter(function(it){return it.sold>0;}).map(function(it){return shortName(it.name)+": "+it.sold;})};}),
+      lastInvoices:docs.filter(function(j){return j.docType==="invoice";}).slice(0,5).map(asstDocRow),
+      unpaidBills:docs.filter(function(j){return j.docType==="bill"&&docOutstanding(j)>0;}).map(asstDocRow),
+      restock:x.restock,notSelling:x.still,tryNew:x.tryNew.map(function(n){return n.name;}),todo:x.flags.map(function(f){return f.text;})};
+  },
+  get_sales:function(i){
+    var list=filterByPeriod(journal,i.period||"month").filter(function(j){return j.docType==="invoice"&&j.status==="shipped";}), m={};
+    list.forEach(function(j){ (j.items||[]).forEach(function(it){
+      var k=i.group_by==="buyer"?jBuyerName(j):shortName(it.name||""); if(!m[k]) m[k]={qty:0,sum:0};
+      m[k].qty+=it.qty||0; m[k].sum+=itemSum(it);
+    });});
+    var rows=Object.keys(m).map(function(k){return {name:k,qty:m[k].qty,sum:Math.round(m[k].sum)};}).sort(function(a,b){return b.sum-a.sum;});
+    return {period:i.period,invoices:list.length,total:Math.round(list.reduce(function(s,j){return s+(j.total||0);},0)),rows:rows.slice(0,40)};
+  },
+  get_stock:function(){
+    var wh=Object.keys(warehouseStock).filter(function(k){return (warehouseStock[k].qty||0)>0;}).map(function(k){var p=products.find(function(x){return x.id===k;});return {product:shortName((p&&p.name)||warehouseStock[k].name||k),qty:warehouseStock[k].qty};}).sort(function(a,b){return b.qty-a.qty;});
+    var fc=rawForecast();
+    var raw=fc.rows.filter(function(r){return r.status!=="idle"||r.stock>0;}).map(function(r){return {aroma:r.name,stockKg:r.stock,inTransitKg:r.inTransit,perMonthKg:r.perMonth,daysLeft:r.daysLeft,orderBy:r.orderBy,orderKg:r.orderKg,supplier:r.supplier,status:{now:"замовити зараз",soon:"скоро",ok:"ок"}[r.status]||r.status};});
+    return {warehouse:wh,rawSticks:raw,supplierOrders:fc.orders.map(function(o){return {supplier:o.supplier,orderBy:o.orderBy,now:o.now,totalKg:o.totalKg,items:o.items.map(function(i){return i.name+" "+i.kg+" кг";})};})};
+  },
+  get_abc:function(i){
+    var a=abcData(i.period||"quarter",i.basis||"revenue");
+    return {basis:a.basis,total:Math.round(a.total),summary:a.summary,rows:a.rows.slice(0,40).map(function(r){return {cls:r.cls,product:r.name,revenue:r.revenue,soldInPoints:r.sold,sharePct:Math.round(r.share*10)/10,warehouse:r.warehouse,points:r.points,tips:r.tips.map(function(t){return t.text;})};}),
+      idle:a.idle.map(function(r){return {product:r.name,warehouse:r.warehouse,points:r.points};})};
+  },
+  find_documents:function(i){
+    var list=filterByPeriod(journal,i.period||"all");
+    if(i.doc_type&&i.doc_type!=="any") list=list.filter(function(j){return j.docType===i.doc_type;});
+    if(i.unpaid_only) list=list.filter(function(j){return j.docType==="bill"&&docOutstanding(j)>0;});
+    if(i.buyer){ var f=asstFindPoint(i.buyer); if(f.b) list=list.filter(function(j){return jBuyerId(j)===f.b.id;}); else { var q=String(i.buyer).toLowerCase(); list=list.filter(function(j){return jBuyerName(j).toLowerCase().indexOf(q)>=0;}); } }
+    list=list.slice().sort(function(a,c){return String(c.invoiceDate||"").localeCompare(String(a.invoiceDate||""));});
+    return {count:list.length,sum:Math.round(list.reduce(function(s,j){return s+(j.total||0);},0)),documents:list.slice(0,30).map(asstDocRow)};
+  },
+  propose_restock_invoice:function(i){ var f=asstFindPoint(i.point); if(!f.b) return f; var b=f.b;
+    if(!restockLinesFor(b)) return {error:"Для «"+(b.retailName||b.name)+"» немає даних для поповнення: ні звітів, ні накладних"};
+    return {action:{label:"📦 Чернетка накладної: "+(b.retailName||b.name),run:function(){ asstClose(); createRestockInvoice(b.id); }}}; },
+  propose_partner_message:function(i){ var f=asstFindPoint(i.point); if(!f.b) return f; var b=f.b;
+    return {action:{label:"✍️ Написати: "+(b.retailName||b.name),run:function(){ asstClose(); openPartnerMessage(b.id,i.purpose||undefined); }}}; },
+  propose_reconciliation_act:function(i){ var f=asstFindPoint(i.point); if(!f.b) return f; var b=f.b;
+    return {action:{label:"📄 Акт звірки: "+(b.retailName||b.name),run:function(){ asstClose(); openReconAct(b.id); }}}; },
+  propose_order_link:function(i){ var f=asstFindPoint(i.point); if(!f.b) return f; var b=f.b;
+    return {action:{label:"🔗 Скопіювати посилання: "+(b.retailName||b.name),run:function(){ copyPointOrderLink(b.id); }}}; },
+  propose_sales_report:function(){ return {action:{label:"📋 Внести звіт продажів",run:function(){ asstClose(); openSalesReportModal(); }}}; }
+};
+function asstRunTool(name,input){ var f=ASST_TOOLS[name]; if(!f) return {error:"Невідомий інструмент"}; return f(input); }
+
+// ============================================================
 // TOAST SYSTEM
 // ============================================================
 // Посилання на оптову форму замовлення (order.html поруч із застосунком)
@@ -7956,6 +8149,13 @@ if ('serviceWorker' in navigator) {
   });
 }
 </script>
+<button id="asst-fab" onclick="asstOpen()" title="Запитати асистента ATIK">💬 Асистент</button>
+<div id="asst-panel" role="dialog" aria-label="Асистент ATIK">
+  <div class="asst-head"><span style="flex:1">💬 Асистент ATIK</span><button onclick="asstReset()">Нова розмова</button><button onclick="asstClose()" style="font-size:18px">×</button></div>
+  <div id="asst-log"></div>
+  <div class="asst-foot"><textarea id="asst-input" placeholder="Запитайте про продажі, залишки, точки…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();asstSend();}"></textarea>
+  <button class="btn btn-moss btn-sm" style="color:#fff" id="asst-send" onclick="asstSend()">➤</button></div>
+</div>
 <div id="atik-toast-container"></div>
 </body>
 </html>
