@@ -1634,6 +1634,19 @@ service cloud.firestore {
       <div class="field"><label>Точка роздрібу</label><select id="sales-buyer-id" onchange="renderSalesReportItems()"></select></div>
       <div class="field" style="flex:0 0 170px"><label>Місяць / Дата</label><input type="month" id="sales-month"></div>
     </div>
+    <div id="sales-ai-box" style="background:var(--surface2);border:1px dashed var(--border2);border-radius:var(--r2);padding:10px 12px;margin-bottom:12px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-moss btn-sm" onclick="document.getElementById('sales-ai-file').click()">📎 Завантажити звіт</button>
+        <button class="btn btn-gray btn-sm" onclick="toggleSalesAiPaste()">📝 Вставити текст</button>
+        <span style="font-size:11px;color:var(--ink4)">Excel, CSV, фото чи скриншот: AI заповнить «Продано», ви перевіряєте</span>
+        <input type="file" id="sales-ai-file" accept=".xlsx,.xls,.csv,.txt,image/*" style="display:none" onchange="salesAiFromFile(this)">
+      </div>
+      <div id="sales-ai-paste" style="display:none;margin-top:8px">
+        <textarea id="sales-ai-text" rows="5" placeholder="Вставте звіт точки, наприклад з Telegram чи Viber" style="width:100%;box-sizing:border-box;font-family:inherit;font-size:12px;padding:6px 8px;border:1px solid var(--border2);border-radius:6px"></textarea>
+        <button class="btn btn-moss btn-sm" style="margin-top:6px" onclick="salesAiFromText()">Розібрати</button>
+      </div>
+      <div id="sales-ai-out" style="font-size:12px;margin-top:6px"></div>
+    </div>
     <div id="sales-items-list"></div>
     <div style="display:flex;gap:10px;margin-top:14px">
       <button class="btn btn-moss" onclick="saveSalesReport()">💾 Зберегти та списати</button>
@@ -3719,6 +3732,11 @@ var priceLabel={
 
     if(buyer.isD2C&&pendingOrderNote) g.note=pendingOrderNote;
     pendingOrderNote=null;
+    if(pendingSalesBill&&pendingSalesBill.buyerId===buyer.id&&dt==="bill"){
+      var _sr=salesReports.find(function(r){return r.id===pendingSalesBill.reportId;});
+      if(_sr){ g.note="За звітом продажів "+_sr.month; g.salesReportId=_sr.id; _sr.billId=g.id; _sr.billNum=String(g.invoiceNum); }
+    }
+    pendingSalesBill=null;
     journal.unshift(g);
     if(settings.autoincrement){
       document.getElementById("inv-num").value=nextInvoiceNum();
@@ -4238,6 +4256,7 @@ function setStatus(id,status){
 }
 function loadFromJournal(g){
   if(!g)return;
+  pendingSalesBill=null;
   // Редагування зберігає ціни документа (не підтягує нові ціни каталогу)
   items=g.items.map(function(it){return{id:Date.now()+Math.random(),productId:it.id,qty:it.qty,
     customPrice:(it.price!=null?String(it.price):""), baseShelf:(it.shelf>0?it.shelf:null)};});
@@ -4255,6 +4274,7 @@ function loadFromJournal(g){
 }
 function duplicateInvoice(g){
   if(!g)return;
+  pendingSalesBill=null;
   items=g.items.map(function(it){return{id:Date.now()+Math.random(),productId:it.id,qty:it.qty,customPrice:""};});
   var sel=document.getElementById("buyer-select");
   var _bid=jBuyerId(g);
@@ -4900,6 +4920,8 @@ function renderRetailHistory(){
       +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">'
       +'<div><strong>'+esc(r.buyerName)+'</strong><span style="color:var(--ink4);font-size:11.5px;margin-left:8px">'+r.month+'</span></div>'
       +'<div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:var(--ink3)">'+total+' шт. продано</span>'
+      +(r.billId&&journal.some(function(j){return j.id===r.billId;})?'<span style="font-size:11.5px;color:var(--moss);font-weight:600">🧾 Рахунок №'+esc(r.billNum)+'</span>'
+        :'<button class="btn btn-moss btn-sm" onclick="createBillFromSalesReport(\''+r.id+'\')">🧾 Рахунок на продане</button>')
       +'<button class="btn btn-danger btn-sm" onclick="deleteRetailReport(\''+r.id+'\')">× Видалити</button></div></div>'
       +'<div style="display:flex;flex-wrap:wrap;gap:6px">'
       +r.items.map(function(i){return '<span style="background:var(--moss4);color:var(--pine);border-radius:20px;padding:2px 10px;font-size:11px"><strong>'+i.sold+'</strong> '+esc(shortName(i.name))+'</span>';}).join("")
@@ -4935,6 +4957,7 @@ function openSalesReportModal(){
 }
 function renderSalesReportItems(){
   var bid=document.getElementById("sales-buyer-id").value;
+  var aiOutEl=document.getElementById("sales-ai-out"); if(aiOutEl) aiOutEl.innerHTML="";
   var storeData=retailStock[bid]||{};
   var entries=Object.keys(storeData).map(function(k){return{id:k,qty:storeData[k].qty,name:storeData[k].name};}).filter(function(i){return i.qty>0;});
   var el=document.getElementById("sales-items-list");
@@ -4971,6 +4994,8 @@ function saveSalesReport(){
 
   var reportItems=Object.keys(soldMap).map(function(k){return soldMap[k];});
   if(!reportItems.length){alert("Введіть хоча б одну продану позицію");return;}
+  var overs=reportItems.filter(function(it){var st=retailStock[bid]&&retailStock[bid][it.productId];return it.sold>((st&&st.qty)||0);});
+  if(overs.length&&!confirm("Продано більше, ніж є на залишку:\n"+overs.map(function(it){var st=retailStock[bid][it.productId];return "• "+shortName(it.name)+": "+it.sold+" (на полиці "+((st&&st.qty)||0)+")";}).join("\n")+"\n\nВсе одно зберегти?")) return;
 
   // Deduct from retail stock
   reportItems.forEach(function(item){
@@ -4987,9 +5012,161 @@ function saveSalesReport(){
   }
 
   var buyerObj=buyers.find(function(b){return b.id===bid;});
-  salesReports.unshift({id:uid(),buyerId:bid,buyerName:buyerObj&&buyerObj.name||bid,
-    month:month,items:reportItems,savedAt:new Date().toISOString()});
-  save();closeModal("modal-sales");renderRetailTab();alert("✅ Звіт збережено!");
+  var rep={id:uid(),buyerId:bid,buyerName:buyerObj&&buyerObj.name||bid,
+    month:month,items:reportItems,savedAt:new Date().toISOString()};
+  salesReports.unshift(rep);
+  save();closeModal("modal-sales");renderRetailTab();
+  if(buyerDeal(buyerObj)==="prepay") alert("✅ Звіт збережено!");
+  else if(confirm("✅ Звіт збережено.\n\nСтворити рахунок на продане ("+reportItems.reduce(function(s,i){return s+i.sold;},0)+" шт.)?")) createBillFromSalesReport(rep.id);
+}
+
+// ── AI: read a partner's sales report into the form ────────
+var SHEETJS_URL="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
+function loadSheetJs(){
+  if(window.XLSX) return Promise.resolve(window.XLSX);
+  return new Promise(function(res,rej){
+    var sc=document.createElement("script"); sc.src=SHEETJS_URL;
+    sc.onload=function(){ window.XLSX?res(window.XLSX):rej(new Error("Не вдалося завантажити модуль Excel")); };
+    sc.onerror=function(){ rej(new Error("Не вдалося завантажити модуль Excel (перевірте інтернет)")); };
+    document.head.appendChild(sc);
+  });
+}
+function salesAiOut(html){ var el=document.getElementById("sales-ai-out"); if(el) el.innerHTML=html; }
+function toggleSalesAiPaste(){ var el=document.getElementById("sales-ai-paste"); el.style.display=el.style.display==="none"?"block":"none"; }
+function readFileAs(file,how){
+  return new Promise(function(res,rej){
+    var fr=new FileReader(); fr.onload=function(){res(fr.result);}; fr.onerror=function(){rej(new Error("Не вдалося прочитати файл"));};
+    fr[how](file);
+  });
+}
+// Photos are shrunk to ≤1600px JPEG so they fit the server's request limit.
+function imageToJpegBase64(file){
+  return readFileAs(file,"readAsDataURL").then(function(url){
+    return new Promise(function(res,rej){
+      var img=new Image();
+      img.onload=function(){
+        var k=Math.min(1,1600/Math.max(img.width,img.height));
+        var c=document.createElement("canvas"); c.width=Math.round(img.width*k); c.height=Math.round(img.height*k);
+        c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+        res(c.toDataURL("image/jpeg",0.85).split(",")[1]);
+      };
+      img.onerror=function(){ rej(new Error("Цей формат фото не підтримується. Зробіть скриншот або збережіть як JPG")); };
+      img.src=url;
+    });
+  });
+}
+function excelToText(file){
+  return Promise.all([loadSheetJs(),readFileAs(file,"readAsArrayBuffer")]).then(function(r){
+    var wb=r[0].read(r[1],{type:"array"});
+    return wb.SheetNames.map(function(n){
+      var csv=r[0].utils.sheet_to_csv(wb.Sheets[n],{blankrows:false}).replace(/^[,;\s]+$/gm,"").trim();
+      return csv?"### Аркуш: "+n+"\n"+csv:"";
+    }).filter(Boolean).join("\n\n");
+  });
+}
+function salesAiFromFile(input){
+  var file=input.files&&input.files[0]; input.value="";
+  if(!file) return;
+  var name=file.name.toLowerCase(), p;
+  if(/^image\//.test(file.type)||/\.(heic|heif)$/.test(name)) p=imageToJpegBase64(file).then(function(d){return {type:"image",mediaType:"image/jpeg",data:d};});
+  else if(/\.(xlsx|xls|xlsm|ods)$/.test(name)) p=excelToText(file).then(function(t){return {type:"text",text:t};});
+  else if(/\.(csv|txt|tsv)$/.test(name)||/^text\//.test(file.type)) p=readFileAs(file,"readAsText").then(function(t){return {type:"text",text:t};});
+  else { salesAiOut('<span style="color:var(--red)">Цей тип файлу не підтримується. Підійде Excel, CSV, текст, фото чи скриншот (PDF збережіть як скриншот).</span>'); return; }
+  salesAiOut("Читаю «"+esc(file.name)+"»…");
+  p.then(salesAiParse).catch(function(e){ salesAiOut('<span style="color:var(--red)">'+esc(e.message||String(e))+'</span>'); });
+}
+function salesAiFromText(){
+  var t=(document.getElementById("sales-ai-text").value||"").trim();
+  if(!t){ salesAiOut('<span style="color:var(--red)">Вставте текст звіту</span>'); return; }
+  salesAiParse({type:"text",text:t});
+}
+function salesAiParse(report){
+  var bid=document.getElementById("sales-buyer-id").value;
+  var store=retailStock[bid]||{};
+  var shelf=Object.keys(store).filter(function(k){return (store[k].qty||0)>0;}).map(function(k){return {productId:k,name:store[k].name,qty:store[k].qty};});
+  if(!shelf.length){ salesAiOut('<span style="color:var(--red)">На полиці цієї точки немає товарів, тож немає з чим зіставити звіт.</span>'); return; }
+  if(report.type==="text"){
+    if(!report.text.trim()){ salesAiOut('<span style="color:var(--red)">Файл порожній</span>'); return; }
+    if(report.text.length>60000) report.text=report.text.slice(0,60000);
+  }
+  var b=buyers.find(function(x){return x.id===bid;});
+  salesAiOut("🤖 AI читає звіт… (до хвилини)");
+  aiApi("/api/parse-sales-report",{pointName:b?(b.retailName||b.name):"",shelf:shelf,report:report}).then(function(j){
+    if(document.getElementById("sales-buyer-id").value!==bid) return; // point changed meanwhile
+    applySalesAiResult(j);
+  }).catch(function(e){ salesAiOut('<span style="color:var(--red)">'+esc(e.message||String(e))+'</span>'); });
+}
+// "жовтень 2026", "10.2026", "October 2026" → "2026-10"; "" when unclear.
+function reportPeriodToMonth(t){
+  t=String(t||"").toLowerCase();
+  var y=(t.match(/20\d\d/)||[])[0]; if(!y) return "";
+  var names=[["січ","jan"],["лют","feb"],["бер","mar"],["квіт","apr"],["трав","may"],["черв","jun"],["лип","jul"],["серп","aug"],["верес","sep"],["жовт","oct"],["листоп","nov"],["груд","dec"]];
+  var found=[];
+  names.forEach(function(n,i){ if(n.some(function(w){return t.indexOf(w)>=0;})) found.push(i+1); });
+  var m=found.length===1?found[0]:0;
+  if(!m&&!found.length){ var mm=t.match(/(?:^|\D)(0?[1-9]|1[0-2])[.\/-]20\d\d/); if(mm) m=+mm[1]; }
+  return m?y+"-"+String(m).padStart(2,"0"):"";
+}
+// Fills «Продано» from the AI result. Nothing is saved until the person presses «Зберегти та списати».
+function applySalesAiResult(j){
+  var inputs=document.querySelectorAll("#sales-items-list input[data-pid]");
+  inputs.forEach(function(inp){ inp.value=0; inp.style.background=""; inp.title=""; var tr=inp.closest("tr"); if(tr) tr.style.background=""; });
+  var filled=0, low=0, over=0;
+  (j.items||[]).forEach(function(it){
+    var inp=document.querySelector('#sales-items-list input[data-pid="'+CSS.escape(it.productId)+'"]');
+    if(!inp) return;
+    inp.value=it.sold; filled++;
+    var tr=inp.closest("tr");
+    if(it.overShelf){ over++; inp.style.background="#fde2e1"; inp.title="Продано більше, ніж є на полиці ("+it.onShelf+")"; }
+    else if(it.confidence==="low"){ low++; inp.style.background="#fff3c4"; inp.title="AI не впевнений: у звіті «"+it.reportedName+"»"; }
+    if(tr&&(it.overShelf||it.confidence==="low")) tr.style.background=it.overShelf?"#fff5f5":"#fffbea";
+  });
+  var ym=reportPeriodToMonth(j.reportPeriod);
+  if(ym) document.getElementById("sales-month").value=ym;
+  var un=(j.unmatched||[]);
+  var html='<div style="color:#2e7d32;font-weight:700">✓ Заповнено позицій: '+filled+'. Перевірте числа і натисніть «Зберегти та списати».</div>';
+  if(j.reportPeriod) html+='<div>Період у звіті: <strong>'+esc(j.reportPeriod)+'</strong></div>';
+  if(low) html+='<div style="color:#8a6d00">🟡 Жовтим: AI не впевнений ('+low+'). Наведіть на число, щоб побачити, що було у звіті.</div>';
+  if(over) html+='<div style="color:var(--red)">🔴 Червоним: продано більше, ніж є на полиці ('+over+').</div>';
+  if(un.length) html+='<div style="margin-top:4px">Не знайдено на полиці: '+un.map(function(u){return esc(u.reportedName)+" ("+u.sold+")";}).join(", ")+'</div>';
+  if(j.notes) html+='<div style="margin-top:4px;color:var(--ink3)">Примітка AI: '+esc(j.notes)+'</div>';
+  if(!filled&&!un.length) html='<div style="color:var(--cedar)">AI не знайшов продажів у звіті.'+(j.notes?" "+esc(j.notes):"")+'</div>';
+  salesAiOut(html);
+}
+
+// ── Рахунок на продане ─────────────────────────────────────
+var pendingSalesBill=null; // {reportId,buyerId}: the next «рахунок» for this point is linked to the report
+// Shelf price the point got the goods at: from the latest накладна to this point that has the product.
+function lastShelfPriceFor(buyerId,pid){
+  var docs=journal.filter(function(j){return j.docType==="invoice"&&jBuyerId(j)===buyerId;})
+    .sort(function(a,b){return String(b.invoiceDate||"").localeCompare(String(a.invoiceDate||""));});
+  for(var i=0;i<docs.length;i++){
+    var it=(docs[i].items||[]).find(function(x){return x.id===pid;});
+    if(it&&it.shelf>0) return it.shelf;
+  }
+  return null;
+}
+function createBillFromSalesReport(reportId){
+  var r=salesReports.find(function(x){return x.id===reportId;}); if(!r) return;
+  var b=buyers.find(function(x){return x.id===r.buyerId;});
+  if(!b){ alert("Точку цього звіту не знайдено"); return; }
+  var missing=[];
+  var list=r.items.filter(function(it){
+    var ok=products.some(function(p){return p.id===it.productId;});
+    if(!ok) missing.push(it.name); return ok;
+  });
+  if(!list.length){ alert("Товарів зі звіту немає в каталозі"); return; }
+  switchTab("docs"); switchDocsSub("form");
+  renderBuyerSelect();
+  var sel=document.getElementById("buyer-select"); sel.value=b.id; onBuyerChange();
+  var dtEl=document.querySelector('input[name="doctype"][value="bill"]'); if(dtEl) dtEl.checked=true;
+  var ptEl=document.querySelector('input[name="pricetype"][value="'+(buyerDeal(b)==="prepay"?"opt":"real")+'"]'); if(ptEl) ptEl.checked=true;
+  document.getElementById("inv-num").value=nextInvoiceNum();
+  document.getElementById("inv-date").value=todayISO();
+  items=list.map(function(it){ return {id:Date.now()+Math.random(),productId:it.productId,qty:it.sold,customPrice:"",baseShelf:lastShelfPriceFor(b.id,it.productId)}; });
+  onDocTypeChange(); refreshPriceTypeBtns(); renderItems();
+  pendingSalesBill={reportId:r.id,buyerId:b.id};
+  addToast("Рахунок на продане за "+r.month+" підготовлено","success","Перевірте і натисніть «Згенерувати»"+(missing.length?". Не в каталозі: "+missing.join(", "):""));
 }
 
 // ============================================================
@@ -6888,6 +7065,7 @@ function d2cBuyerForOrder(o){
 }
 var pendingOrderNote=null; // customer name/address of an internet order, saved as the document note
 function _doInvoiceFromOrder(orderId,buyerId){
+  pendingSalesBill=null;
   var o=ordersData.find(function(x){return x._id===orderId;});if(!o)return;
   var buyer=buyerId?buyers.find(function(b){return b.id===buyerId;}):null;
   pendingOrderNote=null;
