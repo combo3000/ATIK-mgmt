@@ -1761,14 +1761,14 @@ const DEFAULT_PRODUCTS=[
   {id:"sofika_green",   name:'Підставка "ATIK&Sofika" Sofika зелена, All trees I know',                  shelf:1400, price:840,unit:"шт.",pack:null,group:"stand"},
   {id:"sofika_spotted", name:'Підставка "ATIK&Sofika" Sofika плямиста, All trees I know',                shelf:1400, price:840,unit:"шт.",pack:null,group:"stand"},
   {id:"sofika_brown",   name:'Підставка "ATIK&Sofika" Sofika коричнева, All trees I know',               shelf:1400, price:840,unit:"шт.",pack:null,group:"stand"},
-  {id:"ref20_cherry",      name:"Палички ароматичні Cherry Bloom, Цвіт Вишні 20шт, Папір",     shelf:400,price:280,unit:"шт.",pack:20,group:"refill"},
-  {id:"ref20_osmanthus",   name:"Палички ароматичні Osmanthus, Османтус 20шт, Папір",           shelf:400,price:280,unit:"шт.",pack:20,group:"refill"},
-  {id:"ref20_camphor",     name:"Палички ароматичні Camphor Tree, Камфорне дерево 20шт, Папір", shelf:400,price:280,unit:"шт.",pack:20,group:"refill"},
-  {id:"ref20_sandalwood",  name:"Палички ароматичні Sandalwood, Сандалове дерево 20шт, Папір",  shelf:400,price:280,unit:"шт.",pack:20,group:"refill"},
-  {id:"ref20_blacksandal", name:"Палички ароматичні Black Sandal, Чорний сандал 20шт, Папір",   shelf:500,price:350,unit:"шт.",pack:20,group:"refill"},
-  {id:"ref20_musk",        name:"Палички ароматичні Musc, Мускус 20шт, Папір",                  shelf:400,price:280,unit:"шт.",pack:20,group:"refill"},
-  {id:"ref20_temple",      name:"Палички ароматичні Temple Sandal, Храмовий сандал 20шт, Папір",shelf:400,price:280,unit:"шт.",pack:20,group:"refill"},
-  {id:"ref20_hydrangea",   name:"Палички ароматичні Hydrengea Tea, Чайна гортензія 20шт, Папір",shelf:400,price:280,unit:"шт.",pack:20,group:"refill"},
+  {id:"ref20_cherry",      name:"Палички ароматичні Cherry Bloom, Цвіт Вишні 20шт, Папір",     shelf:500,price:350,unit:"шт.",pack:20,group:"refill"},
+  {id:"ref20_osmanthus",   name:"Палички ароматичні Osmanthus, Османтус 20шт, Папір",           shelf:500,price:350,unit:"шт.",pack:20,group:"refill"},
+  {id:"ref20_camphor",     name:"Палички ароматичні Camphor Tree, Камфорне дерево 20шт, Папір", shelf:500,price:350,unit:"шт.",pack:20,group:"refill"},
+  {id:"ref20_sandalwood",  name:"Палички ароматичні Sandalwood, Сандалове дерево 20шт, Папір",  shelf:500,price:350,unit:"шт.",pack:20,group:"refill"},
+  {id:"ref20_blacksandal", name:"Палички ароматичні Black Sandal, Чорний сандал 20шт, Папір",   shelf:600,price:420,unit:"шт.",pack:20,group:"refill"},
+  {id:"ref20_musk",        name:"Палички ароматичні Musc, Мускус 20шт, Папір",                  shelf:500,price:350,unit:"шт.",pack:20,group:"refill"},
+  {id:"ref20_temple",      name:"Палички ароматичні Temple Sandal, Храмовий сандал 20шт, Папір",shelf:500,price:350,unit:"шт.",pack:20,group:"refill"},
+  {id:"ref20_hydrangea",   name:"Палички ароматичні Hydrengea Tea, Чайна гортензія 20шт, Папір",shelf:500,price:350,unit:"шт.",pack:20,group:"refill"},
   {id:"ref20_honeysandal", name:"Палички ароматичні Honey Sandal, Медовий сандал 20шт, Папір",  shelf:500,price:350,unit:"шт.",pack:20,group:"refill"},
   {id:"ref20_agarwood",    name:"Палички ароматичні Agarwood, Агарове дерево 20шт, Папір",      shelf:500,price:350,unit:"шт.",pack:20,group:"refill"},
   {id:"ref20_frankincense",name:"Палички ароматичні Frankincense, Ладан 20шт, Папір",           shelf:600,price:420,unit:"шт.",pack:20,group:"refill"},
@@ -2290,10 +2290,23 @@ var PRICE_PATCH_MAP={
   blacksandal20:650,
   blacksandal40:1000
 };
+// Паперові упаковки по 20 шт (17.11.2026, на прохання Тараса): усі по 500 ₴, Чорний сандал і Ладан по 600 ₴.
+// Мапа будується з каталогу (група «refill», 20 шт), тож охоплює й додані вручну паперові позиції.
+var PAPER20_PATCH_TAG="paper20_2026_11";
+function paper20PatchMap(){
+  var map={};
+  (products||[]).forEach(function(p){
+    if(p.group!=="refill"||+p.pack!==20) return;
+    var key=(String(p.id)+" "+String(p.name||"")).toLowerCase();
+    map[p.id]=/blacksandal|black sandal|чорний сандал|frankincense|ладан/.test(key)?600:500;
+  });
+  return map;
+}
 function applyPendingPricePatch(){
   var a=freezeJournalPrices();
   var b=applyPricePatch(PRICE_PATCH_TAG,PRICE_PATCH_MAP);
-  return a||b;
+  var c=applyPricePatch(PAPER20_PATCH_TAG,paper20PatchMap());
+  return a||b||c;
 }
 
 function applyAppState(data){
