@@ -1304,8 +1304,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   </div>
   <div id="partners-goal" style="margin-bottom:16px"></div>
   <div id="partners-overview" style="margin-bottom:20px"></div>
-  <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px">Картки точок</div>
-  <div id="retail-store-grid" style="margin-bottom:20px;"></div>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
     <div style="font-size:13px;font-weight:600;color:var(--ink);">Історія звітів</div>
     <select id="retail-history-filter" onchange="renderRetailHistory()" style="padding:5px 10px;font-size:12px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);">
@@ -4763,62 +4761,23 @@ function renderRetailTab(){
   sel.innerHTML='<option value="">Всі точки</option>'+buyers.filter(function(b){return b.isRetail;}).map(function(b){return '<option value="'+b.id+'"'+(b.id===cur?' selected':'')+'>'+esc(b.name)+'</option>';}).join("");
 }
 
+// Точки: goal card + Partners table (the old card grid duplicated the table and was removed;
+// a click on a point's name in the table opens the same point card).
 function renderRetailStoreGrid(){
-  var el=document.getElementById("retail-store-grid");
-  if(!el)return;
   renderGoalCard("partners-goal");
   renderPartnersOverview();
-  var stores=buyers.filter(function(b){return b.isRetail;});
-  // update meta
   var metaEl=document.getElementById("retail-meta");
-  if(metaEl) metaEl.textContent=stores.length+" активних точок";
-  if(!stores.length){el.innerHTML='<div style="color:var(--ink3);font-size:13px;padding:20px 0;">Немає точок — додайте покупців з позначкою роздрібу</div>';return;}
-  el.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:20px;">'
-    +stores.map(function(b){
-      // Count stock on shelf
-      var salesForStore=salesReports.filter(function(r){return r.buyerId===b.id;});
-      var lastReport=salesForStore.slice().sort(function(a,c){return(c.savedAt||c.date||"").localeCompare(a.savedAt||a.date||"");})[0];
-      var lastDate=lastReport?String(lastReport.savedAt||lastReport.date||"").slice(0,10).replace(/^(\d{4})-(\d{2})-(\d{2})$/,"$3.$2.$1"):"—";
-      var onShelf=0;
-      (lastReport&&lastReport.stockAfter||[]).forEach(function(s){onShelf+=s.qty||0;});
-      // Fallback: also count retailStock (from invoice deliveries)
-      if(onShelf===0&&retailStock[b.id]){
-        Object.keys(retailStock[b.id]).forEach(function(k){
-          onShelf+=(parseInt(retailStock[b.id][k].qty)||0);
-        });
-      }
-      // Paid this month by this point (payments dated this month on its documents)
-      var monthRevenue=0, thisMonth=curYM();
-      journal.forEach(function(j){
-        if(jBuyerId(j)!==b.id) return;
-        var p=docPayments(j);
-        if(p.length) p.forEach(function(x){ if(String(x.date||"").startsWith(thisMonth)) monthRevenue+=parseFloat(x.amount)||0; });
-        else if(j.status==="paid"&&String(j.invoiceDate||"").startsWith(thisMonth)) monthRevenue+=j.total||0;
-      });
-      var city=b.address?(b.address.match(/м\.?\s*([^\s,]+)/)||[])[1]||"":"";
-      return '<div class="store-card-item" onclick="openRetailDetailModal(\''+b.id+'\')">'
+  if(metaEl) metaEl.textContent=buyers.filter(isPartnerPoint).length+" активних точок";
+}
 
-        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
-          +'<div style="width:28px;height:28px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;">'
-            +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><polyline points="16 21 16 7"/><path d="M6 7V5a2 2 0 014 0v2M14 7V5a2 2 0 00-4 0v2"/></svg>'
-          +'</div>'
-          +'<div>'
-            +'<div style="font-weight:700;font-size:13px;color:var(--ink);">'+esc(b.retailName||b.name)+'</div>'
-            +(city?'<div style="font-size:11px;color:var(--ink3);">'+esc(city)+'</div>':"")
-          +'</div>'
-        +'</div>'
-        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">'
-          +'<div><div style="font-size:10px;color:var(--ink3);">Оплачено міс.</div>'
-            +'<div style="font-size:16px;font-weight:700;color:var(--pine);font-family:ui-monospace,monospace;">'+(monthRevenue>0?fmt(monthRevenue)+' ₴':'—')+'</div></div>'
-          +'<div><div style="font-size:10px;color:var(--ink3);">На полиці</div>'
-            +'<div style="font-size:16px;font-weight:700;color:var(--ink);font-family:ui-monospace,monospace;">'+(onShelf>0?onShelf+' <span style="font-size:11px;font-weight:400;color:var(--ink3);">шт.</span>':'—')+'</div></div>'
-        +'</div>'
-        +'<div style="font-size:11px;color:var(--ink3);padding-top:8px;border-top:1px solid var(--border);">'
-          +'Останній звіт: <strong style="color:var(--ink);">'+esc(lastDate)+'</strong>'
-        +'</div>'
-      +'</div>';
-    }).join("")
-  +'</div>';
+// Change a point's term (під реалізацію / передоплата). Affects new documents only:
+// existing накладні and рахунки keep the prices they were made with.
+function setPointDeal(buyerId,val){
+  var b=buyers.find(function(x){return x.id===buyerId;}); if(!b||!DEAL_LABELS[val]) return;
+  b.dealType=val; save();
+  addToast("Умова: "+DEAL_LABELS[val],"success",(b.retailName||b.name)+" · ціна в нових документах "+DEAL_PRICE_PCT[val]+"% від полиці");
+  renderRetailStoreGrid();
+  if(document.getElementById("modal-retail-detail")) openRetailDetailModal(buyerId);
 }
 
 function openRetailDetailModal(buyerId, editMode){
@@ -4891,7 +4850,15 @@ function openRetailDetailModal(buyerId, editMode){
     +'<h3>🏪 '+esc(b.retailName||b.name)+'</h3>'
     +'<button class="modal-close" onclick="document.getElementById(\'modal-retail-detail\').remove()">×</button>'
     +'</div>'
-    +'<div style="font-size:12px;color:var(--ink3);margin-bottom:14px">'+(b.fullName||b.name)+(b.address?' · '+esc(b.address):'')+'</div>'
+    +'<div style="font-size:12px;color:var(--ink3);margin-bottom:10px">'+(b.fullName||b.name)+(b.address?' · '+esc(b.address):'')+'</div>'
+    +(function(){ var t=buyerDeal(b)||partnerTermFor(b);
+      return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-size:12px">'
+        +'<span style="font-weight:700;color:var(--pine)">🤝 Умова:</span>'
+        +'<select onchange="setPointDeal(\''+buyerId+'\',this.value)" style="width:auto;padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);font-family:inherit">'
+        +Object.keys(DEAL_LABELS).map(function(k){return '<option value="'+k+'"'+(k===t?' selected':'')+'>'+DEAL_LABELS[k]+' — '+DEAL_PRICE_PCT[k]+'% від полиці</option>';}).join("")
+        +'</select>'
+        +(buyerDeal(b)?'':'<span style="color:var(--ink4)">(визначено автоматично, ще не збережено)</span>')
+        +'</div>'; })()
 
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
     +'<div style="font-weight:700;font-size:13px;color:var(--pine)">📦 Залишок ('+totalQty+' шт.)</div>'
@@ -4913,6 +4880,7 @@ function openRetailDetailModal(buyerId, editMode){
       ? '<button class="btn btn-danger btn-sm" onclick="confirmDeleteRetailPoint(\''+buyerId+'\')">🗑 Видалити точку</button>'
       : '<div></div>')
     +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+      +'<button class="btn btn-gray btn-sm" title="Скопіювати особисте посилання, за яким точка сама замовляє за своїми цінами" onclick="copyPointOrderLink(\''+buyerId+'\')">🔗 Посилання для замовлення</button>'
       +'<button class="btn btn-gray btn-sm" onclick="createRestockInvoice(\''+buyerId+'\')">📦 Накладна на поповнення</button>'
       +'<button class="btn btn-gray btn-sm" onclick="openReconAct(\''+buyerId+'\')">📄 Акт звірки</button>'
       +'<button class="btn btn-gray btn-sm" onclick="document.getElementById(\'modal-retail-detail\').remove()">Закрити</button></div>'
@@ -6564,6 +6532,7 @@ function renderPartnersOverview(){
         +'<td '+td+'>'+(x.flags.length?x.flags.map(function(f){return '<div style="'+(f.lvl>=3?'color:var(--red);font-weight:600':'')+'">'+esc(f.text)+'</div>';}).join("")+rs:'<span style="color:var(--moss)">✓</span>')+'</td>'
         +'<td '+td+'><div style="display:flex;gap:6px;justify-content:flex-end">'
           +(x.flags.some(function(f){return f.k==="restock"||f.k==="empty"||f.k==="reorder";})?'<button class="btn btn-gray btn-sm" style="white-space:nowrap" title="Підготувати накладну на поповнення" onclick="createRestockInvoice(\''+x.id+'\')">📦 Накладна</button>':'')
+          +'<button class="btn btn-gray btn-sm" style="white-space:nowrap" title="Скопіювати особисте посилання для замовлення" onclick="copyPointOrderLink(\''+x.id+'\')">🔗</button>'
           +'<button class="btn btn-moss btn-sm" style="color:#fff;white-space:nowrap" onclick="openPartnerMessage(\''+x.id+'\')">✍️ Написати</button>'
           +(c?'<a class="btn btn-gray btn-sm" href="'+esc(c.href)+'" target="_blank" rel="noopener" style="text-decoration:none;white-space:nowrap">'+esc(c.label)+'</a>':'')+'</div>'
           +(x.lastMsg?'<div style="font-size:10.5px;color:var(--ink4);text-align:right;margin-top:3px">написали '+(daysAgo(x.lastMsg.date)===0?'сьогодні':daysAgo(x.lastMsg.date)+' дн. тому')+'</div>':'')+'</td></tr>';
@@ -7464,6 +7433,36 @@ function copyOrderFormLink(){
     prompt("Скопіюйте посилання:",url);
   }
 }
+// ── Personal order link per point ─────────────────────────────
+// order.html?pt=<token>&n=<name>&d=c|p — the page shows the point's own prices (70% / 60% of shelf).
+// The token proves which point ordered; the app matches it and recomputes prices itself,
+// so editing the URL cannot change what goes into the накладна.
+function newOrderToken(){
+  var a=new Uint8Array(9); (window.crypto||{getRandomValues:function(x){for(var i=0;i<x.length;i++)x[i]=Math.random()*256|0;return x;}}).getRandomValues(a);
+  return Array.from(a).map(function(x){return ("0"+x.toString(16)).slice(-2);}).join("");
+}
+function pointOrderUrl(b){
+  var term=buyerDeal(b)||partnerTermFor(b);
+  return orderFormUrl()+"?pt="+encodeURIComponent(b.orderToken)+"&n="+encodeURIComponent(b.retailName||b.name||"")+"&d="+(term==="prepay"?"p":"c");
+}
+function copyPointOrderLink(buyerId){
+  var b=buyers.find(function(x){return x.id===buyerId;}); if(!b) return;
+  if(!b.orderToken){ b.orderToken=newOrderToken(); save(); }
+  var url=pointOrderUrl(b);
+  var text="Ваше особисте посилання для замовлення All Trees I Know: "+url+"\nЦіни там уже з вашими умовами, просто оберіть аромати й кількість.";
+  function done(){ try{ addToast("Посилання для «"+(b.retailName||b.name)+"» скопійовано","success","Вставте його в чат з точкою"); }catch(e){} }
+  if(navigator.clipboard&&window.isSecureContext) navigator.clipboard.writeText(text).then(done,function(){ prompt("Скопіюйте посилання:",url); });
+  else prompt("Скопіюйте посилання:",url);
+}
+function orderPointBuyer(o){
+  var t=o&&o.pointToken; if(!t) return null;
+  return buyers.find(function(b){return b.orderToken&&b.orderToken===t;})||null;
+}
+// Point's price for an order line: shelf price × its deal %.
+function pointOrderTotal(o,b){
+  var pct=DEAL_PRICE_PCT[buyerDeal(b)||partnerTermFor(b)]||100;
+  return Math.round((o.items||[]).reduce(function(s,it){return s+(it.price||0)*(it.qty||0);},0)*pct/100);
+}
 function addToast(msg, type, sub) {
   type = type || 'success';
   var colors = {success:'var(--moss)',error:'var(--red)',warning:'var(--gold)',info:'var(--sky)'};
@@ -7790,8 +7789,10 @@ function renderOrders() {
       var _cat=o.createdAt;
       var date=_cat?(_cat.toDate?_cat.toDate().toISOString().substring(0,10):String(_cat).substring(0,10)):"";
       var src=o.source||o.channel||"Site";
-      var contact=o.contact||o.company||o.nickname||"—";
-      var total=fmt(o.totalDiscounted||o.total||0);
+      var pb=orderPointBuyer(o);
+      var contact=pb?(pb.retailName||pb.name):(o.contact||o.company||o.nickname||"—");
+      var total=fmt(pb?pointOrderTotal(o,pb):(o.totalDiscounted||o.total||0));
+      if(pb) src="📍 Точка · "+(DEAL_LABELS[buyerDeal(pb)||partnerTermFor(pb)]||"");
       var itemsHtml=(o.items||[]).map(function(it){
         var pName=(products.find(function(p){return p.id===it.id;})||{}).name||it.id||"";
         var shortP=qoShortName(pName)||it.id;
@@ -7803,7 +7804,7 @@ function renderOrders() {
       var btns="";
       if(isNew){
         btns+='<button class="btn btn-gray btn-sm" onclick="declineOrder(\''+o._id+'\')" style="flex:1;justify-content:center;">Відхилити</button>';
-        btns+='<button onclick="confirmOrder(\''+o._id+'\')" style="flex:2;padding:8px 10px;border-radius:8px;border:none;background:var(--pine);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;">✓ Підтвердити → НН</button>';
+        btns+='<button onclick="confirmOrder(\''+o._id+'\')" style="flex:2;padding:8px 10px;border-radius:8px;border:none;background:var(--pine);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;">'+(pb?'✓ Чернетка накладної':'✓ Підтвердити → НН')+'</button>';
       }
       if(isConf){ btns+='<span style="font-size:11px;color:var(--ink3);">Накладна створена</span>'; }
       // Delete button — always visible
@@ -7827,7 +7828,8 @@ function confirmOrder(orderId) {
   var o=ordersData.find(function(x){return x._id===orderId;});
   if(!o)return;
   if(!cloudDb){alert("Увійдіть через Google для зміни статусу");return;}
-  if(!confirm("Підтвердити замовлення від "+(o.company||"")+" і створити накладну?"))return;
+  var _pb=orderPointBuyer(o);
+  if(!confirm("Підтвердити замовлення від "+(_pb?(_pb.retailName||_pb.name):(o.company||""))+" і відкрити чернетку накладної?"))return;
   cloudDb.collection("orders").doc(orderId).update({status:"confirmed"})
     .then(function(){
       o.status="confirmed";
@@ -7863,6 +7865,8 @@ function declineOrder(orderId) {
 function createInvoiceFromOrder(orderId){
   var o=ordersData.find(function(x){return x._id===orderId;});
   if(!o)return;
+  var pb=orderPointBuyer(o);
+  if(pb){ _doInvoiceFromOrder(orderId,pb.id); return; }
   if(!isPartnerOrder(o)){ _doInvoiceFromOrder(orderId,null); return; }
   var cl=(o.company||"").toLowerCase();
   var similar=buyers.filter(function(b){
@@ -7930,6 +7934,16 @@ function _doInvoiceFromOrder(orderId,buyerId){
     var p=products.find(function(x){return x.id===it.id;});
     if(p)items.push({id:Date.now()+Math.random(),productId:it.id,qty:it.qty,customPrice:"",baseShelf:(it.price>0?it.price:null)});
   });
+  // Order from a point's personal link: same setup as «Накладна на поповнення» (its deal, its shelf prices).
+  if(orderPointBuyer(o)&&orderPointBuyer(o).id===buyer.id){
+    var dtEl=document.querySelector('input[name="doctype"][value="invoice"]'); if(dtEl) dtEl.checked=true;
+    var ptEl=document.querySelector('input[name="pricetype"][value="'+((buyerDeal(buyer)||partnerTermFor(buyer))==="prepay"?"opt":"real")+'"]'); if(ptEl) ptEl.checked=true;
+    var ne=document.getElementById("inv-num"); if(ne) ne.value=nextInvoiceNum();
+    var de=document.getElementById("inv-date"); if(de) de.value=todayISO();
+    items.forEach(function(x){ var sp=lastShelfPriceFor(buyer.id,x.productId); if(sp) x.baseShelf=sp; });
+    onDocTypeChange(); refreshPriceTypeBtns();
+    addToast("Чернетка накладної для «"+(buyer.retailName||buyer.name)+"»","success","З її замовлення за посиланням. Перевірте й натисніть «Згенерувати»");
+  }
   renderItems();
 }
 
