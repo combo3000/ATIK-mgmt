@@ -738,6 +738,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
 
 <!-- ═══ DASHBOARD ═══ -->
 <div id="pane-dashboard" style="padding:24px 28px 32px;display:flex;flex-direction:column;gap:20px;max-width:1280px;margin:0 auto;width:100%;min-height:0;">
+  <div id="dash-goal"></div>
 
   <!-- Quick Order CTA -->
   <div id="dash-quick-cta" style="
@@ -1270,6 +1271,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
       </button>
     </div>
   </div>
+  <div id="partners-goal" style="margin-bottom:16px"></div>
+  <div id="partners-overview" style="margin-bottom:20px"></div>
+  <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px">Картки точок</div>
   <div id="retail-store-grid" style="margin-bottom:20px;"></div>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
     <div style="font-size:13px;font-weight:600;color:var(--ink);">Історія звітів</div>
@@ -4733,6 +4737,8 @@ function renderRetailTab(){
 function renderRetailStoreGrid(){
   var el=document.getElementById("retail-store-grid");
   if(!el)return;
+  renderGoalCard("partners-goal");
+  renderPartnersOverview();
   var stores=buyers.filter(function(b){return b.isRetail;});
   // update meta
   var metaEl=document.getElementById("retail-meta");
@@ -4742,8 +4748,8 @@ function renderRetailStoreGrid(){
     +stores.map(function(b){
       // Count stock on shelf
       var salesForStore=salesReports.filter(function(r){return r.buyerId===b.id;});
-      var lastReport=salesForStore.sort(function(a,c){return(c.date||"").localeCompare(a.date||"");}).slice(0,1)[0];
-      var lastDate=lastReport?(lastReport.date||"").replace(/^(\d{4})-(\d{2})-(\d{2})$/,"$3.$2.$1"):"—";
+      var lastReport=salesForStore.slice().sort(function(a,c){return(c.savedAt||c.date||"").localeCompare(a.savedAt||a.date||"");})[0];
+      var lastDate=lastReport?String(lastReport.savedAt||lastReport.date||"").slice(0,10).replace(/^(\d{4})-(\d{2})-(\d{2})$/,"$3.$2.$1"):"—";
       var onShelf=0;
       (lastReport&&lastReport.stockAfter||[]).forEach(function(s){onShelf+=s.qty||0;});
       // Fallback: also count retailStock (from invoice deliveries)
@@ -4752,12 +4758,14 @@ function renderRetailStoreGrid(){
           onShelf+=(parseInt(retailStock[b.id][k].qty)||0);
         });
       }
-      var monthRevenue=0;
-      var now=new Date(),thisMonth=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
-      salesForStore.filter(function(r){return (r.date||"").startsWith(thisMonth);})
-        .forEach(function(r){
-          (r.items||[]).forEach(function(it){monthRevenue+=(it.qty||0)*(it.price||0);});
-        });
+      // Paid this month by this point (payments dated this month on its documents)
+      var monthRevenue=0, thisMonth=curYM();
+      journal.forEach(function(j){
+        if(jBuyerId(j)!==b.id) return;
+        var p=docPayments(j);
+        if(p.length) p.forEach(function(x){ if(String(x.date||"").startsWith(thisMonth)) monthRevenue+=parseFloat(x.amount)||0; });
+        else if(j.status==="paid"&&String(j.invoiceDate||"").startsWith(thisMonth)) monthRevenue+=j.total||0;
+      });
       var city=b.address?(b.address.match(/м\.?\s*([^\s,]+)/)||[])[1]||"":"";
       return '<div class="store-card-item" onclick="openRetailDetailModal(\''+b.id+'\')">'
 
@@ -4771,7 +4779,7 @@ function renderRetailStoreGrid(){
           +'</div>'
         +'</div>'
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">'
-          +'<div><div style="font-size:10px;color:var(--ink3);">Виручка міс.</div>'
+          +'<div><div style="font-size:10px;color:var(--ink3);">Оплачено міс.</div>'
             +'<div style="font-size:16px;font-weight:700;color:var(--pine);font-family:ui-monospace,monospace;">'+(monthRevenue>0?fmt(monthRevenue)+' ₴':'—')+'</div></div>'
           +'<div><div style="font-size:10px;color:var(--ink3);">На полиці</div>'
             +'<div style="font-size:16px;font-weight:700;color:var(--ink);font-family:ui-monospace,monospace;">'+(onShelf>0?onShelf+' <span style="font-size:11px;font-weight:400;color:var(--ink3);">шт.</span>':'—')+'</div></div>'
@@ -4916,11 +4924,12 @@ function renderRetailHistory(){
   if(!list.length){el.innerHTML='<div class="empty-state"><div class="icon">📋</div>Звітів ще немає</div>';return;}
   el.innerHTML=list.map(function(r){
     var total=r.items.reduce(function(s,i){return s+i.sold;},0);
+    var billDoc=r.billId&&journal.find(function(j){return j.id===r.billId;});
     return '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);padding:12px 14px;margin-bottom:10px">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">'
       +'<div><strong>'+esc(r.buyerName)+'</strong><span style="color:var(--ink4);font-size:11.5px;margin-left:8px">'+r.month+'</span></div>'
       +'<div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:var(--ink3)">'+total+' шт. продано</span>'
-      +(r.billId&&journal.some(function(j){return j.id===r.billId;})?'<span style="font-size:11.5px;color:var(--moss);font-weight:600">🧾 Рахунок №'+esc(r.billNum)+'</span>'
+      +(billDoc?'<span style="font-size:11.5px;color:var(--moss);font-weight:600">🧾 Рахунок №'+esc(billDoc.invoiceNum)+'</span>'
         :'<button class="btn btn-moss btn-sm" onclick="createBillFromSalesReport(\''+r.id+'\')">🧾 Рахунок на продане</button>')
       +'<button class="btn btn-danger btn-sm" onclick="deleteRetailReport(\''+r.id+'\')">× Видалити</button></div></div>'
       +'<div style="display:flex;flex-wrap:wrap;gap:6px">'
@@ -5173,6 +5182,7 @@ function createBillFromSalesReport(reportId){
 // DASHBOARD
 // ============================================================
 function renderDashboard(){
+  renderGoalCard("dash-goal");
   var now=new Date(),y=now.getFullYear(),mo=now.getMonth();
   var thisMonth=journal.filter(function(j){
     var d=new Date(j.invoiceDate+"T12:00:00");
@@ -6093,6 +6103,238 @@ function aiTestReport(){
   }).catch(function(e){ aiOut('<span style="color:var(--red)">'+esc(e.message||String(e))+'</span>'); });
 }
 
+// ── Partners overview, goal card, weekly report ───────────
+function curYM(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
+function ymShift(ym,n){ var p=String(ym).split("-"); var d=new Date(+p[0],+p[1]-1+n,1); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
+function ymDiff(a,b){ var x=String(a).split("-"), y=String(b).split("-"); return (+y[0]-+x[0])*12+(+y[1]-+x[1]); }
+function daysAgo(iso){ if(!iso) return null; var t=new Date(String(iso).length<=10?iso+"T12:00:00":iso).getTime(); return isNaN(t)?null:Math.max(0,Math.floor((Date.now()-t)/86400000)); }
+function isoDaysAgo(n){ var d=new Date(); d.setDate(d.getDate()-n); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
+function isPartnerPoint(b){ return b&&b.isRetail&&!b.isD2C; }
+// Best way to write to a point: its chosen channel first, then whatever is filled in.
+function partnerContact(b){
+  var tg=String(b.telegram||"").trim().replace(/^https?:\/\/t\.me\//i,"").replace(/^@/,"");
+  var ig=String(b.instagram||"").trim().replace(/^https?:\/\/(www\.)?instagram\.com\//i,"").replace(/^@/,"").replace(/\/$/,"");
+  var ph=String(b.phone||"").replace(/[^\d+]/g,"");
+  var opts={telegram:tg&&{href:"https://t.me/"+tg,label:"Telegram"},instagram:ig&&{href:"https://instagram.com/"+ig,label:"Instagram"},
+    phone:ph&&{href:"tel:"+ph,label:"Дзвінок"},viber:ph&&{href:"viber://chat?number="+encodeURIComponent(ph),label:"Viber"}};
+  return opts[b.channel]||opts.telegram||opts.instagram||opts.phone||null;
+}
+// Everything the overview and the weekly report need about one point.
+// Restock rule (під реалізацію): sales per month over the last 3 months; when the shelf
+// holds less than one month of sales, suggest topping up to 1.5 months.
+// Передоплата: suggest a new order when the gap since the last накладна exceeds their usual gap.
+function partnerStats(b){
+  var term=buyerDeal(b)||partnerTermFor(b);
+  var st=retailStock[b.id]||{}, shelf={}, shelfQty=0;
+  Object.keys(st).forEach(function(k){ var q=parseInt(st[k].qty)||0; if(q>0){ shelf[k]={qty:q,name:st[k].name}; shelfQty+=q; } });
+  var reps=salesReports.filter(function(r){return r.buyerId===b.id;});
+  var last=reps.slice().sort(function(a,c){return String(c.savedAt||"").localeCompare(String(a.savedAt||""));})[0]||null;
+  var cur=curYM(), from=ymShift(cur,-2);
+  var win=reps.filter(function(r){return r.month>=from&&r.month<=cur;});
+  var firstM=win.reduce(function(m,r){return r.month<m?r.month:m;},cur);
+  var months=Math.max(1,ymDiff(firstM,cur)+1);
+  var byPid={}, sold3=0;
+  win.forEach(function(r){ (r.items||[]).forEach(function(it){
+    if(!byPid[it.productId]) byPid[it.productId]={sold:0,name:it.name};
+    byPid[it.productId].sold+=it.sold||0; sold3+=it.sold||0;
+  });});
+  var restock=[];
+  if(term==="consignment") Object.keys(byPid).forEach(function(pid){
+    var v=byPid[pid].sold/months, have=shelf[pid]?shelf[pid].qty:0;
+    if(v>0&&have<v){ var sug=Math.ceil(v*1.5)-have; if(sug>0) restock.push({productId:pid,name:shortName(byPid[pid].name),have:have,perMonth:Math.round(v*10)/10,suggest:sug}); }
+  });
+  restock.sort(function(a,c){return c.perMonth-a.perMonth;});
+  // Products that sit on the shelf with no sales while the point does send reports
+  var still=(win.length?Object.keys(shelf).filter(function(pid){return !byPid[pid];}).map(function(pid){return shortName(shelf[pid].name);}):[]);
+  var docs=journal.filter(function(j){return jBuyerId(j)===b.id;});
+  var invs=docs.filter(function(j){return j.docType==="invoice";}).sort(function(a,c){return String(c.invoiceDate||"").localeCompare(String(a.invoiceDate||""));});
+  var lastInv=invs[0]||null;
+  var gaps=[]; for(var i=0;i<invs.length-1&&i<5;i++){ var g=(new Date(invs[i].invoiceDate)-new Date(invs[i+1].invoiceDate))/86400000; if(g>0) gaps.push(g); }
+  var usualGap=gaps.length?Math.round(gaps.reduce(function(s,x){return s+x;},0)/gaps.length):null;
+  var unpaid=docs.filter(function(j){return j.docType==="bill"&&docOutstanding(j)>0;});
+  var debt=Math.round(unpaid.reduce(function(s,j){return s+docOutstanding(j);},0));
+  var oldestUnpaid=unpaid.reduce(function(m,j){var d=daysAgo(j.invoiceDate);return d!==null&&d>m?d:m;},0);
+  var flags=[];
+  if(debt>0&&oldestUnpaid>=14) flags.push({k:"debt",lvl:3,text:"💳 Не оплачено "+fmt(debt)+" ₴ ("+oldestUnpaid+" дн.)"});
+  else if(debt>0) flags.push({k:"debt",lvl:1,text:"💳 Очікує оплату "+fmt(debt)+" ₴"});
+  if(term==="consignment"){
+    var dl=last?daysAgo(last.savedAt):null;
+    if(!last&&shelfQty>0) flags.push({k:"report",lvl:2,text:"📋 Ще жодного звіту"});
+    else if(dl!==null&&dl>35) flags.push({k:"report",lvl:2,text:"📋 Звіт "+dl+" дн. тому"});
+    if(last&&!(last.billId&&journal.some(function(j){return j.id===last.billId;}))) flags.push({k:"bill",lvl:2,text:"🧾 Немає рахунку за звіт "+last.month});
+    if(restock.length) flags.push({k:"restock",lvl:2,text:"📦 Дозамовити: "+restock.length+" поз."});
+    if(!shelfQty&&(reps.length||lastInv)) flags.push({k:"empty",lvl:2,text:"📭 Полиця порожня"});
+  } else {
+    var since=lastInv?daysAgo(lastInv.invoiceDate):null;
+    if(since!==null&&usualGap&&since>usualGap*1.2) flags.push({k:"reorder",lvl:2,text:"🔁 Час нового замовлення ("+since+" дн., зазвичай ~"+usualGap+")"});
+  }
+  return {b:b,id:b.id,name:b.retailName||b.name,term:term,shelf:shelf,shelfQty:shelfQty,lastReport:last,
+    soldPerMonth:Math.round(sold3/months),restock:restock,still:still,lastInvoice:lastInv,usualGap:usualGap,debt:debt,
+    flags:flags,score:flags.reduce(function(s,f){return s+f.lvl;},0)};
+}
+function allPartnerStats(){ return buyers.filter(isPartnerPoint).map(partnerStats); }
+
+function renderGoalCard(elId){
+  var el=document.getElementById(elId); if(!el) return;
+  var pr=salesGoalProgress(), g=pr.goal;
+  if(!(g.amount>0)){ el.innerHTML=""; return; }
+  var pct=Math.min(100,Math.round(pr.done/g.amount*100));
+  var start=new Date(pr.range.from+"T00:00:00"), end=new Date(pr.range.to+"T00:00:00"), now=new Date();
+  var timePct=Math.min(100,Math.max(0,Math.round((now-start)/(end-start)*100)));
+  var daysLeft=Math.max(0,Math.ceil((end-now)/86400000));
+  var left=Math.max(0,g.amount-pr.done);
+  var ahead=pct>=timePct;
+  var periodName={month:"місяць",quarter:"квартал",year:"рік"}[g.period]||"період";
+  var k=pr.byKind||{};
+  var kinds=[["points","точки"],["d2c","сайт і роздріб"],["other","інші"]].filter(function(x){return k[x[0]]>0;})
+    .map(function(x){return x[1]+" "+fmt(k[x[0]])+" ₴";}).join(" · ");
+  el.innerHTML='<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 18px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">'
+      +'<div style="font-weight:700;font-size:14px;color:var(--ink)">🎯 Ціль на '+periodName+': '+fmt(pr.done)+' ₴ з '+fmt(g.amount)+' ₴</div>'
+      +'<div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:'+(ahead?'var(--moss)':'var(--cedar)')+';font-weight:600">'+pct+'%'+(ahead?' · йдемо в графіку':' · відстаємо від графіка ('+timePct+'% часу минуло)')+'</span>'
+      +'<button class="btn btn-moss btn-sm" style="color:#fff" onclick="openWeeklyReport()">📊 Тижневий звіт</button></div>'
+    +'</div>'
+    +'<div style="position:relative;height:10px;background:var(--surface3);border-radius:6px;margin:10px 0 6px;overflow:hidden">'
+      +'<div style="position:absolute;left:0;top:0;bottom:0;width:'+pct+'%;background:var(--moss);border-radius:6px"></div>'
+      +'<div title="Скільки часу минуло" style="position:absolute;top:0;bottom:0;left:'+timePct+'%;width:2px;background:var(--ink3)"></div>'
+    +'</div>'
+    +'<div style="font-size:11.5px;color:var(--ink3)">Лишилось '+fmt(left)+' ₴ за '+daysLeft+' дн.'+(daysLeft>0&&left>0?' (≈ '+fmt(Math.ceil(left/daysLeft))+' ₴ на день)':'')
+      +(kinds?' · '+kinds:'')+' · '+(g.basis==="issued"?"рахуємо відвантаження":"рахуємо оплати")+'</div>'
+  +'</div>';
+}
+
+function renderPartnersOverview(){
+  var el=document.getElementById("partners-overview"); if(!el) return;
+  var list=allPartnerStats();
+  if(!list.length){ el.innerHTML=""; return; }
+  list.sort(function(a,c){return c.score-a.score||c.debt-a.debt||c.soldPerMonth-a.soldPerMonth;});
+  var cons=list.filter(function(x){return x.term==="consignment";}).length;
+  var need=list.filter(function(x){return x.flags.some(function(f){return f.lvl>=2;});}).length;
+  var th='style="border-bottom:1px solid var(--border);padding:6px 8px;text-align:left;font-size:11px;color:var(--ink3);font-weight:600;white-space:nowrap"';
+  var td='style="border-bottom:1px solid var(--border);padding:6px 8px;vertical-align:top"';
+  el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px;margin-bottom:8px">'
+      +'<div style="font-size:13px;font-weight:600;color:var(--ink)">Партнери: '+list.length+' (під реалізацію '+cons+', передоплата '+(list.length-cons)+')</div>'
+      +'<div style="font-size:12px;color:'+(need?'var(--cedar)':'var(--moss)')+'">'+(need?'Потребують уваги: '+need:'Все в порядку')+'</div></div>'
+    +'<div style="overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--r2)"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+    +'<thead><tr><th '+th+'>Точка</th><th '+th+'>На полиці</th><th '+th+'>Продаж/міс.</th><th '+th+'>Борг</th><th '+th+'>Останній звіт / накладна</th><th '+th+'>Що зробити</th><th '+th+'></th></tr></thead><tbody>'
+    +list.map(function(x){
+      var c=partnerContact(x.b);
+      var lastTxt=x.term==="consignment"
+        ?(x.lastReport?esc(x.lastReport.month)+' <span style="color:var(--ink4)">('+daysAgo(x.lastReport.savedAt)+' дн.)</span>':'<span style="color:var(--ink4)">—</span>')
+        :(x.lastInvoice?esc(formatDate(x.lastInvoice.invoiceDate))+' <span style="color:var(--ink4)">('+daysAgo(x.lastInvoice.invoiceDate)+' дн.)</span>':'<span style="color:var(--ink4)">—</span>');
+      var rs=x.restock.length?'<div style="font-size:11px;color:var(--ink3);margin-top:2px">'+x.restock.slice(0,4).map(function(r){return esc(r.name)+' +'+r.suggest;}).join(", ")+(x.restock.length>4?' …':'')+'</div>':'';
+      return '<tr><td '+td+'><a href="#" onclick="openRetailDetailModal(\''+x.id+'\');return false" style="color:var(--ink);font-weight:600;text-decoration:none">'+esc(x.name)+'</a>'
+          +'<div style="font-size:10.5px;color:var(--ink4)">'+(x.term==="prepay"?"передоплата":"під реалізацію")+'</div></td>'
+        +'<td '+td+'>'+(x.shelfQty||'—')+'</td>'
+        +'<td '+td+'>'+(x.term==="consignment"?(x.soldPerMonth||'—'):'<span style="color:var(--ink4)">—</span>')+'</td>'
+        +'<td '+td+'>'+(x.debt?'<strong style="color:var(--cedar)">'+fmt(x.debt)+' ₴</strong>':'—')+'</td>'
+        +'<td '+td+'>'+lastTxt+'</td>'
+        +'<td '+td+'>'+(x.flags.length?x.flags.map(function(f){return '<div style="white-space:nowrap;'+(f.lvl>=3?'color:var(--red);font-weight:600':'')+'">'+esc(f.text)+'</div>';}).join("")+rs:'<span style="color:var(--moss)">✓</span>')+'</td>'
+        +'<td '+td+'>'+(c?'<a class="btn btn-gray btn-sm" href="'+esc(c.href)+'" target="_blank" rel="noopener" style="text-decoration:none;white-space:nowrap">'+esc(c.label)+'</a>':'')+'</td></tr>';
+    }).join("")
+    +'</tbody></table></div>';
+}
+
+// ── Weekly report ──────────────────────────────────────────
+// All numbers are counted here; AI (optional) only writes the summary and the to-do list.
+function buildWeeklyData(){
+  var from=isoDaysAgo(6), to=todayISO();
+  function inW(d){ d=String(d||"").slice(0,10); return d>=from&&d<=to; }
+  var pr=salesGoalProgress(), g=pr.goal;
+  var start=new Date(pr.range.from+"T00:00:00"), end=new Date(pr.range.to+"T00:00:00"), now=new Date();
+  var paidWeek=0, payments=[];
+  journal.forEach(function(j){ docPayments(j).forEach(function(p){ if(inW(p.date)){ var a=parseFloat(p.amount)||0; paidWeek+=a; payments.push({buyer:jBuyerName?jBuyerName(j):"",amount:Math.round(a)}); } }); });
+  var docsW=journal.filter(function(j){return inW(j.invoiceDate);});
+  var reps=salesReports.filter(function(r){return inW(r.savedAt);}).map(function(r){return {point:r.buyerName,month:r.month,sold:r.items.reduce(function(s,i){return s+i.sold;},0)};});
+  var web=(typeof ordersData!=="undefined"?ordersData:[]).filter(function(o){var c=o.createdAt;var d=c?(c.toDate?c.toDate().toISOString():String(c)):"";return inW(d);});
+  var stats=allPartnerStats();
+  // Best and slow sellers across points over the last 3 months
+  var soldBy={}, from3=ymShift(curYM(),-2);
+  salesReports.forEach(function(r){ if(r.month<from3) return; (r.items||[]).forEach(function(it){ var n=shortName(it.name); soldBy[n]=(soldBy[n]||0)+(it.sold||0); }); });
+  var top=Object.keys(soldBy).sort(function(a,c){return soldBy[c]-soldBy[a];}).slice(0,5).map(function(n){return {name:n,sold:soldBy[n]};});
+  var stillCount={}; stats.forEach(function(x){ x.still.forEach(function(n){ stillCount[n]=(stillCount[n]||0)+1; }); });
+  var slow=Object.keys(stillCount).sort(function(a,c){return stillCount[c]-stillCount[a];}).slice(0,5).map(function(n){return {name:n,pointsWithoutSales:stillCount[n]};});
+  return {
+    period:{from:from,to:to},
+    goal:{amount:g.amount,period:g.period,basis:g.basis==="issued"?"відвантаження":"оплати",done:pr.done,pct:g.amount?Math.round(pr.done/g.amount*100):0,
+      timeElapsedPct:Math.round(Math.min(1,Math.max(0,(now-start)/(end-start)))*100),daysLeft:Math.max(0,Math.ceil((end-now)/86400000)),byKind:pr.byKind},
+    week:{paid:Math.round(paidWeek),payments:payments.slice(0,20),
+      invoices:{count:docsW.filter(function(j){return j.docType==="invoice";}).length,sum:Math.round(docsW.filter(function(j){return j.docType==="invoice";}).reduce(function(s,j){return s+(j.total||0);},0))},
+      bills:{count:docsW.filter(function(j){return j.docType==="bill";}).length,sum:Math.round(docsW.filter(function(j){return j.docType==="bill";}).reduce(function(s,j){return s+(j.total||0);},0))},
+      salesReports:reps,
+      webOrders:{count:web.length,sum:Math.round(web.reduce(function(s,o){return s+(o.totalDiscounted||o.total||0);},0)),unconfirmed:(typeof ordersData!=="undefined"?ordersData:[]).filter(function(o){return o.status==="new";}).length,loaded:typeof ordersData!=="undefined"&&ordersData.length>0}},
+    partners:{total:stats.length,consignment:stats.filter(function(x){return x.term==="consignment";}).length,prepay:stats.filter(function(x){return x.term==="prepay";}).length,
+      debtTotal:stats.reduce(function(s,x){return s+x.debt;},0)},
+    attention:stats.filter(function(x){return x.flags.length;}).sort(function(a,c){return c.score-a.score;}).slice(0,15).map(function(x){
+      return {point:x.name,term:x.term==="prepay"?"передоплата":"під реалізацію",flags:x.flags.map(function(f){return f.text;}),debt:x.debt,shelf:x.shelfQty,soldPerMonth:x.soldPerMonth,
+        restock:x.restock.slice(0,8).map(function(r){return {name:r.name,onShelf:r.have,soldPerMonth:r.perMonth,suggest:r.suggest};}),noSalesOnShelf:x.still.slice(0,6)};
+    }),
+    topProducts:top, slowProducts:slow
+  };
+}
+function weekKey(){ return isoDaysAgo(0); }
+function weeklyReportHtml(d,ai){
+  var h='';
+  if(ai){
+    var pc={high:"var(--red)",medium:"var(--gold)",low:"var(--ink4)"};
+    h+='<div style="background:var(--moss4);border-radius:10px;padding:12px 14px;margin-bottom:12px">'
+      +'<div style="font-weight:700;font-size:14px;color:var(--pine);margin-bottom:4px">'+esc(ai.headline)+'</div>'
+      +'<div style="font-size:12.5px;line-height:1.5">'+esc(ai.summary)+'</div>'
+      +(ai.actions&&ai.actions.length?'<div style="font-weight:600;font-size:12.5px;margin:10px 0 4px">Що зробити цього тижня</div><ol style="margin:0 0 0 18px;padding:0;font-size:12.5px;line-height:1.5">'
+        +ai.actions.map(function(a){return '<li><span style="color:'+(pc[a.priority]||"inherit")+'">●</span> <strong>'+esc(a.title)+'</strong>'+(a.partner?' · '+esc(a.partner):'')+(a.details?'<div style="color:var(--ink3)">'+esc(a.details)+'</div>':'')+'</li>';}).join("")+'</ol>':'')
+      +'</div>';
+  }
+  var w=d.week, gl=d.goal;
+  function row(k,v){ return '<tr><td style="padding:3px 10px 3px 0;color:var(--ink3);white-space:nowrap;vertical-align:top">'+k+'</td><td style="padding:3px 0">'+v+'</td></tr>'; }
+  h+='<div style="font-size:11.5px;color:var(--ink4);margin-bottom:6px">'+esc(formatDate(d.period.from))+' — '+esc(formatDate(d.period.to))+'</div>'
+    +'<table style="font-size:12.5px;border-collapse:collapse;margin-bottom:10px">'
+    +row("Ціль",fmt(gl.done)+' ₴ з '+fmt(gl.amount)+' ₴ ('+gl.pct+'%), минуло '+gl.timeElapsedPct+'% часу, лишилось '+gl.daysLeft+' дн.')
+    +row("Оплати за тиждень",fmt(w.paid)+' ₴'+(w.payments.length?' ('+w.payments.length+')':''))
+    +row("Документи",'накладних '+w.invoices.count+' на '+fmt(w.invoices.sum)+' ₴ · рахунків '+w.bills.count+' на '+fmt(w.bills.sum)+' ₴')
+    +row("Звіти точок",w.salesReports.length?w.salesReports.map(function(r){return esc(r.point)+' ('+r.sold+' шт.)';}).join(", "):'не було')
+    +row("Інтернет-замовлення",w.webOrders.loaded?(w.webOrders.count+' на '+fmt(w.webOrders.sum)+' ₴'+(w.webOrders.unconfirmed?' · непідтверджених '+w.webOrders.unconfirmed:'')):'<span style="color:var(--ink4)">відкрийте вкладку «Замовлення», щоб врахувати</span>')
+    +row("Борги точок",fmt(d.partners.debtTotal)+' ₴')
+    +(d.topProducts.length?row("Найкраще продаються",d.topProducts.map(function(p){return esc(p.name)+' '+p.sold;}).join(", ")):'')
+    +(d.slowProducts.length?row("Лежать без продажів",d.slowProducts.map(function(p){return esc(p.name)+' ('+p.pointsWithoutSales+' точ.)';}).join(", ")):'')
+    +'</table>';
+  if(d.attention.length){
+    h+='<div style="font-weight:600;font-size:12.5px;margin:6px 0">Точки, що потребують уваги</div>'
+      +d.attention.map(function(a){
+        return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px">'
+          +'<strong>'+esc(a.point)+'</strong> <span style="color:var(--ink4)">'+esc(a.term)+'</span>'
+          +'<div>'+a.flags.map(esc).join(" · ")+'</div>'
+          +(a.restock.length?'<div style="color:var(--ink3);margin-top:3px">Дозамовити: '+a.restock.map(function(r){return esc(r.name)+' +'+r.suggest+' <span style="color:var(--ink4)">(є '+r.onShelf+', ~'+r.soldPerMonth+'/міс.)</span>';}).join(", ")+'</div>':'')
+          +'</div>';
+      }).join("");
+  }
+  return h;
+}
+function openWeeklyReport(){
+  var d=buildWeeklyData();
+  var saved=(settings.weeklyReports||[]).find(function(r){return r.week===weekKey();});
+  var body='<div id="wr-body">'+weeklyReportHtml(d,saved&&saved.ai)+'</div><div id="wr-status" style="font-size:12px;margin-top:6px"></div>';
+  var foot='<button class="btn btn-gray btn-sm" onclick="copyWeeklyReport()">📋 Копіювати</button>'
+    +'<button class="btn btn-moss btn-sm" style="color:#fff" onclick="aiWeeklyReport()">✨ '+(saved&&saved.ai?'Оновити висновки AI':'Висновки AI')+'</button>';
+  maintModal("modal-weekly","📊 Тижневий звіт",body,foot);
+  window._weeklyData=d;
+}
+function aiWeeklyReport(){
+  var d=window._weeklyData||buildWeeklyData();
+  var st=document.getElementById("wr-status"); if(st) st.innerHTML="🤖 AI готує висновки… (до хвилини)";
+  aiApi("/api/weekly-report",{data:d}).then(function(ai){
+    var rec={week:weekKey(),createdAt:new Date().toISOString(),ai:{headline:ai.headline,summary:ai.summary,actions:ai.actions},goalPct:d.goal.pct,paidWeek:d.week.paid};
+    settings.weeklyReports=[rec].concat((settings.weeklyReports||[]).filter(function(r){return r.week!==rec.week;})).slice(0,8);
+    save();
+    var b=document.getElementById("wr-body"); if(b) b.innerHTML=weeklyReportHtml(d,rec.ai);
+    if(st) st.innerHTML="";
+  }).catch(function(e){ if(st) st.innerHTML='<span style="color:var(--red)">'+esc(e.message||String(e))+'</span>'; });
+}
+function copyWeeklyReport(){
+  var b=document.getElementById("wr-body"); if(!b) return;
+  var t=b.innerText;
+  (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){addToast("Звіт скопійовано","success");}).catch(function(){prompt("Скопіюйте звіт:",t);});
+}
+
 var DEFAULT_SALES_GOAL={amount:200000,period:"month",basis:"paid"};
 function getSalesGoal(){ return Object.assign({},DEFAULT_SALES_GOAL,settings.salesGoal||{}); }
 function goalPeriodRange(period,now){
@@ -6110,13 +6352,22 @@ function goalPeriodRange(period,now){
 function salesGoalProgress(){
   var g=getSalesGoal(), r=goalPeriodRange(g.period), sum=0;
   function inR(d){ return d&&d>=r.from&&d<r.to; }
+  var byKind={points:0,d2c:0,other:0};
   journal.forEach(function(j){
-    if(g.basis==="issued"){ if(j.docType==="invoice"&&inR(j.invoiceDate)) sum+=j.total||0; return; }
-    var p=docPayments(j);
-    if(p.length) p.forEach(function(x){ if(inR(x.date)) sum+=parseFloat(x.amount)||0; });
-    else if(j.status==="paid"&&inR(j.invoiceDate)) sum+=j.total||0;
+    var add=0;
+    if(g.basis==="issued"){ if(j.docType==="invoice"&&inR(j.invoiceDate)) add=j.total||0; }
+    else {
+      var p=docPayments(j);
+      if(p.length) p.forEach(function(x){ if(inR(x.date)) add+=parseFloat(x.amount)||0; });
+      else if(j.status==="paid"&&inR(j.invoiceDate)) add=j.total||0;
+    }
+    if(!add) return;
+    sum+=add;
+    var b=buyers.find(function(x){return x.id===jBuyerId(j);});
+    byKind[b&&b.isD2C?"d2c":isPartnerPoint(b)?"points":"other"]+=add;
   });
-  return {goal:g, range:r, done:Math.round(sum)};
+  Object.keys(byKind).forEach(function(k){ byKind[k]=Math.round(byKind[k]); });
+  return {goal:g, range:r, done:Math.round(sum), byKind:byKind};
 }
 function renderGoalSettings(){
   var g=getSalesGoal();

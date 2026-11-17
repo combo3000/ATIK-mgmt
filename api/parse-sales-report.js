@@ -12,8 +12,8 @@
 //             unmatched: [{ reportedName, sold }], reportPeriod, notes, usage }
 import Anthropic from "@anthropic-ai/sdk";
 import { applyCors, sendJson, requireUser, httpError } from "./_lib/http.js";
+import { claudeJson, sendError } from "./_lib/claude.js";
 
-const MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-5-5";
 const MAX_TEXT = 60000;
 const MAX_IMAGE_B64 = 4_000_000; // Vercel request body limit is ~4.5 MB
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -136,26 +136,8 @@ export function normalizeResult(parsed, shelf) {
 // One Claude call: report in, sold quantities out. `client` is an Anthropic
 // client (injected so tests can point it at a mock server).
 export async function parseReport(input, client) {
-  const response = await client.beta.messages.create({
-    model: MODEL,
-    max_tokens: 16000,
-    system: SYSTEM,
-    output_config: { effort: "medium", format: { type: "json_schema", schema: buildSchema(input.ids) } },
-    // If a safety classifier declines, the API retries on its recommended fallback model.
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    messages: [{ role: "user", content: userContent(input) }],
-  });
-  if (response.stop_reason === "refusal") throw httpError(422, "AI відмовився обробити цей звіт");
-  if (response.stop_reason === "max_tokens") throw httpError(422, "Звіт завеликий, розбийте його на частини");
-  const textBlock = response.content.find((b) => b.type === "text");
-  if (!textBlock) throw httpError(502, "AI не повернув результату");
-  let parsed;
-  try { parsed = JSON.parse(textBlock.text); } catch { throw httpError(502, "AI повернув некоректні дані"); }
-  return {
-    ...normalizeResult(parsed, input.shelf),
-    usage: { input_tokens: response.usage?.input_tokens || 0, output_tokens: response.usage?.output_tokens || 0, model: response.model },
-  };
+  const { parsed, usage } = await claudeJson(client, { system: SYSTEM, content: userContent(input), schema: buildSchema(input.ids) });
+  return { ...normalizeResult(parsed, input.shelf), usage };
 }
 
 export default async function handler(req, res) {
@@ -168,14 +150,6 @@ export default async function handler(req, res) {
     const input = validateBody(body);
     return sendJson(res, 200, await parseReport(input, new Anthropic()));
   } catch (e) {
-    if (e instanceof Anthropic.APIError) {
-      const status = e.status === 429 ? 429 : 502;
-      console.error("Anthropic API error", e.status, e.message);
-      return sendJson(res, status, { error: e.status === 429 ? "AI перевантажений, спробуйте за хвилину" : "Помилка AI-сервісу" });
-    }
-    if (e && e.status) return sendJson(res, e.status, { error: e.message });
-    if (e instanceof SyntaxError) return sendJson(res, 400, { error: "Некоректний JSON" });
-    console.error(e);
-    return sendJson(res, 500, { error: "Внутрішня помилка сервера" });
+    return sendError(res, e, Anthropic, sendJson);
   }
 }
