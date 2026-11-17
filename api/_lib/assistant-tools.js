@@ -12,6 +12,7 @@ export const READ_TOOLS = [
   { name: "get_sales", description: "Продажі (відвантажені накладні) за період, згруповані за товарами або за покупцями: шт і ₴.", input_schema: { type: "object", properties: { period, group_by: { type: "string", enum: ["product", "buyer"] } }, required: ["period", "group_by"], additionalProperties: false } },
   { name: "get_stock", description: "Залишки: готовий товар на складі по позиціях і сировина (палички по ароматах) з прогнозом, коли замовляти.", input_schema: { type: "object", properties: {}, additionalProperties: false } },
   { name: "get_abc", description: "ABC-аналіз асортименту: класи A/B/C, частки й поради.", input_schema: { type: "object", properties: { period, basis: { type: "string", enum: ["revenue", "sold"], description: "revenue — за виручкою з накладних, sold — за продажами в точках зі звітів" } }, required: ["period", "basis"], additionalProperties: false } },
+  { name: "get_funnel", description: "Воронка нових точок: заклади на етапах контакт → пробник → перша поставка → партнер, скільки днів на етапі, нотатки, останні дії.", input_schema: { type: "object", properties: {}, additionalProperties: false } },
   { name: "find_documents", description: "Пошук документів (накладні, рахунки): за точкою/покупцем, типом, періодом, лише неоплачені.", input_schema: { type: "object", properties: { buyer: { type: "string" }, doc_type: { type: "string", enum: ["invoice", "bill", "any"] }, period, unpaid_only: { type: "boolean" } }, additionalProperties: false } },
 ];
 
