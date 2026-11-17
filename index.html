@@ -1199,6 +1199,33 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--moss2);
   </div>
 
   <!-- OPEX sub-panel -->
+  <!-- ABC sub-panel: which products bring the money -->
+  <div id="sales-abc" style="display:none;padding:18px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:10px;">
+      <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0;">ABC-аналіз асортименту</h2>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select id="abc-basis" onchange="renderAbc()"
+          style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);color:var(--ink);font-size:12.5px;font-family:inherit;">
+          <option value="revenue">За виручкою (накладні, ₴)</option>
+          <option value="sold">За продажами в точках (звіти, шт)</option>
+        </select>
+        <select id="abc-period" onchange="renderAbc()"
+          style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);color:var(--ink);font-size:12.5px;font-family:inherit;">
+          <option value="quarter">Квартал</option>
+          <option value="month">Цей місяць</option>
+          <option value="year">Рік</option>
+          <option value="all">Весь час</option>
+        </select>
+      </div>
+    </div>
+    <div class="hint" style="margin-bottom:14px">A — товари, що дають перші 80% результату: їх ніколи не можна допускати до нестачі. B — наступні 15%. C — останні 5%: кандидати на заміну в точках.</div>
+    <div id="abc-cards" class="stats-grid" style="margin-bottom:14px;"></div>
+    <div id="abc-advice" style="margin-bottom:14px;"></div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:16px;box-shadow:var(--shadow);overflow-x:auto;">
+      <div id="abc-table"></div>
+    </div>
+  </div>
+
   <div id="sales-opex" style="display:none;padding:18px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
       <h2 style="font-size:18px;font-weight:700;color:var(--ink);margin:0;">OPEX</h2>
@@ -3016,7 +3043,7 @@ function updateBreadcrumb(tab, sub) { /* removed */ }
 var SUB_NAVS = {
   docs:      [{id:"all",label:"Всі"},{id:"invoice",label:"Накладні"},{id:"bill",label:"Рахунки"}],
   warehouse: [{id:"raw",label:"Сировина"},{id:"receive",label:"Прийом"},{id:"history",label:"Журнал"}],
-  sales:     [{id:"overview",label:"Огляд"},{id:"margin",label:"Дохід"},{id:"cogs",label:"COGS"},{id:"opex",label:"OPEX"}],
+  sales:     [{id:"overview",label:"Огляд"},{id:"margin",label:"Дохід"},{id:"cogs",label:"COGS"},{id:"opex",label:"OPEX"},{id:"abc",label:"ABC"}],
   catalog:   [{id:"buyers", label:"Покупці"}, {id:"products",label:"Товари"},   {id:"suppliers",label:"Постачальники"}],
   orders:    [{id:"all",label:"Всі"},{id:"new",label:"Нові"},{id:"confirmed",label:"Підтверджені"}],
 };
@@ -3060,7 +3087,7 @@ function switchSubTab(tab, sub) {
     if (sub==="history")  { renderReceiveHistory(); }
   }
   if (tab==="sales") {
-    var salesPanels = {overview:"sales-overview", margin:"sales-margin", cogs:"sales-cogs", opex:"sales-opex"};
+    var salesPanels = {overview:"sales-overview", margin:"sales-margin", cogs:"sales-cogs", opex:"sales-opex", abc:"sales-abc"};
     Object.keys(salesPanels).forEach(function(k){
       var el=document.getElementById(salesPanels[k]);
       if(el) el.style.display = k===sub ? "" : "none";
@@ -3068,6 +3095,7 @@ function switchSubTab(tab, sub) {
     renderStats();
     if(sub==="cogs") renderCogsSales();
     if(sub==="opex") { loadOpexForMonth(); renderOpexHistory(); }
+    if(sub==="abc") renderAbc();
   }
   if (tab==="catalog") {
     // Show/hide catalog sections based on active sub-tab
@@ -6355,6 +6383,126 @@ function networkBestSellers(){
     .sort(function(a,c){return c.perPointMonth-a.perPointMonth;});
 }
 function allPartnerStats(){ var net=networkBestSellers(); return buyers.filter(isPartnerPoint).map(function(b){return partnerStats(b,net);}); }
+
+// ── ABC-START (pure; tested in test/abc.test.mjs) ─────────────
+// Splits products into A (first 80% of the result), B (next 15%) and C (last 5%).
+// input: {products:[{id,name}], invoices:[{items:[{id,name,qty,sum|price}]}], reports:[{buyerId,items:[{productId,name,sold}]}],
+//         retailStock:{buyerId:{pid:{qty}}}, warehouseStock:{pid:{qty}}, months:N, basis:"revenue"|"sold", nameOf:fn}
+function abcAnalysis(input){
+  var nameOf=input.nameOf||function(n){return n;};
+  var months=Math.max(1,input.months||1), rows={};
+  function row(pid,name){
+    if(!rows[pid]) rows[pid]={productId:pid,name:nameOf(name||pid),revenue:0,qty:0,sold:0,soldPoints:{},carriers:{},warehouse:0};
+    return rows[pid];
+  }
+  (input.products||[]).forEach(function(p){ row(p.id,p.name).inCatalog=true; });
+  (input.invoices||[]).forEach(function(j){ (j.items||[]).forEach(function(it){
+    var pid=it.id||it.productId||it.name; if(!pid) return;
+    var r=row(pid,it.name), q=+it.qty||0;
+    r.qty+=q; r.revenue+=(it.sum!==undefined?+it.sum:(+it.price||0)*q)||0;
+  });});
+  (input.reports||[]).forEach(function(rep){ (rep.items||[]).forEach(function(it){
+    var pid=it.productId||it.id; if(!pid) return;
+    var r=row(pid,it.name); r.sold+=+it.sold||0; if((+it.sold||0)>0) r.soldPoints[rep.buyerId]=1;
+  });});
+  var rs=input.retailStock||{};
+  Object.keys(rs).forEach(function(bid){ Object.keys(rs[bid]||{}).forEach(function(pid){
+    if((+rs[bid][pid].qty||0)>0 && rows[pid]) rows[pid].carriers[bid]=1;
+  });});
+  var ws=input.warehouseStock||{};
+  Object.keys(ws).forEach(function(pid){ if(rows[pid]) rows[pid].warehouse=Math.max(0,+ws[pid].qty||0); });
+  var basis=input.basis==="sold"?"sold":"revenue";
+  var list=Object.keys(rows).map(function(k){
+    var r=rows[k];
+    r.points=Object.keys(r.carriers).length; r.sellingPoints=Object.keys(r.soldPoints).length;
+    r.value=r[basis]; r.revenue=Math.round(r.revenue);
+    var perMonth=(r.sold||r.qty)/months; r.perMonth=Math.round(perMonth*10)/10;
+    delete r.carriers; delete r.soldPoints;
+    return r;
+  });
+  var active=list.filter(function(r){return r.value>0;}).sort(function(a,b){return b.value-a.value||a.name.localeCompare(b.name);});
+  var total=active.reduce(function(s,r){return s+r.value;},0), cum=0;
+  active.forEach(function(r){
+    var before=cum; cum+=r.value;
+    r.share=total?r.value/total*100:0; r.cumShare=total?cum/total*100:0;
+    // A product belongs to the class where its share starts, so the top seller is always A.
+    var start=total?before/total*100:0;
+    r.cls=start<80?"A":start<95?"B":"C";
+  });
+  // Unsold products only matter while they take up space: in the warehouse or on a shelf.
+  var idle=list.filter(function(r){return !(r.value>0)&&r.inCatalog&&(r.warehouse>0||r.points>0);}).sort(function(a,b){return a.name.localeCompare(b.name);});
+  idle.forEach(function(r){ r.cls="—"; r.share=0; r.cumShare=0; });
+  var pointsTotal=Object.keys(rs).filter(function(bid){return Object.keys(rs[bid]||{}).some(function(pid){return (+rs[bid][pid].qty||0)>0;});}).length;
+  // Advice per product
+  active.concat(idle).forEach(function(r){
+    var tips=[];
+    if(r.cls==="A"){
+      if(r.perMonth>0&&r.warehouse<r.perMonth) tips.push({k:"low",text:"Мало на складі: "+r.warehouse+" шт при ~"+r.perMonth+" шт/міс"});
+      if(pointsTotal>=3&&r.points<pointsTotal/2) tips.push({k:"spread",text:"Є лише в "+r.points+" з "+pointsTotal+" точок: запропонувати іншим"});
+    }
+    if((r.cls==="C"||r.cls==="—")&&r.points>=2&&r.sellingPoints===0) tips.push({k:"swap",text:"Лежить у "+r.points+" точках без продажів: замінити на товар класу A"});
+    r.tips=tips;
+  });
+  var sum=function(c){ var x=active.filter(function(r){return r.cls===c;}); return {count:x.length,value:x.reduce(function(s,r){return s+r.value;},0)}; };
+  return {basis:basis,total:total,rows:active,idle:idle,pointsTotal:pointsTotal,summary:{A:sum("A"),B:sum("B"),C:sum("C"),idle:idle.length}};
+}
+// ── ABC-END ───────────────────────────────────────────────────
+
+function abcMonthsRange(period){
+  var cur=curYM();
+  if(period==="month") return {from:cur,to:cur,months:1};
+  if(period==="quarter"){ var m=new Date().getMonth(), from=ymShift(cur,-(m%3)); return {from:from,to:cur,months:m%3+1}; }
+  if(period==="year"){ var f=cur.slice(0,4)+"-01"; return {from:f,to:cur,months:ymDiff(f,cur)+1}; }
+  var all=[]; journal.forEach(function(j){ if(j.invoiceDate) all.push(String(j.invoiceDate).slice(0,7)); });
+  salesReports.forEach(function(r){ if(r.month) all.push(r.month); });
+  var first=all.length?all.sort()[0]:cur; return {from:first,to:cur,months:ymDiff(first,cur)+1};
+}
+function abcData(period,basis){
+  var rg=abcMonthsRange(period);
+  var invoices=filterByPeriod(journal,period).filter(function(j){return j.docType==="invoice"&&j.status==="shipped";});
+  var reports=salesReports.filter(function(r){return r.month>=rg.from&&r.month<=rg.to;});
+  return abcAnalysis({products:products,invoices:invoices,reports:reports,retailStock:retailStock,warehouseStock:warehouseStock,
+    months:rg.months,basis:basis,nameOf:function(n){return shortName(String(n||""));}});
+}
+function renderAbc(){
+  var period=(document.getElementById("abc-period")||{}).value||"quarter";
+  var basis=(document.getElementById("abc-basis")||{}).value||"revenue";
+  var a=abcData(period,basis), unit=basis==="sold"?" шт":" ₴";
+  var clsColor={A:"var(--pine)",B:"var(--cedar)",C:"var(--red)","—":"var(--ink4)"};
+  var card=function(c,label){ var x=a.summary[c];
+    return '<div class="stat-card"><div class="stat-label">'+esc(label)+'</div>'
+      +'<div class="stat-value" style="color:'+clsColor[c]+'">'+x.count+' поз.</div>'
+      +'<div class="stat-sub">'+fmt(x.value)+unit+(a.total?' · '+Math.round(x.value/a.total*100)+'%':'')+'</div></div>'; };
+  document.getElementById("abc-cards").innerHTML=card("A","Клас A — основа")+card("B","Клас B — середні")+card("C","Клас C — слабкі")
+    +'<div class="stat-card"><div class="stat-label">Без продажів</div><div class="stat-value" style="color:var(--ink4)">'+a.summary.idle+' поз.</div><div class="stat-sub">лежать на складі або в точках</div></div>';
+  if(!a.rows.length){
+    document.getElementById("abc-advice").innerHTML="";
+    document.getElementById("abc-table").innerHTML='<div style="color:var(--ink4);font-size:12px">'+(basis==="sold"?"За цей період немає звітів про продажі з точок.":"За цей період немає відвантажених накладних.")+'</div>';
+    return;
+  }
+  var all=a.rows.concat(a.idle);
+  var groups={low:[],spread:[],swap:[]};
+  all.forEach(function(r){ r.tips.forEach(function(t){ groups[t.k].push(r.name); }); });
+  var adv=[];
+  if(groups.low.length) adv.push('⚠️ <b>Не допустити нестачі (A, мало на складі):</b> '+esc(groups.low.join(", ")));
+  if(groups.spread.length) adv.push('📣 <b>Хіти, яких немає в більшості точок:</b> '+esc(groups.spread.join(", ")));
+  if(groups.swap.length) adv.push('🔄 <b>Лежать у точках без продажів (замінити на A):</b> '+esc(groups.swap.join(", ")));
+  document.getElementById("abc-advice").innerHTML=adv.length
+    ?'<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:12px 14px;font-size:13px;line-height:1.8;box-shadow:var(--shadow)">'+adv.join("<br>")+'</div>':"";
+  var th=function(t,al){return '<th style="border:1px solid var(--border);padding:6px 8px;text-align:'+(al||"right")+'">'+t+'</th>';};
+  var td=function(t,al,st){return '<td style="border:1px solid var(--border);padding:5px 8px;text-align:'+(al||"right")+';'+(st||"")+'">'+t+'</td>';};
+  var h='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--surface3)">'
+    +th("Клас","center")+th("Товар","left")+th("Виручка, ₴")+th("Продано в точках, шт")+th("Частка")+th("Накопичено")+th("На складі")+th("У точках")+th("Порада","left")
+    +'</tr></thead><tbody>';
+  all.forEach(function(r){
+    h+='<tr>'+td('<b style="color:'+clsColor[r.cls]+'">'+r.cls+'</b>',"center")
+      +td(esc(r.name),"left")+td(fmt(r.revenue))+td(fmt(r.sold))
+      +td(r.share?r.share.toFixed(1)+"%":"—")+td(r.cumShare?r.cumShare.toFixed(0)+"%":"—")
+      +td(fmt(r.warehouse))+td(r.points?(r.points+(r.sellingPoints?" (продає "+r.sellingPoints+")":"")):"—")
+      +td(esc(r.tips.map(function(t){return t.text;}).join("; ")),"left","color:var(--ink3)")+'</tr>';
+  });
+  document.getElementById("abc-table").innerHTML=h+'</tbody></table>';
+}
 
 function renderGoalCard(elId){
   var el=document.getElementById(elId); if(!el) return;
