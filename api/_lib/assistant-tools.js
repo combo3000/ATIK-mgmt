@@ -24,8 +24,12 @@ export const ACTION_TOOLS = [
   { name: "propose_partner_message", description: "Запропонувати повідомлення точці (звіт, оплата, дозамовлення тощо). Відкриється вікно «Написати»; надсилає людина сама.", input_schema: { type: "object", properties: { point, purpose: { type: "string", enum: ["report", "payment", "bill", "restock", "tryNew", "thanks", "custom"] } }, required: ["point"], additionalProperties: false } },
   { name: "propose_reconciliation_act", description: "Запропонувати акт звірки з точкою (PDF).", input_schema: { type: "object", properties: { point }, required: ["point"], additionalProperties: false } },
   { name: "propose_order_link", description: "Запропонувати скопіювати особисте посилання для замовлення точки.", input_schema: { type: "object", properties: { point }, required: ["point"], additionalProperties: false } },
+  { name: "propose_mark_paid", description: "Запропонувати позначити документ сплаченим (на всю суму, що лишилась). Людина підтверджує кнопкою; до натискання нічого не змінюється. Для кількох документів — окремий виклик на кожен.", input_schema: { type: "object", properties: { doc_number: { type: "string", description: "Номер документа, наприклад 233" }, doc_type: { type: "string", enum: ["bill", "invoice"], description: "bill — рахунок (за замовчуванням шукаємо рахунок), invoice — накладна" } }, required: ["doc_number"], additionalProperties: false } },
   { name: "propose_sales_report", description: "Запропонувати внести звіт продажів точки (файл, фото або текст розпізнає AI у вікні звіту).", input_schema: { type: "object", properties: {}, additionalProperties: false } },
 ];
 
-export const TOOLS = [...READ_TOOLS, ...ACTION_TOOLS];
+// Telegram only: the bot stores the reminder itself and writes to this person at that time.
+export const REMINDER_TOOL = { name: "set_reminder", description: "Поставити нагадування людині, яка пише (лише в Telegram-боті). Бот напише їй у вказаний час за Києвом. Текст — коротко про що нагадати (наприклад, номер рахунку, точка, сума).", input_schema: { type: "object", properties: { when: { type: "string", description: "Дата й час за Києвом: YYYY-MM-DDTHH:MM (наприклад 2026-11-19T10:00). «Завтра зранку» без часу — 10:00." }, text: { type: "string", description: "Про що нагадати" } }, required: ["when", "text"], additionalProperties: false } };
+
+export const TOOLS = [...READ_TOOLS, ...ACTION_TOOLS, REMINDER_TOOL];
 export const TOOL_NAMES = new Set(TOOLS.map((t) => t.name));

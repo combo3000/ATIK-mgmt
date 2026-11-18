@@ -107,3 +107,33 @@ export async function listDocs(collection, { pageSize = 100, orderBy = "createdA
   }
   return out;
 }
+
+// Raw document (typed Firestore fields + updateTime), for exact read-modify-write.
+export async function getRaw(path) {
+  return api(path);
+}
+
+// Deletes only if the document still exists; returns false if someone else deleted it first.
+export async function deleteDoc(path) {
+  const j = await api(path + "?currentDocument.exists=true", { method: "DELETE" });
+  return j !== null;
+}
+
+// Atomic write(s). Each write: { update: { name, fields }, updateMask, currentDocument, updateTransforms }.
+// Fails with status 409/400 FAILED_PRECONDITION if the document changed since it was read.
+export async function commit(writes) {
+  const { token, projectId } = await accessToken();
+  const db = `projects/${projectId}/databases/(default)`;
+  const r = await fetch(`https://firestore.googleapis.com/v1/${db}/documents:commit`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ writes: writes.map((w) => (w.update && !w.update.name.startsWith("projects/") ? { ...w, update: { ...w.update, name: `${db}/documents/${w.update.name}` } } : w)) }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const e = httpError(r.status === 400 || r.status === 409 ? 409 : 502, "Firestore: " + (j.error && j.error.message || r.status));
+    e.conflict = /FAILED_PRECONDITION|ABORTED/i.test(j.error && j.error.status || "");
+    throw e;
+  }
+  return j;
+}

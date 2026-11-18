@@ -1,0 +1,13 @@
+# Wakes the Telegram bot every 10 minutes so personal reminders ("нагадай завтра о 10…") arrive on time.
+# The endpoint only sends reminders that are due; it needs no secret.
+name: Bot reminders
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: curl -fsS --max-time 60 https://atik-mgmt.vercel.app/api/telegram-due
