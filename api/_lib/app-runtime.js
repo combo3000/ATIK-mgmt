@@ -66,6 +66,7 @@ export function createAppRuntime(state, { orders = [] } = {}) {
     },
     weeklyData() { return JSON.parse(vm.runInContext("JSON.stringify(buildWeeklyData())", ctx)); },
     today() { return vm.runInContext("todayISO()", ctx); },
+    reportReminders(month) { ctx.__month = month || null; return JSON.parse(vm.runInContext("JSON.stringify(reportReminderData(__month))", ctx)); },
   };
 }
 
