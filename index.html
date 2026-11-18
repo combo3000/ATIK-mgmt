@@ -7036,6 +7036,8 @@ function exportBackup(){
   a.click();URL.revokeObjectURL(url);
 }
 
+// «📂 Відновити»: replaces the data with a backup file (from «Бекап JSON» or the weekly Telegram copy).
+// Asks first and downloads a copy of the current data, so a wrong file can be undone.
 function importBackup(input){
   var file=input.files[0];if(!file)return;
   var reader=new FileReader();
@@ -7043,16 +7045,19 @@ function importBackup(input){
     try{
       var data=JSON.parse(e.target.result);
       if(!data.products||!data.buyers)throw new Error("Невірний формат");
-      products=data.products;buyers=data.buyers;journal=data.journal||[];
-      if(data.settings)settings=Object.assign({},settings,data.settings);
-      if(data.warehouseStock)warehouseStock=data.warehouseStock;
-      if(data.rawStock)rawStock=data.rawStock;
-      if(data.receiveHistory)receiveHistory=data.receiveHistory;
-      if(data.retailStock)retailStock=data.retailStock;
-      if(data.salesReports)salesReports=data.salesReports;
-      if(data.suppliers)suppliers=data.suppliers;
-      save();location.reload();
+      var when=data.exportedAt?new Date(data.exportedAt).toLocaleString("uk-UA"):"невідомої дати";
+      var docs=Array.isArray(data.journal)?data.journal.length:0;
+      if(!confirm("Замінити всі поточні дані копією від "+when+" ("+docs+" документів)?\n\nСпершу я завантажу копію поточних даних, щоб це можна було скасувати."))return;
+      downloadFullBackup("before-restore");
+      var keep=collectAppState(), restored={};
+      // Everything the backup has replaces the current data; anything it lacks stays as it is.
+      Object.keys(keep).forEach(function(k){ restored[k]=(k in data)?data[k]:keep[k]; });
+      if(data.settings) restored.settings=Object.assign({},settings,data.settings);
+      applyAppState(restored);
+      save();
+      setTimeout(function(){ location.reload(); },1500);
     }catch(err){alert("Помилка: "+err.message);}
+    finally{ input.value=""; }
   };
   reader.readAsText(file);
 }

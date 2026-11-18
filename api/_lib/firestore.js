@@ -92,9 +92,18 @@ export async function setDoc(path, obj) {
 }
 
 // Newest documents of a collection (used for web orders).
-export async function listDocs(collection, { pageSize = 100, orderBy = "createdAt desc" } = {}) {
-  const q = new URLSearchParams({ pageSize: String(pageSize) });
-  if (orderBy) q.set("orderBy", orderBy);
-  const j = await api(`${collection}?${q}`);
-  return ((j && j.documents) || []).map((d) => ({ _id: d.name.split("/").pop(), ...decodeFields(d.fields || {}) }));
+// all: true follows every page (for backups).
+export async function listDocs(collection, { pageSize = 100, orderBy = "createdAt desc", all = false } = {}) {
+  const out = [];
+  let pageToken = "";
+  for (let page = 0; page < 50; page++) {
+    const q = new URLSearchParams({ pageSize: String(pageSize) });
+    if (orderBy) q.set("orderBy", orderBy);
+    if (pageToken) q.set("pageToken", pageToken);
+    const j = await api(`${collection}?${q}`);
+    for (const d of (j && j.documents) || []) out.push({ _id: d.name.split("/").pop(), ...decodeFields(d.fields || {}) });
+    pageToken = j && j.nextPageToken;
+    if (!all || !pageToken) break;
+  }
+  return out;
 }
