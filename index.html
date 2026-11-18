@@ -7813,6 +7813,19 @@ var ASST_TOOLS={
     return {action:{label:"📄 Акт звірки: "+(b.retailName||b.name),link:{"do":"act",b:b.id},run:function(){ asstClose(); openReconAct(b.id); }}}; },
   propose_order_link:function(i){ var f=asstFindPoint(i.point); if(!f.b) return f; var b=f.b;
     return {action:{label:"🔗 Скопіювати посилання: "+(b.retailName||b.name),link:b.orderToken?{url:pointOrderUrl(b)}:{"do":"olink",b:b.id},run:function(){ copyPointOrderLink(b.id); }}}; },
+  propose_mark_paid:function(i){
+    var num=String(i.doc_number||"").replace(/[№#\s]/g,"");
+    var docs=journal.filter(function(j){ return String(j.invoiceNum||"").replace(/\s/g,"")===num&&(j.docType==="bill"||j.docType==="invoice"); });
+    if(i.doc_type) docs=docs.filter(function(j){return j.docType===i.doc_type;});
+    else if(docs.some(function(j){return j.docType==="bill";})) docs=docs.filter(function(j){return j.docType==="bill";});
+    if(!docs.length) return {error:"Документ №"+num+" не знайдено"};
+    if(docs.length>1) return {error:"Кілька документів №"+num,candidates:docs.map(function(j){return docTitleStr(j)+" від "+j.invoiceDate+" · "+jBuyerName(j);})};
+    var j=docs[0], out=docOutstanding(j);
+    if(out<=0.01) return {error:docTitleStr(j)+" вже сплачено повністю"};
+    return {action:{label:"✅ Сплачено: "+(j.docType==="bill"?"рахунок":"накладна")+" №"+j.invoiceNum+" · "+jBuyerName(j)+" · "+fmt(out)+" ₴",pay:{doc:j.id},
+      run:function(){ markDocPaidFull(j.id,"Позначено через асистента"); }}};
+  },
+  set_reminder:function(){ return {error:"Нагадування ставить Telegram-бот ATIK. Напишіть йому те саме."}; },
   propose_sales_report:function(){ return {action:{label:"📋 Внести звіт продажів",link:{"do":"report"},run:function(){ asstClose(); openSalesReportModal(); }}}; }
 };
 // Opens the document form filled in: buyer, type, price by the point's term, number, date and lines.
@@ -7853,6 +7866,16 @@ function runDeepLink(){
     else if(what==="olink") copyPointOrderLink(b.id);
     else if(what==="report") openSalesReportModal();
   })();
+}
+// One-click "paid in full" (assistant button): same as adding a payment for the whole outstanding amount.
+function markDocPaidFull(docId,note){
+  var j=journal.find(function(x){return x.id===docId;}); if(!j) return;
+  var out=docOutstanding(j); if(out<=0.01){ addToast(docTitleStr(j)+" вже сплачено","info"); return; }
+  if(!Array.isArray(j.payments)){ j.payments=[]; if(j.status==="paid") j.status="created"; }
+  j.payments.push({id:uid(),date:todayISO(),amount:out,note:note||null,createdAt:new Date().toISOString()});
+  syncPaidStatus(j);
+  save(); try{ renderJournal(); renderRetailStoreGrid(); renderDashboard(); }catch(e){}
+  addToast(docTitleStr(j)+": оплату "+fmt(out)+" ₴ додано","success");
 }
 function asstRunTool(name,input){ var f=ASST_TOOLS[name]; if(!f) return {error:"Невідомий інструмент"}; return f(input); }
 

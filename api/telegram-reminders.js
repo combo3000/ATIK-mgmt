@@ -8,6 +8,7 @@ import { getDoc } from "./_lib/firestore.js";
 import { createAppRuntime } from "./_lib/app-runtime.js";
 import { reminderMessage, reminderKindFor } from "./_lib/reminders.js";
 import { sendText, allowedIds } from "./telegram.js";
+import { deliverDue } from "./_lib/user-reminders.js";
 
 export const config = { maxDuration: 60 };
 
@@ -22,6 +23,7 @@ export default async function handler(req, res) {
   const auth = req.headers.authorization === `Bearer ${secret}` || q.key === secret;
   if (!secret || !auth) return sendJson(res, 401, { error: "Немає доступу" });
   if (!process.env.TELEGRAM_BOT_TOKEN) return sendJson(res, 503, { error: "TELEGRAM_BOT_TOKEN не налаштовано" });
+  await deliverDue(sendText).catch((e) => console.error("due reminders", e.message)); // daily backup for personal reminders
   const kind = ["start", "check"].includes(q.kind) ? q.kind : reminderKindFor(kyivDay());
   if (!kind) return sendJson(res, 200, { ok: true, skipped: "не 1-ше і не 8-ме число" });
   const to = (process.env.TELEGRAM_REPORT_CHAT_IDS || "").split(/[,\s]+/).filter(Boolean);

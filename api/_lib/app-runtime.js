@@ -61,7 +61,7 @@ export function createAppRuntime(state, { orders = [] } = {}) {
     // Same tools as the in-app assistant. Proposals come back with `link` (what the app should open).
     runTool(name, input) {
       ctx.__name = name; ctx.__input = JSON.parse(JSON.stringify(input || {}));
-      const out = vm.runInContext("(function(){ var r; try{ r=asstRunTool(__name,__input); }catch(e){ r={error:String(e&&e.message||e)}; } return JSON.stringify(r&&r.action?{action:{label:r.action.label,link:r.action.link||null}}:r); })()", ctx);
+      const out = vm.runInContext("(function(){ var r; try{ r=asstRunTool(__name,__input); }catch(e){ r={error:String(e&&e.message||e)}; } return JSON.stringify(r&&r.action?{action:{label:r.action.label,link:r.action.link||null,pay:r.action.pay||null}}:r); })()", ctx);
       return JSON.parse(out || "null");
     },
     weeklyData() { return JSON.parse(vm.runInContext("JSON.stringify(buildWeeklyData())", ctx)); },
