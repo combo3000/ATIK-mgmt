@@ -70,3 +70,7 @@ service cloud.firestore {
 - `APP_URL` — необов'язково, адреса додатка для кнопок (за замовчуванням `https://combo3000.github.io/ATIK-mgmt/`).
 
 Увімкнення: після Redeploy відкрийте `https://atik-mgmt.vercel.app/api/telegram?setup=<TELEGRAM_WEBHOOK_SECRET>`. Перевірити звіт вручну: `https://atik-mgmt.vercel.app/api/telegram-weekly?key=<CRON_SECRET>`.
+
+## Резервна копія щотижня (Telegram)
+`api/telegram-backup.js` щонеділі о 19:00 UTC (21:00 за Києвом взимку) надсилає в Telegram файл `atik_backup_ДАТА.json` з усіма даними додатка (і інтернет-замовленнями). Отримувачі: `TELEGRAM_BACKUP_CHAT_IDS`, а якщо порожньо — усі з `TELEGRAM_ALLOWED_IDS`. Зробити копію одразу: команда `/backup` у боті або `https://atik-mgmt.vercel.app/api/telegram-backup?key=<CRON_SECRET>`.
+Відновлення: Налаштування → «📂 Відновити» → файл. Додаток перепитає і спершу завантажить копію поточних даних, тож відновлення можна скасувати, відновивши цей файл.
