@@ -6760,6 +6760,22 @@ function msgTemplate(x,purposes,f){
   });
   return parts.join(" ");
 }
+// Monthly report reminders (Telegram bot): active consignment points and whether each sent
+// the sales report for the month, with a ready "please send the report" text.
+function reportReminderData(month){
+  month=month||ymShift(curYM(),-1);
+  var net=networkBestSellers();
+  var points=buyers.filter(function(b){ return isPartnerPoint(b)&&(buyerDeal(b)||partnerTermFor(b))==="consignment"; }).map(function(b){
+    var x=partnerStats(b,net);
+    var active=x.shelfQty>0||journal.some(function(j){return j.docType==="invoice"&&jBuyerId(j)===b.id;});
+    if(!active) return null;
+    var f=msgFacts(x); f.reportMonth=ymName(month);
+    var c=msgChatLink(b);
+    return {id:b.id,name:x.name,reported:salesReports.some(function(r){return r.buyerId===b.id&&r.month===month;}),
+      shelfQty:x.shelfQty,chat:c?c.label:"",text:msgTemplate(x,["report"],f)};
+  }).filter(Boolean).sort(function(a,c){return String(a.name).localeCompare(String(c.name),"uk");});
+  return {month:month,monthName:ymName(month),points:points};
+}
 function msgChatLink(b){
   var c=partnerContact(b);
   if(c&&/^tel:/.test(c.href)){ var ph=c.href.slice(4); return {href:"viber://chat?number="+encodeURIComponent(ph),label:"Viber"}; }

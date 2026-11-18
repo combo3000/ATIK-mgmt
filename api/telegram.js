@@ -13,6 +13,7 @@ import { getDoc, setDoc, listDocs } from "./_lib/firestore.js";
 import { createAppRuntime, appLink, APP_URL } from "./_lib/app-runtime.js";
 import { assistantStep } from "./assistant.js";
 import { sendBackup } from "./telegram-backup.js";
+import { reminderMessage } from "./_lib/reminders.js";
 
 export const config = { maxDuration: 60 };
 
@@ -116,7 +117,7 @@ const HELP = `Привіт! Я асистент ATIK. Питайте про пр
 • Що закінчується на складі?
 • Зроби рахунок Бюро Вин на 10 тубусів 40 шт чорний сандал
 
-Чернетки відкриваються в додатку кнопкою, зберігаєте їх там ви. /new почне розмову спочатку, /backup надішле резервну копію бази.`;
+Чернетки відкриваються в додатку кнопкою, зберігаєте їх там ви. /reports покаже, хто з точок уже надіслав звіт за минулий місяць. /new почне розмову спочатку, /backup надішле резервну копію бази.`;
 
 export async function processUpdate(update, deps = {}) {
   const msg = update && update.message;
@@ -136,6 +137,14 @@ export async function processUpdate(update, deps = {}) {
   if (/^\/backup\b/.test(text)) {
     await send(chatId, "Готую резервну копію…");
     await (deps.sendBackup || sendBackup)([chatId]);
+    return;
+  }
+  if (/^\/reports?\b/.test(text)) {
+    const shared = await db.getDoc("shared/main");
+    if (!shared || !shared.state) { await send(chatId, "Не бачу даних додатка в базі."); return; }
+    const data = (deps.createRuntime || createAppRuntime)(shared.state).reportReminders();
+    const m = reminderMessage(data, "status");
+    await send(chatId, m.text, m.buttons);
     return;
   }
   if (/^\/new\b/.test(text)) { await db.setDoc(sessionPath, { messages: [], updatedAt: Date.now() }); await send(chatId, "Добре, починаємо спочатку."); return; }
@@ -161,7 +170,7 @@ async function setup(req, res) {
   const host = req.headers["x-forwarded-host"] || req.headers.host;
   const url = `https://${host}/api/telegram`;
   const hook = await tg("setWebhook", { url, secret_token: process.env.TELEGRAM_WEBHOOK_SECRET, allowed_updates: ["message"], drop_pending_updates: true });
-  await tg("setMyCommands", { commands: [{ command: "help", description: "Що я вмію" }, { command: "new", description: "Почати розмову спочатку" }, { command: "backup", description: "Надіслати резервну копію бази" }] });
+  await tg("setMyCommands", { commands: [{ command: "help", description: "Що я вмію" }, { command: "new", description: "Почати розмову спочатку" }, { command: "reports", description: "Хто з точок надіслав звіт за минулий місяць" }, { command: "backup", description: "Надіслати резервну копію бази" }] });
   res.status(hook.ok ? 200 : 502).setHeader("Content-Type", "text/plain; charset=utf-8");
   res.end(hook.ok ? `Готово: бот підключено до ${url}.\nНапишіть боту в Telegram будь-що, він підкаже ваш Telegram ID.` : `Не вдалося: ${hook.description || "перевірте TELEGRAM_BOT_TOKEN"}`);
 }
