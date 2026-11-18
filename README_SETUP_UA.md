@@ -55,3 +55,18 @@ service cloud.firestore {
 
 Після зміни змінних потрібен Redeploy. Перевірка: Налаштування → AI-асистент → «Перевірити підключення».
 Тести сервера: `npm install && npm test`.
+
+## Telegram-бот (той самий асистент) і звіт щопонеділка
+`api/telegram.js` — бот: відповідає лише Telegram ID зі списку, працює як «💬 Асистент» у додатку (ті самі інструменти й розрахунки: сервер запускає код `index.html` над копією спільних даних лише для читання). Чернетки приходять кнопками, що відкривають додаток із заповненою формою (`?do=doc|msg|act|olink|report`); зберігаєте ви там. Бот пам'ятає розмову 3 години (колекція `tg_sessions`), `/new` починає спочатку.
+`api/telegram-weekly.js` — звіт тижня в Telegram щопонеділка о 06:00 UTC (8:00 за Києвом взимку, 9:00 влітку), розклад у `vercel.json`.
+
+Змінні у Vercel:
+- `TELEGRAM_BOT_TOKEN` — токен від @BotFather (`/newbot`).
+- `TELEGRAM_WEBHOOK_SECRET` — довільний рядок з латинських літер і цифр.
+- `FIREBASE_SERVICE_ACCOUNT` — увесь вміст JSON-файла з Firebase → Project settings → Service accounts → Generate new private key.
+- `TELEGRAM_ALLOWED_IDS` — Telegram ID через кому (бот підкаже ваш ID, якщо написати йому до того, як ви в списку).
+- `CRON_SECRET` — довільний рядок; ним Vercel запускає щотижневий звіт.
+- `TELEGRAM_REPORT_CHAT_IDS` — необов'язково, кому слати звіт (за замовчуванням усім з `TELEGRAM_ALLOWED_IDS`).
+- `APP_URL` — необов'язково, адреса додатка для кнопок (за замовчуванням `https://combo3000.github.io/ATIK-mgmt/`).
+
+Увімкнення: після Redeploy відкрийте `https://atik-mgmt.vercel.app/api/telegram?setup=<TELEGRAM_WEBHOOK_SECRET>`. Перевірити звіт вручну: `https://atik-mgmt.vercel.app/api/telegram-weekly?key=<CRON_SECRET>`.

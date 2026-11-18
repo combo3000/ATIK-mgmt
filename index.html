@@ -7784,15 +7784,15 @@ var ASST_TOOLS={
     });
     if(bad.length) return {error:"Невідомі товари або кількість: "+bad.join(", ")+". Знайди точні id через list_products або перепитай людину."};
     var label=(type==="bill"?"🧾 Чернетка рахунку: ":"📦 Чернетка накладної: ")+(b.retailName||b.name)+(lines.length?" ("+lines.map(function(l){return shortName(l.p.name)+" × "+l.qty;}).join(", ")+")":" (без позицій)");
-    return {action:{label:label,run:function(){ asstClose(); openDocDraft(b.id,type,lines.map(function(l){return {productId:l.p.id,qty:l.qty};})); }}};
+    return {action:{label:label,link:{"do":"doc",b:b.id,t:type,l:lines.map(function(l){return l.p.id+":"+l.qty;}).join(",")},run:function(){ asstClose(); openDocDraft(b.id,type,lines.map(function(l){return {productId:l.p.id,qty:l.qty};})); }}};
   },
   propose_partner_message:function(i){ var f=asstFindPoint(i.point); if(!f.b) return f; var b=f.b;
-    return {action:{label:"✍️ Написати: "+(b.retailName||b.name),run:function(){ asstClose(); openPartnerMessage(b.id,i.purpose||undefined); }}}; },
+    return {action:{label:"✍️ Написати: "+(b.retailName||b.name),link:{"do":"msg",b:b.id,p:i.purpose||""},run:function(){ asstClose(); openPartnerMessage(b.id,i.purpose||undefined); }}}; },
   propose_reconciliation_act:function(i){ var f=asstFindPoint(i.point); if(!f.b) return f; var b=f.b;
-    return {action:{label:"📄 Акт звірки: "+(b.retailName||b.name),run:function(){ asstClose(); openReconAct(b.id); }}}; },
+    return {action:{label:"📄 Акт звірки: "+(b.retailName||b.name),link:{"do":"act",b:b.id},run:function(){ asstClose(); openReconAct(b.id); }}}; },
   propose_order_link:function(i){ var f=asstFindPoint(i.point); if(!f.b) return f; var b=f.b;
-    return {action:{label:"🔗 Скопіювати посилання: "+(b.retailName||b.name),run:function(){ copyPointOrderLink(b.id); }}}; },
-  propose_sales_report:function(){ return {action:{label:"📋 Внести звіт продажів",run:function(){ asstClose(); openSalesReportModal(); }}}; }
+    return {action:{label:"🔗 Скопіювати посилання: "+(b.retailName||b.name),link:b.orderToken?{url:pointOrderUrl(b)}:{"do":"olink",b:b.id},run:function(){ copyPointOrderLink(b.id); }}}; },
+  propose_sales_report:function(){ return {action:{label:"📋 Внести звіт продажів",link:{"do":"report"},run:function(){ asstClose(); openSalesReportModal(); }}}; }
 };
 // Opens the document form filled in: buyer, type, price by the point's term, number, date and lines.
 // Nothing is saved until the person presses «Згенерувати».
@@ -7810,6 +7810,28 @@ function openDocDraft(buyerId,docType,lines){
   items=lines.map(function(l){ return {id:Date.now()+Math.random(),productId:l.productId,qty:l.qty,customPrice:"",baseShelf:keepOld?lastShelfPriceFor(b.id,l.productId):null}; });
   onDocTypeChange(); refreshPriceTypeBtns(); renderItems();
   addToast((docType==="bill"?"Чернетка рахунку":"Чернетка накладної")+" для «"+(b.retailName||b.name)+"»","success",lines.length?"Перевірте позиції й ціни і натисніть «Згенерувати»":"Додайте позиції, які замовила точка, і натисніть «Згенерувати»");
+}
+// Links from the Telegram bot open the app with a proposal ready: ?do=doc|msg|act|olink|report&b=<buyer>…
+// Like the in-app buttons they only open a form or window; nothing is saved until the person confirms.
+function runDeepLink(){
+  var q; try{ q=new URLSearchParams(location.search); }catch(e){ return; }
+  var what=q.get("do"); if(!what) return;
+  var bid=q.get("b")||"", tries=0;
+  try{ history.replaceState(null,"",location.pathname+location.hash); }catch(e){}
+  (function attempt(){
+    var b=bid?buyers.find(function(x){return x.id===bid;}):null;
+    // The shared data may still be loading from the cloud: wait up to ~30 s for the point.
+    if(bid&&!b){ if(++tries<60) return setTimeout(attempt,500); addToast("Точку з посилання не знайдено","error","Можливо, дані ще не синхронізувались"); return; }
+    if(what==="doc"){
+      var lines=String(q.get("l")||"").split(",").filter(Boolean).map(function(x){ var p=x.split(":"); return {productId:p[0],qty:parseInt(p[1],10)||0}; })
+        .filter(function(l){ return l.qty>0&&products.some(function(p){return p.id===l.productId;}); });
+      openDocDraft(b.id,q.get("t")==="invoice"?"invoice":"bill",lines);
+    }
+    else if(what==="msg") openPartnerMessage(b.id,q.get("p")||undefined);
+    else if(what==="act") openReconAct(b.id);
+    else if(what==="olink") copyPointOrderLink(b.id);
+    else if(what==="report") openSalesReportModal();
+  })();
 }
 function asstRunTool(name,input){ var f=ASST_TOOLS[name]; if(!f) return {error:"Невідомий інструмент"}; return f(input); }
 
@@ -8115,6 +8137,7 @@ function renderCogsResult() {
 }
 
 window.addEventListener("DOMContentLoaded",function(){
+  setTimeout(runDeepLink,300);
   load();
   loadCogsPrices();
   initCloud();

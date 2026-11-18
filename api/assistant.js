@@ -49,11 +49,11 @@ export function validateBody(body) {
   return { messages, today };
 }
 
-export async function assistantStep({ messages, today }, client) {
+export async function assistantStep({ messages, today, extraSystem = "" }, client) {
   const response = await client.beta.messages.create({
     model: MODEL,
     max_tokens: 8000,
-    system: SYSTEM + `\nСьогодні ${today}.`,
+    system: SYSTEM + `\nСьогодні ${today}.` + (extraSystem ? "\n" + extraSystem : ""),
     tools: TOOLS,
     output_config: { effort: "low" },
     betas: ["server-side-fallback-2026-07-01"],

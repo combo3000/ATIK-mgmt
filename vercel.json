@@ -1,0 +1,9 @@
+{
+  "functions": {
+    "api/telegram.js": { "includeFiles": "index.html" },
+    "api/telegram-weekly.js": { "includeFiles": "index.html" }
+  },
+  "crons": [
+    { "path": "/api/telegram-weekly", "schedule": "0 6 * * 1" }
+  ]
+}
