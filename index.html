@@ -3798,6 +3798,11 @@ var priceLabel={
 
     if(buyer.isD2C&&pendingOrderNote) g.note=pendingOrderNote;
     pendingOrderNote=null;
+    if(pendingOrderId&&pendingOrderId.buyerId===buyer.id&&dt==="invoice"){
+      g.orderId=pendingOrderId.orderId;
+      if(cloudDb) cloudDb.collection("orders").doc(g.orderId).update({invoiceId:g.id,invoiceNum:String(g.invoiceNum)}).catch(function(e){console.error(e.message);});
+    }
+    pendingOrderId=null;
     if(pendingSalesBill&&pendingSalesBill.buyerId===buyer.id&&dt==="bill"){
       var _sr=salesReports.find(function(r){return r.id===pendingSalesBill.reportId;});
       if(_sr){ g.note="За звітом продажів "+_sr.month; g.salesReportId=_sr.id; _sr.billId=g.id; _sr.billNum=String(g.invoiceNum); }
@@ -8271,7 +8276,11 @@ function renderOrders() {
         btns+='<button class="btn btn-gray btn-sm" onclick="declineOrder(\''+o._id+'\')" style="flex:1;justify-content:center;">Відхилити</button>';
         btns+='<button onclick="confirmOrder(\''+o._id+'\')" style="flex:2;padding:8px 10px;border-radius:8px;border:none;background:var(--pine);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;">'+(pb?'✓ Чернетка накладної':'✓ Підтвердити → НН')+'</button>';
       }
-      if(isConf){ btns+='<span style="font-size:11px;color:var(--ink3);">Накладна створена</span>'; }
+      if(isConf){
+        var _inv=invoiceForOrder(o);
+        if(_inv) btns+='<span style="font-size:11px;color:var(--ink3);">Накладна №'+esc(String(_inv.invoiceNum))+'</span>';
+        else btns+='<button onclick="invoiceForConfirmedOrder(\''+o._id+'\')" style="flex:2;padding:7px 10px;border-radius:8px;border:1px solid var(--gold);background:rgba(200,168,75,.12);color:var(--ink);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;" title="Замовлення підтверджене, але накладної в журналі немає">⚠ Створити накладну</button>';
+      }
       // Delete button — always visible
       btns+='<button onclick="deleteOrder(\''+o._id+'\')" style="padding:6px 10px;border-radius:8px;border:1px solid var(--red2);background:var(--red2);color:var(--red);font-size:11px;cursor:pointer;font-family:inherit;flex-shrink:0;" title="Видалити">🗑</button>';
       return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:14px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:0;">'
@@ -8294,6 +8303,18 @@ function confirmOrder(orderId) {
   if(!o)return;
   if(!cloudDb){alert("Увійдіть через Google для зміни статусу");return;}
   var _pb=orderPointBuyer(o);
+  var _web=!_pb&&!isPartnerOrder(o);
+  if(_web){
+    // Shopify / Instagram order: the накладна is created at once — before, the button only
+    // opened a draft and marked the order «Накладна створена» even if nobody pressed «Згенерувати».
+    if(!confirm("Підтвердити замовлення від "+(o.contact||o.company||o.nickname||"")+" і створити накладну?"))return;
+    var g=createWebInvoiceFromOrder(o);
+    if(!g)return;
+    cloudDb.collection("orders").doc(orderId).update({status:"confirmed",invoiceId:g.id,invoiceNum:String(g.invoiceNum)})
+      .then(function(){ o.status="confirmed"; renderOrders(); })
+      .catch(function(e){ o.status="confirmed"; renderOrders(); console.error("order status:",e.message); });
+    return;
+  }
   if(!confirm("Підтвердити замовлення від "+(_pb?(_pb.retailName||_pb.name):(o.company||""))+" і відкрити чернетку накладної?"))return;
   cloudDb.collection("orders").doc(orderId).update({status:"confirmed"})
     .then(function(){
@@ -8302,6 +8323,70 @@ function confirmOrder(orderId) {
       createInvoiceFromOrder(orderId);
     })
     .catch(function(e){alert("Помилка: "+e.message);});
+}
+
+// The journal document made from an order: linked by orderId, or (older drafts of web orders)
+// by the note «Замовлення #xxxx» on a D2C document, or the per-order buyer of a wholesale form.
+function invoiceForOrder(o){
+  if(!o) return null;
+  var id=String(o._id||""), tag="Замовлення #"+id.slice(-4);
+  return journal.find(function(j){ return j.orderId===id; })
+    || (o.invoiceId&&journal.find(function(j){ return j.id===o.invoiceId; }))
+    || journal.find(function(j){ return j.docType==="invoice"&&j.buyerId==="order_"+id; })
+    || journal.find(function(j){ return j.docType==="invoice"&&/^d2c_/.test(j.buyerId||"")&&String(j.note||"").indexOf(tag)===0; })
+    || null;
+}
+
+// Builds and saves the invoice of a web (Shopify / Instagram) order: shelf price the customer
+// paid, dated the order day, stock written off — the same as a quick order. Never creates a point.
+function createWebInvoiceFromOrder(o){
+  var ex=invoiceForOrder(o);
+  if(ex){ addToast("Накладна №"+ex.invoiceNum+" вже є","info","Для цього замовлення"); return ex; }
+  var buyer=d2cBuyerForOrder(o);
+  if(!buyer){ alert("Не знайдено покупця «Сайт (D2C)»"); return null; }
+  var lines=[], missing=[];
+  (o.items||[]).forEach(function(it){
+    var p=products.find(function(x){return x.id===it.id;});
+    if(!p||!(it.qty>0)){ missing.push(it.name||it.id||"?"); return; }
+    var price=it.price>0?it.price:(p.shelf||0);
+    lines.push({id:p.id,name:p.name,qty:it.qty,price:price,shelf:price,cogs:getWHCogs(p.id)||0});
+  });
+  if(!lines.length){ alert("У замовленні немає товарів з каталогу — накладну не створено."); return null; }
+  if(missing.length&&!confirm("Не знайдено в каталозі: "+missing.join(", ")+".\nСтворити накладну без цих позицій?")) return null;
+  var sum=lines.reduce(function(s,it){return s+it.price*it.qty;},0);
+  // Shopify discount: spread it over the lines so the document total is what the customer paid.
+  var paid=o.totalDiscounted>0?o.totalDiscounted:0;
+  if(paid>0&&paid<sum-0.005){ var k=paid/sum; lines.forEach(function(it){ it.price=Math.round(it.price*k*100)/100; }); }
+  var _cat=o.createdAt, d=_cat?(_cat.toDate?_cat.toDate().toISOString().slice(0,10):String(_cat).slice(0,10)):"";
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) d=todayISO();
+  var g={
+    id:uid(), invoiceNum:String(nextInvoiceNum()), invoiceDate:d,
+    buyerId:buyer.id, docType:"invoice", status:"created", priceType:"shelf", priceLabel:"Полиця (100%)",
+    items:lines, total:Math.round(lines.reduce(function(s,it){return s+it.price*it.qty;},0)*100)/100,
+    note:["Замовлення #"+String(o._id).slice(-4),o.contact||o.company||o.nickname||"",o.phone||"",o.address||""].filter(Boolean).join(" · "),
+    orderId:String(o._id), source:o.source||o.channel||"Site",
+    savedAt:new Date().toISOString()
+  };
+  var _led={}; deductRawForItems(g.items,_led); if(Object.keys(_led).length) g.stockUsed=_led;
+  journal.unshift(g);
+  try{ save(); }catch(e){ console.error("save() failed:",e); setSyncState("error","⚠️ Документ НЕ збережено. Натисніть тут."); }
+  if(typeof renderJournal==="function") renderJournal();
+  if(typeof renderDashboard==="function") renderDashboard();
+  addToast("Накладну №"+g.invoiceNum+" створено","success",fmt(g.total)+" ₴ · "+(o.contact||o.company||"")+" · списано зі складу");
+  return g;
+}
+
+// «Створити накладну» on a confirmed order that has none (orders confirmed before this fix).
+function invoiceForConfirmedOrder(orderId){
+  var o=ordersData.find(function(x){return x._id===orderId;}); if(!o)return;
+  if(!orderPointBuyer(o)&&!isPartnerOrder(o)){
+    if(!confirm("Створити накладну для замовлення від "+(o.contact||o.company||o.nickname||"")+"?"))return;
+    var g=createWebInvoiceFromOrder(o);
+    if(g&&cloudDb) cloudDb.collection("orders").doc(orderId).update({invoiceId:g.id,invoiceNum:String(g.invoiceNum)}).catch(function(e){console.error(e.message);});
+    renderOrders();
+    return;
+  }
+  createInvoiceFromOrder(orderId);
 }
 
 function deleteOrder(orderId) {
@@ -8377,11 +8462,13 @@ function d2cBuyerForOrder(o){
   return b||null;
 }
 var pendingOrderNote=null; // customer name/address of an internet order, saved as the document note
+var pendingOrderId=null;   // {orderId,buyerId} of the order whose draft is open in the form; generate() links the document to it
 function _doInvoiceFromOrder(orderId,buyerId){
   pendingSalesBill=null;
   var o=ordersData.find(function(x){return x._id===orderId;});if(!o)return;
   var buyer=buyerId?buyers.find(function(b){return b.id===buyerId;}):null;
   pendingOrderNote=null;
+  pendingOrderId=null;
   if(!buyer&&!isPartnerOrder(o)){
     buyer=d2cBuyerForOrder(o);
     pendingOrderNote=["Замовлення #"+String(orderId).slice(-4),o.contact||o.company||o.nickname||"",o.phone||"",o.address||""].filter(Boolean).join(" · ");
@@ -8391,6 +8478,7 @@ function _doInvoiceFromOrder(orderId,buyerId){
       receiver:o.contact||"",iban:null,edrpou:null,bank:null,address:o.address||null,contract:null,isRetail:false};
     if(!buyers.find(function(b){return b.id===buyer.id;})){buyers.push(buyer);save();}
   }
+  pendingOrderId={orderId:String(orderId),buyerId:buyer.id};
   switchTab("docs");switchDocsSub("form");
   renderBuyerSelect();
   var sel=document.getElementById("buyer-select");if(sel){sel.value=buyer.id;onBuyerChange();}
