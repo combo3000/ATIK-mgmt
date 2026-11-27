@@ -4096,8 +4096,11 @@ function doExportPDF(g){
 
   var pdfHtml="<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>"+title+" №"+g.invoiceNum+"</title>"
     +"<style>"
-    +"@page{size:A4;margin:12mm 10mm}"
-    +"body{font-family:Arial,sans-serif;font-size:9.5pt;color:#000;line-height:1.5}"
+    // margin:0 on the page leaves the browser no room for its own header/footer (date, title, URL);
+    // the white border is the body's padding instead, repeated on every page.
+    +"@page{size:A4;margin:0}"
+    +"html,body{margin:0}"
+    +"body{padding:12mm 10mm;box-decoration-break:clone;-webkit-box-decoration-break:clone;font-family:Arial,sans-serif;font-size:9.5pt;color:#000;line-height:1.5}"
     +"h2{font-size:12pt;font-weight:700;margin:0 0 10px}"
     +"table{width:100%;border-collapse:collapse;margin:10px 0}"
     +"th{border:1px solid #333;padding:3px 6px;background:#f0f0f0;text-align:center;font-size:9pt}"
@@ -5315,7 +5318,7 @@ function exportReconPDF(buyerId){
     :'';
   var title="Акт звірки "+(b.retailName||b.name)+" "+r.to;
   var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+esc(title)+'</title><style>'
-    +'@page{size:A4;margin:12mm 10mm}body{font-family:Arial,sans-serif;font-size:9.5pt;color:#000;line-height:1.5}'
+    +'@page{size:A4;margin:0}html,body{margin:0}body{padding:12mm 10mm;box-decoration-break:clone;-webkit-box-decoration-break:clone;font-family:Arial,sans-serif;font-size:9.5pt;color:#000;line-height:1.5}'
     +'h2{font-size:12pt;margin:0 0 6px}h3{font-size:10.5pt;margin:14px 0 4px}table{width:100%;border-collapse:collapse;margin:6px 0}'
     +'th{border:1px solid #333;padding:3px 6px;background:#f0f0f0;font-size:9pt}td{font-size:9pt}</style></head><body>'
     +'<div style="display:flex;justify-content:space-between;align-items:flex-start"><div><h2>Акт звірки взаєморозрахунків</h2>'
